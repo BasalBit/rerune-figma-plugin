@@ -9,6 +9,8 @@ import uiDiagnostics from "../src/ui/diagnostics.ts?raw"
 import layersScreen from "../src/ui/screens/layers.tsx?raw"
 import settingsScreen from "../src/ui/screens/settings.tsx?raw"
 import fileLinkState from "../src/ui/state/file-link.ts?raw"
+import screenshotState from "../src/ui/state/screenshots.ts?raw"
+import pushScreen from "../src/ui/screens/push.tsx?raw"
 import testing from "../TESTING.md?raw"
 
 // README and TESTING.md must match what the build and the plugin actually do (P1.5: "present and accurate").
@@ -88,6 +90,21 @@ describe("TESTING.md", () => {
       expect(match).not.toBeNull()
       expect(testing).toContain(match?.[1] ?? "")
     }
+  })
+
+  it("names the screenshot toggle, notes and results the plugin shows (P2.3)", () => {
+    for (const label of ["Upload screenshots on push", "Screenshots not uploaded", "Stop", "Uploading screenshots…"]) {
+      expect([settingsScreen, pushScreen, screenshotState].join("\n")).toContain(label)
+      expect(testing).toContain(label)
+    }
+    for (const name of ["SCREENSHOTS_ON_HINT", "SERVER_DISABLED_HINT", "NO_FILE_HINT", "COPY_HINT"]) {
+      const match = screenshotState.match(new RegExp("export const " + name + ' = "([^"]+)"'))
+      expect(match).not.toBeNull()
+      expect(testing).toContain(match?.[1] ?? "")
+    }
+    const preview = screenshotState.match(/preview_active: "([^"]+)"/)
+    expect(testing).toContain(preview?.[1] ?? "missing")
+    expect(readme).toContain("Upload screenshots on push")
   })
 
   it("uses the development hosts, the connect URL and the relaunch button name of the build", () => {
