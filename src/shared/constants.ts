@@ -12,6 +12,7 @@ export const DATA_KEYS = {
 
 export const PLUGIN_DATA_VERSION = 1
 export const LINK_TOMBSTONE = '{"v":1,"none":true}'
+export const DATA_TOMBSTONE = LINK_TOMBSTONE
 
 export const RELAUNCH_COMMAND = "open"
 export const RELAUNCH_DESCRIPTION_PREFIX = "ReRune key: "
@@ -55,6 +56,10 @@ export const KEY_NAME_SERVER_MAX_CHARS = 200
 export const FIGMA_KEY_TAG = "figma"
 
 export const PREVIEW_SEGMENTS_MAX_JSON_CHARS = 90000
+export const PLUGIN_DATA_MAX_BYTES = 100000
+export const WRITE_YIELD_EVERY = 10
+export const DIAGNOSTICS_MAX_NODES = 500
+export const DIAGNOSTICS_MAX_FRAMES = 100
 
 export const MAX_IMAGE_UPLOAD_BYTES = 2000000
 export const MAX_IMAGE_SIDE = 4096
@@ -73,6 +78,7 @@ export const DESIGN_UI_SIZE = { width: 400, height: 640 } as const
 export const DESIGN_UI_MIN_SIZE = { width: 360, height: 480 } as const
 export const DESIGN_UI_MAX_SIZE = { width: 800, height: 1000 } as const
 export const INSPECT_UI_SIZE = { width: 300, height: 480 } as const
+export const INSPECT_UI_MIN_SIZE = { width: 300, height: 200 } as const
 
 export const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/
 

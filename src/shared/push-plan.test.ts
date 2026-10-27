@@ -429,7 +429,7 @@ describe("rule 10: after the response", () => {
       { nodeId: "1:2", keyId: K2, keyName: "checkout_pay_now", projectId: PROJECT_ID, src: src("Pay now") },
       { nodeId: "2:1", keyId: K1, keyName: "checkout_title", projectId: PROJECT_ID, src: src("Pay securely") },
     ])
-    expect(followUp.mainComponentLinkApplies).toEqual([{ nodeId: "9:9", keyId: K1, keyName: "checkout_title", projectId: PROJECT_ID, src: src("Pay securely") }])
+    expect(followUp.mainComponentLinkApplies).toEqual([{ nodeId: "I3:2;9:9", keyId: K1, keyName: "checkout_title", projectId: PROJECT_ID, src: src("Pay securely") }])
     expect(followUp.conflicts).toEqual([])
     expect(followUp.failures).toEqual([])
   })

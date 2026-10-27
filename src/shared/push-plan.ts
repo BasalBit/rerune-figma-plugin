@@ -78,7 +78,7 @@ export interface PushRequestChunk { items: PushItemWire[]; nodeIdsByRef: Map<str
 
 export interface PushFollowUp {
   linkApplies: LinkApplyItem[]
-  mainComponentLinkApplies: LinkApplyItem[]
+  mainComponentLinkApplies: LinkApplyItem[]   // nodeId = one inherited sublayer per main; main redirects the write (§7.6)
   conflicts: { ref: string; keyId: string; keyName: string; nodeIds: string[]; text: string; currentText: string }[]
   failures: { ref: string; reason: PushItemReason | null; message: string; keyId: string | null; keyName: string | null; nodeIds: string[] }[]
   quotaExceeded: boolean
@@ -644,7 +644,7 @@ export function planUnlinks(plan: PushPlan): string[] {
 export function pushFollowUp(input: { projectId: string; chunk: PushRequestChunk; results: FigmaPushResult[]; nodes: Map<string, ScannedNode> }): PushFollowUp {
   const followUp: PushFollowUp = { linkApplies: [], mainComponentLinkApplies: [], conflicts: [], failures: [], quotaExceeded: false }
   const items = new Map(input.chunk.items.map((item) => [item.client_ref, item]))
-  const mains = new Set<string>()
+  const mains = new Map<string, string>()
   for (const result of input.results) {
     const item = items.get(result.client_ref)
     const nodeIds = input.chunk.nodeIdsByRef.get(result.client_ref) ?? []
@@ -663,8 +663,10 @@ export function pushFollowUp(input: { projectId: string; chunk: PushRequestChunk
         if (node.linkState === "ok") {
           followUp.linkApplies.push({ nodeId: node.nodeId, ...entry })
         } else if (node.linkState === "inherited" && node.link !== null && !mains.has(node.link.nid)) {
-          mains.add(node.link.nid)
-          followUp.mainComponentLinkApplies.push({ nodeId: node.link.nid, ...entry })
+          // One representative sublayer per main: main redirects the write to the local main component's node
+          // (checking it carries its own link to this key) or reports remote_component, never writing the sublayer.
+          mains.set(node.link.nid, node.nodeId)
+          followUp.mainComponentLinkApplies.push({ nodeId: node.nodeId, ...entry })
         }
       }
     } else if (result.status === "conflict") {
@@ -691,7 +693,8 @@ export function pushFollowUp(input: { projectId: string; chunk: PushRequestChunk
     }
   }
   const direct = new Set(followUp.linkApplies.map((item) => item.nodeId))
-  followUp.mainComponentLinkApplies = followUp.mainComponentLinkApplies.filter((item) => !direct.has(item.nodeId))
+  const redirected = new Set([...mains].filter(([nid]) => direct.has(nid)).map(([, nodeId]) => nodeId))
+  followUp.mainComponentLinkApplies = followUp.mainComponentLinkApplies.filter((item) => !redirected.has(item.nodeId))
   return followUp
 }
 
