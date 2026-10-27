@@ -70,6 +70,9 @@ describe("layerRows", () => {
   it("builds Keep copied links and Unlink targets", () => {
     expect(keepCopiedItems(rows, PROJECT_ID)).toEqual([{ nodeId: "1:5", keyId: keyId(1), keyName: "checkout_pay_button", projectId: PROJECT_ID, src: src("Pay now") }])
     expect(unlinkableIds(rows)).toEqual(["1:1", "1:2", "1:4", "1:5", "1:6"])
+    const overridden = layerRows([linkedNode("I2:1;1:7", "Own text", { keyId: keyId(1), keyName: "x", syncedText: "Pay now", nid: "1:7", state: "inherited_overridden" })], PROJECT_ID, remoteMap)
+    expect(overridden[0].state).toBe("unlinked")
+    expect(unlinkableIds(overridden)).toEqual([])
   })
 })
 

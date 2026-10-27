@@ -30,11 +30,18 @@ export function remotePlainText(content: TranslationContent | null): string | nu
 
 // Link states that already name a key (or a broken link). "Create new key" records a pending create, and creates
 // come only from unlinked layers (none, inherited_overridden; §7.13 rule 2), so it is not offered for these: the
-// pending name would be dropped by the next scan and nothing would be created.
+// pending name would be dropped by the next scan and nothing would be created. They are also the only layers
+// Unlink writes: an inherited_overridden layer is shown and treated as "Not linked" (§7.6), and a tombstone on it
+// would stop it from inheriting once its override is removed (D44).
 export const LINKED_STATES: readonly LinkState[] = ["ok", "copied", "inherited", "invalid"]
 
 export function isLinkedForCreate(node: Pick<ScannedNode, "linkState">): boolean {
   return LINKED_STATES.includes(node.linkState)
+}
+
+// Layers the Link dialog's Unlink acts on (its label counts exactly these).
+export function unlinkTargets(nodes: readonly Pick<ScannedNode, "nodeId" | "linkState">[]): string[] {
+  return nodes.filter(isLinkedForCreate).map((node) => node.nodeId)
 }
 
 // Why "Create new key" is not available for these layers, or null when it is.

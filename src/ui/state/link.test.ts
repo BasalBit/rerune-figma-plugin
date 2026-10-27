@@ -13,6 +13,7 @@ import {
   remotePlainText,
   searchPrefill,
   sharedText,
+  unlinkTargets,
   STRUCTURED_NOTE,
 } from "./link"
 
@@ -57,6 +58,13 @@ describe("linkDecision", () => {
     const empty = linkDecision([scannedNode("1:1", "Pay now")], { ...KEY, main_content: null }, PROJECT_ID)
     expect(empty).toMatchObject({ kind: "direct", note: EMPTY_SOURCE_NOTE })
     expect(empty.kind === "direct" && empty.links[0].src).toBe(src(""))
+  })
+})
+
+describe("Unlink targets", () => {
+  it("are the linked layers only: unlinked and overridden instance text are not written (D44)", () => {
+    const nodes = (["none", "ok", "copied", "inherited", "inherited_overridden", "invalid"] as const).map((linkState, index) => scannedNode("1:" + index, "Pay now", { linkState }))
+    expect(unlinkTargets(nodes)).toEqual(["1:1", "1:2", "1:3", "1:5"])
   })
 })
 

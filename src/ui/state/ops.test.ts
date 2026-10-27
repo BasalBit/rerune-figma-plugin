@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { scannedNode } from "../../../test/fixtures"
 import { createUiBus, HandlerError, RequestTimeoutError } from "../bus"
-import { chunk, createScanRunner, groupErrors, layerCount, mainsFirst, runBatched, runOp, ScanCancelledError, singleFlight } from "./ops"
+import { chunk, createScanRunner, groupErrors, layerCount, mainsFirst, removeLinksBatched, runBatched, runOp, ScanCancelledError, singleFlight } from "./ops"
 import { fakeBusEnvironment } from "./test-fakes"
 
 const SKIPPED = { hidden: 0, locked: 0, empty: 0, numeric: 0, underscore: 0, languageCopy: 0, unavailable: 0 }
@@ -102,6 +102,19 @@ describe("runOp and runBatched", () => {
     const outcome = await pending
     expect(fake.posted.map((message) => (message as { nodeIds: string[] }).nodeIds)).toEqual([["1:0", "1:1"], ["1:2", "1:3"], ["1:4"]])
     expect(outcome).toEqual({ done: 4, errors: [{ nodeId: "1:2", code: "node_not_found", message: "gone" }] })
+  })
+
+  it("unlinks main components before instance sublayers across batches", async () => {
+    const fake = fakeBusEnvironment()
+    const bus = createUiBus(fake.environment)
+    const pending = removeLinksBatched(bus, ["I1:2;3:4;5:6", "I12:34;5:67", "5:67", "1:1"], 2)
+    for (let round = 0; round < 2; round++) {
+      await vi.advanceTimersByTimeAsync(0)
+      const message = fake.posted[round] as { requestId: string; nodeIds: string[] }
+      fake.deliver({ type: "op-result", requestId: message.requestId, ok: true, done: message.nodeIds.length, errors: [] })
+    }
+    expect(await pending).toEqual({ done: 4, errors: [] })
+    expect(fake.posted.map((message) => (message as { type: string; nodeIds: string[] }).nodeIds)).toEqual([["5:67", "1:1"], ["I12:34;5:67", "I1:2;3:4;5:6"]])
   })
 
   it("sends nothing for an empty list", async () => {

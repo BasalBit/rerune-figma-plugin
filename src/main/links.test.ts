@@ -292,6 +292,41 @@ describe("removeLinks (link-remove)", () => {
     expect(linkOf(b)).toBeNull()
   })
 
+  it("unlinks a main component before its instances, so no tombstone is left on an instance (D44)", async () => {
+    const { mainText, sublayer } = componentWithInstance()
+    const writes: string[] = []
+    const original = sublayer.setSharedPluginData
+    sublayer.setSharedPluginData = (namespace: string, key: string, value: string) => {
+      writes.push(key + "=" + value)
+      original(namespace, key, value)
+    }
+    expect(await removeLinks(["I12:34;5:67", "5:67"])).toEqual({ done: 2, errors: [] })
+    expect(linkOf(mainText)).toBeNull()
+    expect(writes).toEqual([])
+    expect(sublayer.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE)).toEqual([])
+    expect(sublayer.setRelaunchData).not.toHaveBeenCalled()
+    // Linking the main again links the instance again.
+    setLink(mainText, link("5:67"))
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches()).state).toBe("inherited")
+  })
+
+  it("writes nothing on layers that are already unlinked", async () => {
+    const plain = fakeText("1:1", "A")
+    const tombstoned = fakeText("1:2", "B")
+    setLink(tombstoned, LINK_TOMBSTONE)
+    onPage(figmaMock, [plain, tombstoned])
+    expect(await removeLinks(["1:1", "1:2"])).toEqual({ done: 2, errors: [] })
+    expect(plain.setRelaunchData).not.toHaveBeenCalled()
+    expect(tombstoned.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link)).toBe(LINK_TOMBSTONE)
+  })
+
+  it("still unlinks an inherited instance on its own with the tombstone (explicit unlink)", async () => {
+    const { mainText, sublayer } = componentWithInstance()
+    expect(await removeLinks(["I12:34;5:67"])).toEqual({ done: 1, errors: [] })
+    expect(sublayer.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link)).toBe(LINK_TOMBSTONE)
+    expect(linkOf(mainText)).toEqual(link("5:67"))
+  })
+
   it("yields between batches and handles more than ten nodes", async () => {
     const nodes = Array.from({ length: 23 }, (_, i) => {
       const node = fakeText("2:" + i, "x")

@@ -1,7 +1,7 @@
 import { DATA_KEYS, DATA_TOMBSTONE, PLUGIN_DATA_NAMESPACE, RELAUNCH_COMMAND, WRITE_YIELD_EVERY } from "../shared/constants"
 import type { LinkApplyItem, LinkState, NodeError, NodeLink } from "../shared/messages"
 import { nodeError } from "../shared/node-errors"
-import { createLink, linkStateOf, parseLink, parsePreviewRecord, relaunchDescription, serializeLink, type ParsedLink } from "../shared/plugin-data"
+import { createLink, linkStateOf, mainsFirstIds, parseLink, parsePreviewRecord, relaunchDescription, serializeLink, type ParsedLink } from "../shared/plugin-data"
 import { createNodeCaches, isInRemoteComponent, isTextNode, nearestComponentOf, overrideFlags, yieldToCanvas, type NodeCaches, type OverrideFlags } from "./node-utils"
 
 export interface OpOutcome { done: number; errors: NodeError[] }
@@ -178,23 +178,30 @@ export async function applyLinks(items: readonly LinkApplyItem[], now: number): 
   return { done, errors }
 }
 
+// link-remove (§7.6 Unlink). Main components go first: an instance that inherits the link then reads as unlinked
+// when it is reached and is left alone, instead of getting a tombstone that would stop it from inheriting a later
+// link of its main (D44). Layers whose link already parses as none (empty or tombstone) are not written.
 export async function removeLinks(nodeIds: readonly string[]): Promise<OpOutcome> {
   const errors: NodeError[] = []
   let done = 0
-  for (let index = 0; index < nodeIds.length; index++) {
+  const ordered = mainsFirstIds(nodeIds)
+  for (let index = 0; index < ordered.length; index++) {
     if (index > 0 && index % WRITE_YIELD_EVERY === 0) {
       await yieldToCanvas()
     }
-    const node = await getTextNode(nodeIds[index])
+    const nodeId = ordered[index]
+    const node = await getTextNode(nodeId)
     if (node === null) {
-      errors.push(nodeError(nodeIds[index], "node_not_found"))
+      errors.push(nodeError(nodeId, "node_not_found"))
       continue
     }
     try {
-      removeLink(node)
+      if (parseLink(node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link)).kind !== "none") {
+        removeLink(node)
+      }
       done++
     } catch {
-      errors.push(nodeError(nodeIds[index], "write_failed"))
+      errors.push(nodeError(nodeId, "write_failed"))
     }
   }
   return { done, errors }

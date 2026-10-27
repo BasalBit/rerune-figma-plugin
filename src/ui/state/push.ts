@@ -32,7 +32,7 @@ import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { styleFor, suggesterFor } from "./naming"
-import { mainsFirst, runBatched, type BatchOutcome } from "./ops"
+import { mainsFirst, removeLinksBatched, runBatched, type BatchOutcome } from "./ops"
 import { fetchTakenNames, fetchTextMatches, type TakenName } from "./remote"
 
 // Push screen orchestration (§7.13): E11 text and name lookups, the plan with explicit choices from the Link
@@ -387,7 +387,7 @@ export async function executePush(deps: PushDeps, plan: PushPlan, context: PlanC
   run.writeErrors.push(...links.errors)
   const unlinks = planUnlinks(plan)
   if (unlinks.length > 0) {
-    const removed = await runBatched(deps.bus, unlinks, (requestId, batch) => ({ type: "link-remove", requestId, nodeIds: batch }))
+    const removed = await removeLinksBatched(deps.bus, unlinks)
     run.unlinked = removed.done
     run.writeErrors.push(...removed.errors)
   }

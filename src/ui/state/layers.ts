@@ -5,6 +5,7 @@ import type { LinkApplyItem, ScannedNode } from "../../shared/messages"
 import { nodeText, type RemoteWithMaxLength } from "../../shared/push-plan"
 import { computeSyncState, layerText, type SyncState } from "../../shared/sync-state"
 import { utf16Length } from "../../shared/text"
+import { unlinkTargets } from "./link"
 import type { SkipCounts } from "./ops"
 
 // Layers screen model (§7.8, §7.10): sync state per layer, grouping by top-level frame, state filters and the
@@ -228,9 +229,10 @@ export function keepCopiedItems(rows: readonly LayerRow[], projectId: string): L
   return items
 }
 
-// Layers that carry link data of any kind (Unlink writes "" and the tombstone where inherited data shows).
+// Layers that name a key or carry a broken link (Unlink writes "" and the tombstone where inherited data shows).
+// inherited_overridden rows read "Not linked" and are left alone (§7.6, D44).
 export function unlinkableIds(rows: readonly LayerRow[]): string[] {
-  return rows.filter((row) => row.node.linkState !== "none").map((row) => row.node.nodeId)
+  return unlinkTargets(rows.map((row) => row.node))
 }
 
 export function linkedCount(rows: readonly LayerRow[]): number {

@@ -18,11 +18,12 @@ import {
   pendingNamesExcept,
   searchPrefill,
   sharedText,
+  unlinkTargets,
   type LinkCandidate,
   type LinkDecision,
 } from "../state/link"
 import { checkNewKeyName, suggesterFor } from "../state/naming"
-import { groupErrors, mainsFirst, runBatched, type ErrorGroup } from "../state/ops"
+import { groupErrors, mainsFirst, removeLinksBatched, runBatched, type ErrorGroup } from "../state/ops"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // Link dialog (§7.8, §7.11): exact-text matches (E11) first, search (E10, debounced), "Create new key" with a
@@ -218,7 +219,7 @@ export function LinkDialog(props: LinkDialogProps) {
     setBusy(true)
     setError(null)
     try {
-      const removed = await runBatched(props.bus, nodeIds, (requestId, batch) => ({ type: "link-remove", requestId, nodeIds: batch }))
+      const removed = await removeLinksBatched(props.bus, unlinkTargets(props.nodes))
       if (removed.errors.length === 0) {
         props.onClose(true)
         return
@@ -237,7 +238,7 @@ export function LinkDialog(props: LinkDialogProps) {
   }
 
   const single = props.nodes.length === 1 ? props.nodes[0] : null
-  const linked = props.nodes.filter((node) => node.linkState !== "none")
+  const linked = unlinkTargets(props.nodes)
   const createBlocked = createBlockedReason(props.nodes)
   const currentKey = single !== null && single.link !== null ? keyNameOf(single, props.state.remote) : null
 

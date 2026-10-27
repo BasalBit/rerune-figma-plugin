@@ -25,7 +25,7 @@ import {
   type LayerRow,
   type StateFilter,
 } from "../state/layers"
-import { groupErrors, mainsFirst, runBatched, type ErrorGroup } from "../state/ops"
+import { groupErrors, mainsFirst, removeLinksBatched, runBatched, type ErrorGroup } from "../state/ops"
 import { fetchTextMatches } from "../state/remote"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
@@ -139,7 +139,7 @@ export function LayersScreen(props: LayersScreenProps) {
   const unlink = () =>
     run("unlink", async () => {
       const ids = unlinkableIds(checkedRows)
-      const written = await runBatched(props.bus, ids, (requestId, batch) => ({ type: "link-remove", requestId, nodeIds: batch }))
+      const written = await removeLinksBatched(props.bus, ids)
       return { message: "Unlinked " + plural(written.done, "layer", "layers") + ".", tone: "info", lists: [], errors: groupErrors(written.errors) }
     })
 

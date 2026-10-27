@@ -1,7 +1,7 @@
 import { REQUEST_IDLE_TIMEOUT_MS } from "../../shared/constants"
 import type { MainToUi, MainToUiOf, NodeError, RequestId, ScannedNode, Scope, UiToMain } from "../../shared/messages"
 import { isWarning } from "../../shared/node-errors"
-import { mainsFirst } from "../../shared/plugin-data"
+import { mainsFirst, mainsFirstIds } from "../../shared/plugin-data"
 import { createIdleTimeout, HandlerError, RequestTimeoutError, type UiBus } from "../bus"
 
 // Request/response helpers over the UI bus: scans, document writes (op-result) and batching.
@@ -162,6 +162,12 @@ export async function runBatched<T>(
     outcome.errors.push(...result.errors)
   }
   return outcome
+}
+
+// link-remove in batches, main components first across batches (main orders each batch the same way), so an
+// instance that inherits a link being removed is reached after its main and left alone (D44).
+export function removeLinksBatched(bus: Pick<UiBus, "request">, nodeIds: readonly string[], size: number = WRITE_BATCH_SIZE): Promise<BatchOutcome> {
+  return runBatched(bus, mainsFirstIds(nodeIds), (requestId, batch) => ({ type: "link-remove", requestId, nodeIds: batch }), size)
 }
 
 export interface ErrorGroup { code: NodeError["code"]; message: string; nodeIds: string[]; warning: boolean }

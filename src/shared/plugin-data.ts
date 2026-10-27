@@ -165,6 +165,11 @@ export function mainsFirst<T extends { nodeId: string }>(items: readonly T[]): T
     .map((entry) => entry.item)
 }
 
+// mainsFirst for plain node ids (link-remove).
+export function mainsFirstIds(nodeIds: readonly string[]): string[] {
+  return mainsFirst(nodeIds.map((nodeId) => ({ nodeId }))).map((entry) => entry.nodeId)
+}
+
 export function recordOwnership(nodeId: string, nid: string, ownPluginDataOverride: boolean | null): RecordOwnership {
   if (nid === nodeId) {
     return "own"
