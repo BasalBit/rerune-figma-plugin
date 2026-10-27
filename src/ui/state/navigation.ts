@@ -43,6 +43,11 @@ export function initialView(auth: StoredAuth | null, context: NavContext): AppVi
   return { screen: homeScreen(auth !== null, context), notice: null, signedIn: null }
 }
 
+// Nothing is loaded with a fresh token until the designer confirms "Signed in as {email}" (§3.12, D34).
+export function awaitingSignInConfirmation(view: Pick<AppView, "screen">): boolean {
+  return view.screen === "signed-in"
+}
+
 export function isWorkspaceScreen(screen: Screen): screen is WorkspaceScreen {
   return (WORKSPACE_SCREENS as readonly Screen[]).includes(screen)
 }
@@ -64,7 +69,8 @@ export function navigate(view: AppView, event: NavEvent, context: NavContext): A
     case "project-connected":
       return { screen: "layers", notice: null, signedIn: null }
     case "change-project":
-      return { ...view, screen: "project" }
+      // "Signed in as" must be answered first (D34): a project the new account can't open must not skip it.
+      return view.screen === "signed-in" ? view : { ...view, screen: "project" }
     case "open":
       if (event.screen !== "diagnostics" && event.screen !== "settings" && connectedSettings(context) === null) {
         return { ...view, screen: "project" }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { PROJECT_ID } from "../../../test/fixtures"
 import type { StoredAuth } from "../../shared/messages"
 import { newFileSettings } from "../../shared/plugin-data"
-import { connectedSettings, homeScreen, initialView, isWorkspaceScreen, navigate, type NavContext } from "./navigation"
+import { awaitingSignInConfirmation, connectedSettings, homeScreen, initialView, isWorkspaceScreen, navigate, type NavContext } from "./navigation"
 import { fullName, SESSION_ENDED_NOTICE, usableAuth } from "./session"
 
 const API = "http://localhost:8080"
@@ -29,6 +29,18 @@ describe("navigation", () => {
     expect(view).toEqual({ screen: "signed-in", notice: null, signedIn: AUTH })
     view = navigate(view, { type: "continue" }, connected)
     expect(view).toEqual({ screen: "layers", notice: null, signedIn: null })
+  })
+
+  it("keeps Signed in as when the file's project can't be opened by the new account (D34)", () => {
+    let view = navigate(initialView(null, connected), { type: "start-sign-in" }, connected)
+    view = navigate(view, { type: "pairing-approved", auth: AUTH }, connected)
+    expect(awaitingSignInConfirmation(view)).toBe(true)
+    view = navigate(view, { type: "change-project" }, connected)
+    expect(view).toEqual({ screen: "signed-in", notice: null, signedIn: AUTH })
+    view = navigate(view, { type: "continue" }, connected)
+    expect(awaitingSignInConfirmation(view)).toBe(false)
+    // The project loads now; a 403/404 then opens the Project screen.
+    expect(navigate(view, { type: "change-project" }, connected).screen).toBe("project")
   })
 
   it("returns to Sign in with a notice when the session ends", () => {

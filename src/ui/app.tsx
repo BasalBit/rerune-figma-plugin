@@ -22,7 +22,17 @@ import { PushScreen } from "./screens/push"
 import { SettingsScreen } from "./screens/settings"
 import { SignInScreen } from "./screens/sign-in"
 import { SignedInScreen } from "./screens/signed-in"
-import { connectedSettings, initialView, isWorkspaceScreen, navigate, type AppView, type NavContext, type NavEvent, type Screen } from "./state/navigation"
+import {
+  awaitingSignInConfirmation,
+  connectedSettings,
+  initialView,
+  isWorkspaceScreen,
+  navigate,
+  type AppView,
+  type NavContext,
+  type NavEvent,
+  type Screen,
+} from "./state/navigation"
 import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, singleFlight, type ErrorGroup } from "./state/ops"
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
 import { previewStatus, resetOutcome } from "./state/preview"
@@ -216,11 +226,14 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   }, [])
 
   const usable = connectedSettings({ apiBase: init.apiBase, settings })
+  // The file's project (E9) loads only after "Signed in as" is confirmed: a 403/404 for the new account then
+  // leads to the Project screen instead of skipping the confirmation (D34).
+  const confirming = awaitingSignInConfirmation(view)
   useEffect(() => {
-    if (auth !== null && usable !== null) {
+    if (auth !== null && usable !== null && !confirming) {
       ensureProject(usable.projectId)
     }
-  }, [auth, usable?.projectId])
+  }, [auth, usable?.projectId, confirming])
 
   // First look at the workspace: scan the selection (relaunch "open" lands here too, §7.4).
   useEffect(() => {
