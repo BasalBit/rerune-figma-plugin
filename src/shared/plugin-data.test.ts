@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { LINK_TOMBSTONE } from "./constants"
 import type { FileSettings } from "./messages"
 import {
+  mainsFirst,
   classifyLink,
   createLink,
   isOwnLangCopy,
@@ -118,6 +119,13 @@ describe("classifyLink (Appendix A.9)", () => {
     expect(recordOwnership("I12:34;5:67", "5:67", null)).toBe("inherited")
     expect(recordOwnership("I12:34;5:67", "5:67", true)).toBe("copied")
     expect(recordOwnership("5:68", "5:67", null)).toBe("copied")
+  })
+})
+
+describe("mainsFirst (write order)", () => {
+  it("writes main components, then instance sublayers from the shallowest nesting level down", () => {
+    const order = mainsFirst([{ nodeId: "I1:2;3:4;5:6" }, { nodeId: "I9:1;5:6" }, { nodeId: "5:6" }, { nodeId: "I3:4;5:6" }, { nodeId: "7:8" }])
+    expect(order.map((item) => item.nodeId)).toEqual(["5:6", "7:8", "I9:1;5:6", "I3:4;5:6", "I1:2;3:4;5:6"])
   })
 })
 

@@ -1,11 +1,13 @@
-import { DATA_KEYS, PLUGIN_DATA_NAMESPACE } from "../shared/constants"
+import { DATA_KEYS, PLUGIN_DATA_NAMESPACE, SCAN_YIELD_EVERY_CHILDREN, SCAN_YIELD_EVERY_ROOTS } from "../shared/constants"
 import { isOwnLangCopy } from "../shared/plugin-data"
 
 export type OverrideList = ReadonlyArray<{ readonly id: string; readonly overriddenFields: ReadonlyArray<string> }>
 
-// Per-scan caches (§7.9): instance overrides, main-component names, hidden/locked ancestors, language copies.
+// Per-scan caches (§7.9): instance overrides, main-component names, hidden/locked ancestors, language copies,
+// and node lookups by id (the nodes instance sublayers take their text from).
 export interface NodeCaches {
   overrides: Map<string, OverrideList | null>
+  nodes: Map<string, Promise<BaseNode | null>>
   componentNames: Map<string, Promise<string | null>>
   hidden: Map<string, boolean>
   locked: Map<string, boolean>
@@ -21,7 +23,41 @@ const TOP_FRAME_TYPES = ["FRAME", "COMPONENT", "COMPONENT_SET", "INSTANCE"]
 const PARENT_NAMES_MAX = 5
 
 export function createNodeCaches(): NodeCaches {
-  return { overrides: new Map(), componentNames: new Map(), hidden: new Map(), locked: new Map(), langCopy: new Map() }
+  return { overrides: new Map(), componentNames: new Map(), hidden: new Map(), locked: new Map(), langCopy: new Map(), nodes: new Map() }
+}
+
+// figma.getNodeByIdAsync, cached per id for one scan or operation; a failed lookup is null.
+export function lookupNode(id: string, caches: NodeCaches): Promise<BaseNode | null> {
+  let pending = caches.nodes.get(id)
+  if (pending === undefined) {
+    pending = figma.getNodeByIdAsync(id).then(
+      (node) => (node === null || node.removed ? null : node),
+      () => null,
+    )
+    caches.nodes.set(id, pending)
+  }
+  return pending
+}
+
+let invisibleChildrenDepth = 0
+let savedSkipInvisible = true
+
+// Runs `work` with figma.skipInvisibleInstanceChildren = false (§7.14 reset, §7.15) and restores the value seen
+// by the outermost caller when the last overlapping run ends, so two overlapping resets cannot leave it false.
+export async function withInvisibleInstanceChildren<T>(work: () => Promise<T>): Promise<T> {
+  if (invisibleChildrenDepth === 0) {
+    savedSkipInvisible = figma.skipInvisibleInstanceChildren
+  }
+  invisibleChildrenDepth++
+  figma.skipInvisibleInstanceChildren = false
+  try {
+    return await work()
+  } finally {
+    invisibleChildrenDepth--
+    if (invisibleChildrenDepth === 0) {
+      figma.skipInvisibleInstanceChildren = savedSkipInvisible
+    }
+  }
 }
 
 export function yieldToCanvas(): Promise<void> {
@@ -230,7 +266,8 @@ export function isBoundToComponentProperty(node: TextNode): boolean {
   return references !== null && references !== undefined && !!references.characters
 }
 
-// TEXT nodes under the given roots (roots included), one findAllWithCriteria per child with yields (§7.9).
+// TEXT nodes under the given roots (roots included), one findAllWithCriteria per child, yielding every 25
+// roots and every 10 children of a root (§7.9).
 export async function collectTextNodes(roots: readonly BaseNode[], isStale: () => boolean = () => false): Promise<TextNode[] | null> {
   const seen = new Set<string>()
   const result: TextNode[] = []
@@ -240,7 +277,14 @@ export async function collectTextNodes(roots: readonly BaseNode[], isStale: () =
       result.push(node as TextNode)
     }
   }
-  for (const root of roots) {
+  for (let r = 0; r < roots.length; r++) {
+    if (r > 0 && r % SCAN_YIELD_EVERY_ROOTS === 0) {
+      await yieldToCanvas()
+      if (isStale()) {
+        return null
+      }
+    }
+    const root = roots[r]
     if (root.removed) {
       continue
     }
@@ -250,7 +294,7 @@ export async function collectTextNodes(roots: readonly BaseNode[], isStale: () =
     }
     const children = (root as BaseNode & ChildrenMixin).children
     for (let index = 0; index < children.length; index++) {
-      if (index > 0 && index % 10 === 0) {
+      if (index > 0 && index % SCAN_YIELD_EVERY_CHILDREN === 0) {
         await yieldToCanvas()
         if (isStale()) {
           return null

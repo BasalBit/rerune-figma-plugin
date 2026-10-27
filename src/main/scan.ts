@@ -1,6 +1,4 @@
 import {
-  DATA_KEYS,
-  PLUGIN_DATA_NAMESPACE,
   SCAN_BATCH_SIZE,
   SCAN_MAX_NODES,
   SCAN_YIELD_EVERY_CHILDREN,
@@ -8,7 +6,7 @@ import {
   SCAN_YIELD_EVERY_TEXTS,
 } from "../shared/constants"
 import type { MainToUi, MainToUiOf, RequestId, ScannedNode, Scope } from "../shared/messages"
-import { ownPreviewRecord, previewInfoOf, type PreviewRecord } from "../shared/plugin-data"
+import { previewInfoOf } from "../shared/plugin-data"
 import { isNumericOnly, normalizeDesignText } from "../shared/text"
 import { readLinkInfo } from "./links"
 import {
@@ -26,6 +24,7 @@ import {
   type NodeCaches,
 } from "./node-utils"
 import { readFileSettings } from "./settings"
+import { shownPreview, type ShownPreview } from "./shown-preview"
 
 export type SkipCounts = MainToUiOf<"scan-done">["skipped"]
 export type SkipReason = keyof SkipCounts
@@ -40,10 +39,6 @@ export function scanFilters(): ScanFilters {
   return { ignoreUnderscoreLayers: settings?.ignoreUnderscoreLayers ?? true, includeLocked: settings?.includeLocked ?? false }
 }
 
-function readPreview(node: TextNode): PreviewRecord | null {
-  return ownPreviewRecord(node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview), node.id)
-}
-
 function mixedStylesOf(node: TextNode, characters: string): boolean {
   if (characters.length === 0) {
     return false
@@ -51,8 +46,11 @@ function mixedStylesOf(node: TextNode, characters: string): boolean {
   return node.getStyledTextSegments(["fontName", "fontSize", "fills"]).length > 1
 }
 
-// Maps a TEXT node to the wire shape (§7.5). `characters` is read once by the caller and passed in.
-export async function describeTextNode(node: TextNode, caches: NodeCaches, characters: string = node.characters, preview: PreviewRecord | null = readPreview(node)): Promise<ScannedNode> {
+// Maps a TEXT node to the wire shape (§7.5). `characters` is read once by the caller and passed in. `shown` is
+// the preview the node shows: its own record, or the record of the main component its instance text follows
+// (originalCharacters is then the main's original text, so sync and push never see preview text, D23).
+export async function describeTextNode(node: TextNode, caches: NodeCaches, characters: string = node.characters, shown?: ShownPreview | null): Promise<ScannedNode> {
+  const preview = shown === undefined ? await shownPreview(node, caches) : shown
   const info = readLinkInfo(node, caches)
   const page = pageOf(node)
   const frame = topFrameOf(node)
@@ -61,7 +59,7 @@ export async function describeTextNode(node: TextNode, caches: NodeCaches, chara
     nodeId: node.id,
     name: node.name,
     characters,
-    originalCharacters: preview === null ? null : preview.characters,
+    originalCharacters: preview === null ? null : preview.record.characters,
     pageId: page === null ? "" : page.id,
     pageName: page === null ? "" : page.name,
     frameId: frame === null ? null : frame.id,
@@ -71,7 +69,7 @@ export async function describeTextNode(node: TextNode, caches: NodeCaches, chara
     isInstanceSublayer: node.id.charAt(0) === "I",
     link: info.link,
     linkState: info.state,
-    preview: preview === null ? null : previewInfoOf(preview),
+    preview: preview === null ? null : previewInfoOf(preview.record),
     hasMissingFont: node.hasMissingFont === true,
     mixedStyles: mixedStylesOf(node, characters),
     boundToComponentProperty: isBoundToComponentProperty(node),
@@ -95,8 +93,8 @@ export async function scanTextNode(node: TextNode, caches: NodeCaches, filters: 
     return "locked"
   }
   const characters = node.characters
-  const preview = readPreview(node)
-  const text = normalizeDesignText(preview === null ? characters : preview.characters)
+  const preview = await shownPreview(node, caches)
+  const text = normalizeDesignText(preview === null ? characters : preview.record.characters)
   if (text === "") {
     return "empty"
   }
@@ -199,7 +197,10 @@ export function createScanner(send: (message: MainToUi) => void): Scanner {
             if (child.type === "TEXT") {
               texts.push(child)
             } else if ("findAllWithCriteria" in child) {
-              texts.push(...child.findAllWithCriteria({ types: ["TEXT"] }))
+              // No spread: a large result would exceed the engine's argument limit and drop the whole root.
+              for (const text of child.findAllWithCriteria({ types: ["TEXT"] })) {
+                texts.push(text)
+              }
             }
           }
         } catch {

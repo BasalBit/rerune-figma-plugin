@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   createNode,
   defaultStyle,
@@ -7,7 +7,9 @@ import {
   fakeGroup,
   fakeInstance,
   fakeSection,
+  fakePage,
   fakeText,
+  followText,
   installFigma,
   onPage,
   uninstallFigma,
@@ -19,14 +21,18 @@ import { DATA_KEYS, PLUGIN_DATA_NAMESPACE, SCAN_MAX_NODES } from "../shared/cons
 import { src } from "../shared/hash"
 import type { MainToUi, MainToUiOf, NodeLink, ScannedNode } from "../shared/messages"
 import { newFileSettings, serializeFileSettings, serializeLangCopy, serializeLink, serializePreviewRecord, type PreviewRecord } from "../shared/plugin-data"
+import { buildPushPlan, canPush, planToRequests } from "../shared/push-plan"
+import { clearFontCache } from "./fonts"
 import { createNodeCaches } from "./node-utils"
 import { createScanner, describeTextNode, emptySkipCounts, scanTextNode } from "./scan"
+import { applyPreview } from "./text-write"
 
 let figmaMock: FigmaMock
 let messages: MainToUi[]
 
 beforeEach(() => {
   figmaMock = installFigma()
+  clearFontCache()
   messages = []
 })
 
@@ -133,6 +139,74 @@ describe("describeTextNode", () => {
     expect(copyNode.preview).toBeNull()
   })
 
+  it("reports instance text that follows a previewed main component as previewing, with the main's original text", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    mainText.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink(link("5:67")))
+    figmaMock.root.appendChild(fakePage("0:2", "Components", [fakeComponent("5:1", "Button", [mainText])]))
+    const inherits = fakeText("I12:34;5:67", "Pay now")
+    inherits.inheritFrom = mainText
+    const own = fakeText("I13:1;5:67", "Pay now")
+    const overridden = fakeText("I14:1;5:67", "Pay securely")
+    const first = fakeInstance("12:34", "Button", [inherits], { overrides: [] })
+    const second = fakeInstance("13:1", "Button", [own], { overrides: [] })
+    followText(inherits, mainText, first)
+    followText(own, mainText, second)
+    onPage(figmaMock, [first, second, fakeInstance("14:1", "Button", [overridden], { overrides: [{ id: "I14:1;5:67", overriddenFields: ["characters"] }] })])
+    await applyPreview({ lang: "de", source: "draft", variationOptionId: null }, [{ nodeId: "5:67", text: "Jetzt zahlen" }], 99)
+
+    // Plugin data inherited from the main (link and record show through).
+    const viaPluginData = await describeTextNode(inherits as unknown as TextNode, createNodeCaches())
+    expect(viaPluginData).toMatchObject({
+      characters: "Jetzt zahlen",
+      originalCharacters: "Pay now",
+      linkState: "inherited",
+      preview: { lang: "de", source: "draft", variationOptionId: null, appliedAt: 99 },
+    })
+    // No plugin data shows through: found through the node the instance takes its text from.
+    const viaMain = await describeTextNode(own as unknown as TextNode, createNodeCaches())
+    expect(viaMain).toMatchObject({ characters: "Jetzt zahlen", originalCharacters: "Pay now", linkState: "none", preview: { lang: "de" } })
+    // An instance with its own text does not show the main's preview.
+    const ownText = await describeTextNode(overridden as unknown as TextNode, createNodeCaches())
+    expect(ownText).toMatchObject({ characters: "Pay securely", originalCharacters: null, preview: null })
+  })
+
+  it("never offers instance text that shows a main component's preview for push (D23)", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    mainText.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink(link("5:67")))
+    figmaMock.root.appendChild(fakePage("0:2", "Components", [fakeComponent("5:1", "Button", [mainText])]))
+    const inherits = fakeText("I12:34;5:67", "Pay now")
+    inherits.inheritFrom = mainText
+    const plain = fakeText("I13:1;5:67", "Pay now")
+    const first = fakeInstance("12:34", "Button", [inherits], { overrides: [] })
+    const second = fakeInstance("13:1", "Button", [plain], { overrides: [] })
+    followText(inherits, mainText, first)
+    followText(plain, mainText, second)
+    onPage(figmaMock, [fakeFrame("10:1", "Checkout", [first, second])])
+    await applyPreview({ lang: "de", source: "draft", variationOptionId: null }, [{ nodeId: "5:67", text: "Jetzt zahlen" }], 99)
+
+    const caches = createNodeCaches()
+    const nodes = [
+      await describeTextNode(inherits as unknown as TextNode, caches),
+      await describeTextNode(plain as unknown as TextNode, caches),
+    ]
+    const plan = buildPushPlan({
+      projectId: PROJECT_ID,
+      scope: "selection",
+      nodes,
+      remote: new Map([[keyId(1), { found: true, key: "checkout_pay_button", type: "key", enabled: true, structured: false, mainText: "Pay now", maxLength: null }]]),
+      textMatches: new Map(),
+      groupIdenticalTexts: true,
+      suggestName: () => "checkout_pay_now",
+    })
+    expect(plan.blockedByPreview).toEqual(["I12:34;5:67", "I13:1;5:67"])
+    expect(canPush(plan)).toBe(false)
+    expect(plan.updates).toEqual([])
+    expect(plan.unchanged).toBe(1)
+    expect(plan.creates.map((create) => create.text)).toEqual(["Pay now"])
+    const texts = planToRequests({ ...plan, blockedByPreview: [] }).flatMap((chunk) => chunk.items.map((item) => item.text))
+    expect(texts).not.toContain("Jetzt zahlen")
+  })
+
   it("flags mixed styles, missing fonts and bindings", async () => {
     const node = fakeText("1:1", "Pay now", {
       hasMissingFont: true,
@@ -231,6 +305,25 @@ describe("createScanner", () => {
     expect(sizes).toEqual([100, 100, 50])
     expect(messages.some((message) => message.type === "scan-progress")).toBe(true)
     expect(done()).toMatchObject({ total: 250, truncated: false })
+  })
+
+  it("collects a child's text layers without spreading them as call arguments", async () => {
+    // Spread calls are capped (QuickJS: 65,535 arguments; V8 overflows its stack); a big result must not drop the root.
+    const text = lightText("3:1", "Pay now")
+    const many = new Array<FakeNode>(130000).fill(text)
+    const list = createNode("FRAME", "2:1", "Huge list", [], { findAllWithCriteria: () => many })
+    onPage(figmaMock, [fakeFrame("1:1", "Screen", [list])])
+    const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void) => {
+      void Promise.resolve().then(callback)
+      return 0
+    }) as unknown as typeof setTimeout)
+    try {
+      await createScanner((message) => messages.push(message)).start("r1", "page")
+    } finally {
+      timers.mockRestore()
+    }
+    expect(done()).toMatchObject({ total: 1, skipped: emptySkipCounts() })
+    expect(batches().map((node) => node.nodeId)).toEqual(["3:1"])
   })
 
   it("skips a node removed between batches (unavailable) and finishes", async () => {

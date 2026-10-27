@@ -1,8 +1,8 @@
 import { DATA_KEYS, DATA_TOMBSTONE, PLUGIN_DATA_NAMESPACE, RELAUNCH_COMMAND, WRITE_YIELD_EVERY } from "../shared/constants"
 import type { LinkApplyItem, LinkState, NodeError, NodeLink } from "../shared/messages"
 import { nodeError } from "../shared/node-errors"
-import { createLink, linkStateOf, parseLink, relaunchDescription, serializeLink, type ParsedLink } from "../shared/plugin-data"
-import { createNodeCaches, isInRemoteComponent, isTextNode, nearestComponentOf, overrideFlags, yieldToCanvas, type NodeCaches } from "./node-utils"
+import { createLink, linkStateOf, parseLink, parsePreviewRecord, relaunchDescription, serializeLink, type ParsedLink } from "../shared/plugin-data"
+import { createNodeCaches, isInRemoteComponent, isTextNode, nearestComponentOf, overrideFlags, yieldToCanvas, type NodeCaches, type OverrideFlags } from "./node-utils"
 
 export interface OpOutcome { done: number; errors: NodeError[] }
 
@@ -14,9 +14,26 @@ export interface LinkInfo {
   textOverridden: boolean
 }
 
+// D44 inputs for classifying a node's link. While an instance sublayer shows its own preview, the preview write
+// itself created a `characters` override (and Figma may list the record as a `pluginData` override), so the link
+// is classified with the text-override state stored in the record and, for pluginData, the id-pattern fallback.
+// Otherwise every previewed library or component instance would read as inherited_overridden (or copied) until
+// reset: no re-preview in another language, "Not linked" in Layers.
+export function classificationFlags(node: BaseNode, caches: NodeCaches): OverrideFlags {
+  const flags = overrideFlags(node, caches)
+  if (node.id.charAt(0) !== "I") {
+    return flags
+  }
+  const record = parsePreviewRecord(node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview))
+  if (record === null || record.nid !== node.id) {
+    return flags
+  }
+  return { ownPluginDataOverride: flags.ownPluginDataOverride === true ? null : flags.ownPluginDataOverride, textOverridden: record.textOverridden }
+}
+
 export function readLinkInfo(node: BaseNode, caches: NodeCaches): LinkInfo {
   const parsed = parseLink(node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link))
-  const flags = overrideFlags(node, caches)
+  const flags = classificationFlags(node, caches)
   return {
     parsed,
     link: parsed.kind === "link" ? parsed.link : null,

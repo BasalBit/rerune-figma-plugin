@@ -146,6 +146,20 @@ export function linkStateOf(parsed: ParsedLink, nodeId: string, ownPluginDataOve
   return classifyLink(nodeId, parsed.link.nid, ownPluginDataOverride, textOverridden)
 }
 
+function instanceDepth(nodeId: string): number {
+  return nodeId.charAt(0) === "I" ? nodeId.split(";").length - 1 : 0
+}
+
+// Write order for canvas batches (§7.14 apply step 2): main components first, then instance sublayers from the
+// shallowest nesting level down, so the node an instance takes its text from is always written before the
+// instance itself. Stable within a level.
+export function mainsFirst<T extends { nodeId: string }>(items: readonly T[]): T[] {
+  return items
+    .map((item, index) => ({ item, index, depth: instanceDepth(item.nodeId) }))
+    .sort((a, b) => a.depth - b.depth || a.index - b.index)
+    .map((entry) => entry.item)
+}
+
 export function recordOwnership(nodeId: string, nid: string, ownPluginDataOverride: boolean | null): RecordOwnership {
   if (nid === nodeId) {
     return "own"

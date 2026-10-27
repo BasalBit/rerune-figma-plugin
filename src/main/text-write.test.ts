@@ -4,7 +4,9 @@ import {
   fakeComponent,
   fakeFrame,
   fakeInstance,
+  fakePage,
   fakeText,
+  followText,
   installFigma,
   onPage,
   uninstallFigma,
@@ -133,7 +135,9 @@ describe("preview-apply (§7.14 apply)", () => {
     const component = fakeComponent("5:1", "Button", [mainText])
     const sublayer = fakeText("I12:34;5:67", "Pay now")
     sublayer.inheritFrom = mainText
-    onPage(figmaMock, [component, fakeFrame("10:1", "Checkout", [fakeInstance("12:34", "Button", [sublayer], { overrides: [] })])])
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [component, fakeFrame("10:1", "Checkout", [instance])])
     const outcome = await applyPreview(DE, [
       { nodeId: "I12:34;5:67", text: "Jetzt zahlen" },
       { nodeId: "5:67", text: "Jetzt zahlen" },
@@ -141,7 +145,62 @@ describe("preview-apply (§7.14 apply)", () => {
     expect(outcome).toEqual({ done: 2, errors: [] })
     expect(record(mainText)?.nid).toBe("5:67")
     expect(sublayer.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE)).toEqual([])
+    expect(sublayer.characters).toBe("Jetzt zahlen")
+    expect(instance.overrides).toEqual([])
+  })
+
+  it("skips instance text that follows the previewed main even when the sublayer has plugin data of its own", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
+    sublayer.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink({ ...link("I12:34;5:67", "Pay now"), id: keyId(2) }))
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [{ id: "I12:34;5:67", overriddenFields: ["pluginData"] }] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [fakeComponent("5:1", "Button", [mainText]), instance])
+    const outcome = await applyPreview(DE, [
+      { nodeId: "I12:34;5:67", text: "Bezahlen" },
+      { nodeId: "5:67", text: "Jetzt zahlen" },
+    ], 1)
+    expect(outcome).toEqual({ done: 2, errors: [] })
+    expect(record(sublayer)).toBeNull()
+    expect(sublayer.characters).toBe("Jetzt zahlen")
+
+    expect(await resetPreview("page", undefined, undefined)).toEqual({ done: 1, errors: [] })
+    expect(mainText.characters).toBe("Pay now")
     expect(sublayer.characters).toBe("Pay now")
+    expect(instance.overrides).toEqual([{ id: "I12:34;5:67", overriddenFields: ["pluginData"] }])
+  })
+
+  it("skips instance text that follows a previewed main whose record does not show through", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [fakeComponent("5:1", "Button", [mainText]), instance])
+    await applyPreview(DE, [{ nodeId: "5:67", text: "Jetzt zahlen" }], 1)
+    const outcome = await applyPreview(DE, [{ nodeId: "I12:34;5:67", text: "Jetzt zahlen" }], 2)
+    expect(outcome).toEqual({ done: 1, errors: [] })
+    expect(sublayer.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview)).toBe("")
+    expect(instance.overrides).toEqual([])
+  })
+
+  it("previews a nested instance level before the instances that follow it", async () => {
+    const mainText = fakeText("5:6", "Pay now")
+    const nested = fakeText("I3:4;5:6", "Pay now")
+    const nestedInstance = fakeInstance("3:4", "Button", [nested], { overrides: [] })
+    followText(nested, mainText, nestedInstance)
+    const outer = fakeText("I1:2;3:4;5:6", "Pay now")
+    const outerInstance = fakeInstance("1:2", "Card", [outer], { overrides: [] })
+    followText(outer, nested, outerInstance)
+    onPage(figmaMock, [fakeComponent("5:1", "Button", [mainText]), fakeComponent("3:1", "Card", [nestedInstance]), outerInstance])
+    const outcome = await applyPreview(DE, [
+      { nodeId: "I1:2;3:4;5:6", text: "Jetzt zahlen" },
+      { nodeId: "I3:4;5:6", text: "Jetzt zahlen" },
+    ], 1)
+    expect(outcome).toEqual({ done: 2, errors: [] })
+    expect(record(nested)).toMatchObject({ nid: "I3:4;5:6", characters: "Pay now" })
+    expect(record(outer)).toBeNull()
+    expect(outer.characters).toBe("Jetzt zahlen")
+    expect(outerInstance.overrides).toEqual([])
   })
 
   it("replaces a copied record with the node's own original", async () => {
@@ -287,9 +346,11 @@ describe("preview-reset (§7.14 reset)", () => {
   it("leaves inherited records alone and restores the main component", async () => {
     const mainText = fakeText("5:67", "Pay now")
     const component = fakeComponent("5:1", "Button", [mainText])
-    const sublayer = fakeText("I12:34;5:67", "Jetzt zahlen")
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
     sublayer.inheritFrom = mainText
-    onPage(figmaMock, [fakeFrame("10:1", "Checkout", [fakeInstance("12:34", "Button", [sublayer], { overrides: [] })]), component])
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [fakeFrame("10:1", "Checkout", [instance]), component])
     await previewed(mainText)
     const writes: string[] = []
     const original = sublayer.setSharedPluginData
@@ -297,11 +358,59 @@ describe("preview-reset (§7.14 reset)", () => {
       writes.push(key)
       original(namespace, key, value)
     }
+    expect(sublayer.characters).toBe("Jetzt zahlen")
     const outcome = await resetPreview("page", undefined, undefined)
     expect(outcome).toEqual({ done: 1, errors: [] })
     expect(mainText.characters).toBe("Pay now")
     expect(writes).toEqual([])
-    expect(sublayer.characters).toBe("Jetzt zahlen")
+    expect(sublayer.characters).toBe("Pay now")
+    expect(instance.overrides).toEqual([])
+  })
+
+  it("resets the main component, also on another page, when an instance that shows its preview is reset", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    const components = fakePage("0:2", "Components", [fakeComponent("5:1", "Button", [mainText])])
+    figmaMock.root.appendChild(components)
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [fakeFrame("10:1", "Checkout", [instance])])
+    await previewed(mainText)
+
+    expect(await resetPreview("page", ["I12:34;5:67"], undefined)).toEqual({ done: 1, errors: [] })
+    expect(mainText.characters).toBe("Pay now")
+    expect(record(mainText)).toBeNull()
+    expect(sublayer.characters).toBe("Pay now")
+    expect(sublayer.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE)).toEqual([])
+
+    await previewed(mainText)
+    figmaMock.currentPage.selection = [instance]
+    expect(await resetPreview("selection", undefined, undefined)).toEqual({ done: 1, errors: [] })
+    expect(mainText.characters).toBe("Pay now")
+  })
+
+  it("reports remote_component for an instance that shows a preview kept in a library component", async () => {
+    const libraryText = fakeText("77:1", "Jetzt zahlen")
+    libraryText.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview, serializePreviewRecord({
+      v: 1, nid: "3:9", previewSrc: src("Jetzt zahlen"), characters: "Pay now", autoRename: true, textOverridden: false,
+      segments: null, richLost: false, lang: "de", source: "draft", variationOptionId: null, appliedAt: 1,
+    }))
+    fakeComponent("77:0", "Button", [libraryText], { remote: true })
+    const sublayer = fakeText("I12:34;77:1", "Jetzt zahlen")
+    onPage(figmaMock, [fakeInstance("12:34", "Button", [sublayer], { overrides: [] })])
+    const outcome = await resetPreview("page", ["I12:34;77:1"], undefined)
+    expect(outcome).toEqual({ done: 0, errors: [{ nodeId: "I12:34;77:1", code: "remote_component", message: "Update this text in the library file." }] })
+    expect(libraryText.characters).toBe("Jetzt zahlen")
+  })
+
+  it("restores skipInvisibleInstanceChildren when resets overlap", async () => {
+    const a = fakeText("1:1", "A text")
+    onPage(figmaMock, [a])
+    await previewed(a)
+    figmaMock.skipInvisibleInstanceChildren = true
+    await Promise.all([resetPreview("page", undefined, undefined), resetPreview("page", undefined, undefined)])
+    expect(figmaMock.skipInvisibleInstanceChildren).toBe(true)
+    expect(a.characters).toBe("A text")
   })
 
   it("clears a copied record without touching the text", async () => {
@@ -446,6 +555,20 @@ describe("text-apply (§7.14 pull)", () => {
     ])
     expect(previewing.characters).toBe("Jetzt")
     expect(bound.characters).toBe("Pay now")
+  })
+
+  it("refuses instance text that follows a previewed main component", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
+    sublayer.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink(link("I12:34;5:67", "Pay now")))
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [{ id: "I12:34;5:67", overriddenFields: ["pluginData"] }] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [fakeComponent("5:1", "Button", [mainText]), instance])
+    await applyPreview(DE, [{ nodeId: "5:67", text: "Jetzt zahlen" }], 1)
+    const outcome = await applyTexts([{ nodeId: "I12:34;5:67", text: "Pay securely", src: src("Pay securely") }], 2)
+    expect(outcome.errors.map((error) => [error.nodeId, error.code])).toEqual([["I12:34;5:67", "preview_active"]])
+    expect(sublayer.characters).toBe("Jetzt zahlen")
+    expect(instance.overrides).toEqual([{ id: "I12:34;5:67", overriddenFields: ["pluginData"] }])
   })
 
   it("writes the local main component once for inherited instance text", async () => {

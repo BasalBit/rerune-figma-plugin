@@ -89,14 +89,23 @@ export function buildPreview(
     inherited: [],
     skipped: { variable: [], otherProject: 0, unlinked: 0 },
   }
+  // A layer that is previewing but no longer resolves to a key of this project (unlinked or relinked during the
+  // preview) goes back to its original text instead of keeping the previous language; Reset still clears it.
+  const restoreOriginal = (node: ScannedNode) => {
+    if (node.preview !== null) {
+      build.items.push({ nodeId: node.nodeId, text: layerText(node) })
+    }
+  }
   for (const node of nodes) {
     const link = node.link
     if (link === null || !PREVIEW_LINK_STATES.includes(node.linkState)) {
       build.skipped.unlinked++
+      restoreOriginal(node)
       continue
     }
     if (link.p !== projectId) {
       build.skipped.otherProject++
+      restoreOriginal(node)
       continue
     }
     if (node.boundToVariable) {

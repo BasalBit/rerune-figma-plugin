@@ -3,16 +3,27 @@ import {
   PLUGIN_DATA_MAX_BYTES,
   PLUGIN_DATA_NAMESPACE,
   PREVIEW_SEGMENTS_MAX_JSON_CHARS,
+  SCAN_YIELD_EVERY_TEXTS,
   WRITE_YIELD_EVERY,
 } from "../shared/constants"
 import { src } from "../shared/hash"
 import type { NodeError, PreviewInfo, Scope, TextApplyItem } from "../shared/messages"
 import { nodeError, type NodeErrorCode } from "../shared/node-errors"
-import { createLink, parseLink, parsePreviewRecord, recordOwnership, serializePreviewRecord, type PreviewRecord } from "../shared/plugin-data"
+import { createLink, mainsFirst, parseLink, parsePreviewRecord, recordOwnership, serializePreviewRecord, type PreviewRecord } from "../shared/plugin-data"
 import { utf8Length } from "../shared/text"
 import { loadNodeFonts } from "./fonts"
 import { clearPluginData, getTextNode, readLinkInfo, writeLink, writeTargetFor, type OpOutcome } from "./links"
-import { collectTextNodes, createNodeCaches, isBoundToVariable, isInRemoteComponent, overrideFlags, yieldToCanvas, type NodeCaches } from "./node-utils"
+import {
+  collectTextNodes,
+  createNodeCaches,
+  isBoundToVariable,
+  isInRemoteComponent,
+  overrideFlags,
+  withInvisibleInstanceChildren,
+  yieldToCanvas,
+  type NodeCaches,
+} from "./node-utils"
+import { shownPreview, type ShownPreview } from "./shown-preview"
 
 // Preview, reset and pull writes (§7.14).
 
@@ -199,15 +210,6 @@ function readPreviewRaw(node: TextNode): string {
   return node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview)
 }
 
-function mainsFirst<T extends { nodeId: string }>(items: readonly T[]): T[] {
-  return items.filter((item) => item.nodeId.charAt(0) !== "I").concat(items.filter((item) => item.nodeId.charAt(0) === "I"))
-}
-
-export function hasOwnPreview(node: TextNode): boolean {
-  const record = parsePreviewRecord(readPreviewRaw(node))
-  return record !== null && record.nid === node.id
-}
-
 // Deletes a node's own preview record; a record that shows through afterwards is kept only when it is inherited.
 function clearOwnRecord(node: TextNode): void {
   clearPluginData(node, DATA_KEYS.preview, (raw) => {
@@ -270,15 +272,17 @@ async function previewNode(node: TextNode, info: Omit<PreviewInfo, "appliedAt">,
   }
   const previousRaw = readPreviewRaw(node)
   const existing = parsePreviewRecord(previousRaw)
-  const flags = overrideFlags(node, caches)
   let base: PreviewRecord
   let liveSegments: StyleSegment[] | null = null
   if (existing !== null && existing.nid === node.id) {
     base = existing
-  } else if (existing !== null && recordOwnership(node.id, existing.nid, flags.ownPluginDataOverride) === "inherited") {
-    // Already shows the main component's preview; storing its previewed text as "original" would corrupt reset.
+  } else if ((await shownPreview(node, caches)) !== null) {
+    // Instance text that follows a previewed main component (written earlier in this run or before): it already
+    // shows that preview, and storing its previewed text as "original" would corrupt reset. This holds whether the
+    // main's record shows through as inherited plugin data or the sublayer has plugin data of its own (D44).
     return "inherited"
   } else {
+    const flags = overrideFlags(node, caches)
     const original = snapshotOriginal(node)
     liveSegments = original.segments
     base = {
@@ -343,16 +347,59 @@ async function resetTargets(scope: Scope, nodeIds: readonly string[] | undefined
   return fast.concat(full.filter((node) => !seen.has(node.id)))
 }
 
+// Resets go where the preview lives (§7.14). An instance sublayer that shows a main component's preview has no
+// record of its own (or only an inherited one): the main's node is reset instead, which also ends the preview on
+// every other instance of it, and nothing is written on the sublayer (D44). Explicit node ids whose preview lives
+// in a library file report remote_component; scope resets keep the sublayer too, so a copied record on it is
+// still cleared.
+async function withPreviewOwners(nodes: readonly TextNode[], explicit: boolean, caches: NodeCaches, errors: NodeError[]): Promise<TextNode[]> {
+  const result: TextNode[] = []
+  const seen = new Set<string>()
+  const add = (node: TextNode) => {
+    if (!seen.has(node.id)) {
+      seen.add(node.id)
+      result.push(node)
+    }
+  }
+  for (let index = 0; index < nodes.length; index++) {
+    if (index > 0 && index % SCAN_YIELD_EVERY_TEXTS === 0) {
+      await yieldToCanvas()
+    }
+    const node = nodes[index]
+    if (node.removed) {
+      continue
+    }
+    let shown: ShownPreview | null
+    try {
+      shown = await shownPreview(node, caches)
+    } catch {
+      shown = null
+    }
+    if (shown === null || shown.owner === node) {
+      add(node)
+      continue
+    }
+    if (shown.owner !== null) {
+      add(shown.owner)
+    } else if (explicit) {
+      errors.push(nodeError(node.id, "remote_component"))
+    }
+    if (!explicit) {
+      add(node)
+    }
+  }
+  return result
+}
+
 // preview-reset (§7.14 reset). Runs with skipInvisibleInstanceChildren off so hidden previewed instance
-// children are found, and restores the flag afterwards.
-export async function resetPreview(scope: Scope, nodeIds: readonly string[] | undefined, edited: "restore" | "keep" | undefined): Promise<OpOutcome> {
-  const previous = figma.skipInvisibleInstanceChildren
-  figma.skipInvisibleInstanceChildren = false
-  const errors: NodeError[] = []
-  let done = 0
-  try {
+// children are found; the flag is restored when the last overlapping reset ends.
+export function resetPreview(scope: Scope, nodeIds: readonly string[] | undefined, edited: "restore" | "keep" | undefined): Promise<OpOutcome> {
+  return withInvisibleInstanceChildren(async () => {
+    const errors: NodeError[] = []
+    let done = 0
     const caches = createNodeCaches()
-    const nodes = await resetTargets(scope, nodeIds, errors)
+    const explicit = nodeIds !== undefined
+    const nodes = await withPreviewOwners(await resetTargets(scope, nodeIds, errors), explicit, caches, errors)
     for (let index = 0; index < nodes.length; index++) {
       if (index > 0 && index % WRITE_YIELD_EVERY === 0) {
         await yieldToCanvas()
@@ -362,7 +409,7 @@ export async function resetPreview(scope: Scope, nodeIds: readonly string[] | un
         continue
       }
       try {
-        const outcome = await resetNode(node, caches, nodeIds !== undefined, edited)
+        const outcome = await resetNode(node, caches, explicit, edited)
         if (outcome === "restored" || outcome === "cleared") {
           done++
         } else if (outcome === "override_kept" || outcome === "styles_lost") {
@@ -375,10 +422,8 @@ export async function resetPreview(scope: Scope, nodeIds: readonly string[] | un
         errors.push(failureOf(node.id, error))
       }
     }
-  } finally {
-    figma.skipInvisibleInstanceChildren = previous
-  }
-  return { done, errors }
+    return { done, errors }
+  })
 }
 
 type ResetOutcome = "restored" | "cleared" | "skipped" | "override_kept" | "styles_lost" | NodeErrorCode
@@ -452,7 +497,7 @@ export async function applyTexts(items: readonly TextApplyItem[], now: number): 
       // Several instance sublayers can redirect to one main component node: it is written once.
       let outcome = outcomes.get(target.node.id)
       if (outcome === undefined) {
-        outcome = await pullNode(target.node, item, now)
+        outcome = await pullNode(target.node, item, now, caches)
         outcomes.set(target.node.id, outcome)
       }
       if (outcome === "written" || outcome === "mixed_styles_flattened") {
@@ -468,8 +513,9 @@ export async function applyTexts(items: readonly TextApplyItem[], now: number): 
   return { done, errors }
 }
 
-async function pullNode(node: TextNode, item: TextApplyItem, now: number): Promise<"written" | NodeErrorCode> {
-  if (hasOwnPreview(node)) {
+async function pullNode(node: TextNode, item: TextApplyItem, now: number, caches: NodeCaches): Promise<"written" | NodeErrorCode> {
+  // Also refused when the text follows a previewed main component: the layer shows preview text right now.
+  if ((await shownPreview(node, caches)) !== null) {
     return "preview_active"
   }
   if (isBoundToVariable(node)) {

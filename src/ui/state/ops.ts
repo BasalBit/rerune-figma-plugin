@@ -1,6 +1,7 @@
 import { REQUEST_IDLE_TIMEOUT_MS } from "../../shared/constants"
 import type { MainToUi, MainToUiOf, NodeError, RequestId, ScannedNode, Scope, UiToMain } from "../../shared/messages"
 import { isWarning } from "../../shared/node-errors"
+import { mainsFirst } from "../../shared/plugin-data"
 import { createIdleTimeout, HandlerError, RequestTimeoutError, type UiBus } from "../bus"
 
 // Request/response helpers over the UI bus: scans, document writes (op-result) and batching.
@@ -114,10 +115,9 @@ export function chunk<T>(items: readonly T[], size: number): T[][] {
   return chunks
 }
 
-// Main writes main components before instances inside one message; batching keeps that order across messages.
-export function mainsFirst<T extends { nodeId: string }>(items: readonly T[]): T[] {
-  return items.filter((item) => !item.nodeId.startsWith("I")).concat(items.filter((item) => item.nodeId.startsWith("I")))
-}
+// Main writes main components before instances inside one message; batching keeps that order across messages
+// (the order itself lives in src/shared/plugin-data.ts, shared with main).
+export { mainsFirst }
 
 export interface BatchOutcome { done: number; errors: NodeError[] }
 

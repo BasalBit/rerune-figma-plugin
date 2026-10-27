@@ -66,6 +66,19 @@ describe("buildPreview", () => {
     expect(build.skipped).toEqual({ variable: ["1:5"], otherProject: 1, unlinked: 2 })
   })
 
+  it("sends a previewing layer without a usable link back to its original text", () => {
+    const previewing = [
+      scannedNode("2:1", "Bonjour", { originalCharacters: "Hello", preview: PREVIEWING }),
+      linkedNode("2:2", "Salut", { keyId: keyId(6), keyName: "other", syncedText: "Hi", projectId: OTHER_PROJECT_ID }, { originalCharacters: "Hi", preview: PREVIEWING }),
+    ]
+    const build = buildPreview(previewing, PROJECT_ID, { lang: "de-AT", mode: "draft", variationOptionId: null }, resolved, new Map())
+    expect(build.items).toEqual([
+      { nodeId: "2:1", text: "Hello" },
+      { nodeId: "2:2", text: "Hi" },
+    ])
+    expect(build.skipped).toEqual({ variable: [], otherProject: 1, unlinked: 1 })
+  })
+
   it("previews key names in Show key names mode", () => {
     const build = buildPreview(nodes, PROJECT_ID, { lang: "de-AT", mode: "keys", variationOptionId: "6a47" }, new Map(), new Map([[keyId(2), "greeting_renamed"]]))
     expect(build.info).toEqual({ lang: "de-AT", source: "keys", variationOptionId: null })

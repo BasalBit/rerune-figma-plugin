@@ -365,6 +365,50 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
   return text
 }
 
+// Figma's instance text: a sublayer shows the characters of the node it was instanced from (`source`, usually the
+// main component's text) until its own characters are written. That write is listed as a `characters` override
+// on `instance` (when its overrides are a plain list), as Figma does.
+export function followText(sublayer: FakeText, source: FakeText, instance: FakeInstance | null = null): void {
+  const descriptor = Object.getOwnPropertyDescriptor(sublayer, "characters") as PropertyDescriptor
+  const read = () => descriptor.get?.call(sublayer) as string
+  const write = (next: string) => descriptor.set?.call(sublayer, next)
+  let overridden = false
+  const sync = () => {
+    if (overridden || read() === source.characters) {
+      return
+    }
+    const strict = current?.strictFonts ?? false
+    const name = sublayer.name
+    if (current !== null) current.strictFonts = false
+    try {
+      write(source.characters)
+    } finally {
+      if (current !== null) current.strictFonts = strict
+      sublayer.name = name
+    }
+  }
+  Object.defineProperty(sublayer, "characters", {
+    get: () => {
+      sync()
+      return read()
+    },
+    set: (next: string) => {
+      write(next)
+      overridden = true
+      if (instance !== null && Array.isArray(instance.overrides)) {
+        const entry = instance.overrides.find((override) => override.id === sublayer.id)
+        if (entry === undefined) {
+          instance.overrides.push({ id: sublayer.id, overriddenFields: ["characters"] })
+        } else if (!entry.overriddenFields.includes("characters")) {
+          entry.overriddenFields.push("characters")
+        }
+      }
+    },
+    enumerable: true,
+    configurable: true,
+  })
+}
+
 function uniqueFonts(styles: FakeStyle[]): FakeFont[] {
   const seen = new Map<string, FakeFont>()
   for (const style of styles) {

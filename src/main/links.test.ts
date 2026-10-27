@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { fakeComponent, fakeFrame, fakeInstance, fakeText, installFigma, onPage, uninstallFigma, type FakeNode, type FigmaMock } from "../../test/figma-mock"
+import { fakeComponent, fakeFrame, fakeInstance, fakeText, followText, installFigma, onPage, uninstallFigma, type FakeNode, type FigmaMock } from "../../test/figma-mock"
 import { keyId, PROJECT_ID } from "../../test/fixtures"
 import { DATA_KEYS, LINK_TOMBSTONE, PLUGIN_DATA_NAMESPACE } from "../shared/constants"
 import { src } from "../shared/hash"
 import type { LinkApplyItem, NodeLink } from "../shared/messages"
 import { parseLink, serializeLink } from "../shared/plugin-data"
 import { applyLinks, readLinkInfo, removeLink, removeLinks, resolveMainTextNode, writeLink } from "./links"
+import { clearFontCache } from "./fonts"
 import { createNodeCaches } from "./node-utils"
+import { applyPreview, resetPreview } from "./text-write"
 
 let figmaMock: FigmaMock
 
@@ -71,6 +73,34 @@ describe("readLinkInfo", () => {
   it("reports inherited_overridden when the instance overrides the text", () => {
     const { sublayer } = componentWithInstance({ overrides: [{ id: "I12:34;5:67", overriddenFields: ["characters"] }] })
     expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches())).toMatchObject({ state: "inherited_overridden", textOverridden: true })
+  })
+
+  it("classifies a previewed instance sublayer with the override state stored before the preview", async () => {
+    clearFontCache()
+    const { mainText, sublayer, instance } = componentWithInstance()
+    followText(sublayer, mainText, instance)
+    await applyPreview({ lang: "de", source: "draft", variationOptionId: null }, [{ nodeId: "I12:34;5:67", text: "Jetzt zahlen" }], 1)
+    // The preview write is a characters override; Figma may also list the record as a pluginData override.
+    expect(instance.overrides).toEqual([{ id: "I12:34;5:67", overriddenFields: ["characters"] }])
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches())).toMatchObject({ state: "inherited", textOverridden: false })
+    instance.overrides[0].overriddenFields.push("pluginData")
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches())).toMatchObject({ state: "inherited", textOverridden: false })
+    instance.overrides[0].overriddenFields.pop()
+
+    // Re-preview in another language reaches it and keeps the first original.
+    await applyPreview({ lang: "fr", source: "draft", variationOptionId: null }, [{ nodeId: "I12:34;5:67", text: "Payer" }], 2)
+    expect(sublayer.characters).toBe("Payer")
+    await resetPreview("page", undefined, undefined)
+    expect(sublayer.characters).toBe("Pay now")
+    // After the reset the live override state applies again (Figma keeps the characters override, override_kept).
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches()).state).toBe("inherited_overridden")
+  })
+
+  it("keeps an instance sublayer whose text was overridden before the preview inherited_overridden", async () => {
+    clearFontCache()
+    const { sublayer } = componentWithInstance({ overrides: [{ id: "I12:34;5:67", overriddenFields: ["characters"] }] })
+    await applyPreview({ lang: "de", source: "draft", variationOptionId: null }, [{ nodeId: "I12:34;5:67", text: "Jetzt zahlen" }], 1)
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches()).state).toBe("inherited_overridden")
   })
 })
 

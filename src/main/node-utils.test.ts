@@ -31,6 +31,7 @@ import {
   parentNamesOf,
   readOverrides,
   topFrameOf,
+  withInvisibleInstanceChildren,
 } from "./node-utils"
 
 let figmaMock: FigmaMock
@@ -271,5 +272,42 @@ describe("collectTextNodes", () => {
     const frame = fakeFrame("1:1", "List", Array.from({ length: 25 }, (_, i) => fakeText("2:" + i, "x")))
     onPage(figmaMock, [frame])
     expect(await collectTextNodes([base(frame)], () => true)).toBeNull()
+  })
+
+  it("yields every 25 roots, also when each root has few children", async () => {
+    const roots = Array.from({ length: 60 }, (_, i) => fakeFrame("2:" + i, "Card " + i, [fakeText("3:" + i, "Text " + i)]))
+    onPage(figmaMock, roots)
+    let checks = 0
+    const nodes = await collectTextNodes(roots.map(base), () => {
+      checks++
+      return false
+    })
+    expect(nodes).toHaveLength(60)
+    expect(checks).toBe(2)
+    expect(await collectTextNodes(roots.map(base), () => true)).toBeNull()
+  })
+})
+
+describe("withInvisibleInstanceChildren", () => {
+  it("turns the flag off and restores the outermost value when overlapping runs end", async () => {
+    figmaMock.skipInvisibleInstanceChildren = true
+    let release: () => void = () => {}
+    const first = withInvisibleInstanceChildren(() => new Promise<void>((resolve) => (release = resolve)))
+    const second = withInvisibleInstanceChildren(async () => {
+      expect(figmaMock.skipInvisibleInstanceChildren).toBe(false)
+    })
+    await second
+    expect(figmaMock.skipInvisibleInstanceChildren).toBe(false)
+    release()
+    await first
+    expect(figmaMock.skipInvisibleInstanceChildren).toBe(true)
+  })
+
+  it("restores the flag when the work throws", async () => {
+    figmaMock.skipInvisibleInstanceChildren = true
+    await expect(withInvisibleInstanceChildren(async () => {
+      throw new Error("boom")
+    })).rejects.toThrow("boom")
+    expect(figmaMock.skipInvisibleInstanceChildren).toBe(true)
   })
 })
