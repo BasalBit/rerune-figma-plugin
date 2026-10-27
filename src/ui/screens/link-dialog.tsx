@@ -13,7 +13,7 @@ import { Chip, ErrorGroups, ErrorNote, Note, plural, preview, SectionTitle, Smal
 import { keyNameOf } from "../state/layers"
 import {
   createBlockedReason,
-  exactTextQueries,
+  fetchExactCandidates,
   linkDecision,
   pendingNamesExcept,
   searchPrefill,
@@ -73,28 +73,12 @@ export function LinkDialog(props: LinkDialogProps) {
   const [nameLookup, setNameLookup] = useState<{ name: string; key: FigmaByNameKey | null } | null>(null)
   const searchGeneration = useRef(0)
 
-  // Exact-text matches (D40): E11 compares the normalised text with each key's main value byte for byte, so a
-  // match's main text is the queried text.
+  // Exact-text matches (D40), E11 in chunks of 100 texts.
   useEffect(() => {
     let alive = true
-    const texts = exactTextQueries(props.nodes)
-    if (texts.length === 0) {
-      setExact({ loading: false, candidates: [] })
-      return
-    }
-    props.api
-      .keysByName(props.projectId, { texts })
-      .then((response) => {
-        if (!alive) return
-        const candidates = new Map<string, LinkCandidate>()
-        for (const match of response.text_matches) {
-          for (const key of match.keys) {
-            if (!candidates.has(key.id)) {
-              candidates.set(key.id, { id: key.id, key: key.key, main_content: { value: match.text } })
-            }
-          }
-        }
-        setExact({ loading: false, candidates: [...candidates.values()] })
+    fetchExactCandidates(props.api, props.projectId, props.nodes)
+      .then((candidates) => {
+        if (alive) setExact({ loading: false, candidates })
       })
       .catch(() => {
         if (alive) setExact({ loading: false, candidates: [] })

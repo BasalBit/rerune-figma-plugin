@@ -4,6 +4,8 @@ import { src } from "../../shared/hash"
 import type { LinkApplyItem, LinkState, ScannedNode, TextApplyItem } from "../../shared/messages"
 import { nodeText } from "../../shared/push-plan"
 import { firstRunes, normalizeDesignText, utf16Length } from "../../shared/text"
+import type { FigmaApi } from "../api/figma-api"
+import { fetchTextMatches } from "./remote"
 
 // Link dialog logic (§7.11): which layers it targets, the E11/E10 queries, and what linking to a chosen key
 // writes. Keys are created only on push, so "Create new key" only records a pending name.
@@ -76,6 +78,27 @@ export function exactTextQueries(nodes: readonly ScannedNode[]): string[] {
     }
   }
   return [...texts]
+}
+
+// Exact-text candidates of the Link dialog (D40): E11 through fetchTextMatches, so a selection with more than 100
+// distinct texts is sent in chunks of 100 (E11 rejects the whole request above that). E11 compares the normalised
+// text with each key's main value byte for byte, so a match's main text is the queried text. Keys come in the
+// order of the layers' texts, each once.
+export async function fetchExactCandidates(api: Pick<FigmaApi, "keysByName">, projectId: string, nodes: readonly ScannedNode[]): Promise<LinkCandidate[]> {
+  const texts = exactTextQueries(nodes)
+  if (texts.length === 0) {
+    return []
+  }
+  const matches = await fetchTextMatches(api, projectId, texts)
+  const candidates = new Map<string, LinkCandidate>()
+  for (const text of texts) {
+    for (const key of matches.get(text) ?? []) {
+      if (!candidates.has(key.id)) {
+        candidates.set(key.id, { id: key.id, key: key.key, main_content: { value: text } })
+      }
+    }
+  }
+  return [...candidates.values()]
 }
 
 export function exactMatchKeys(textMatches: ReadonlyMap<string, FigmaKeyRef[]>): FigmaKeyRef[] {

@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { keyId, PROJECT_ID, scannedNode } from "../../../test/fixtures"
+import type { FigmaByNameRequest, FigmaByNameResponse } from "../../shared/api-types"
+import { MAX_BATCH_SIZE } from "../../shared/constants"
 import { src } from "../../shared/hash"
 import type { ScannedNode } from "../../shared/messages"
 import {
@@ -7,6 +9,7 @@ import {
   EMPTY_SOURCE_NOTE,
   exactMatchKeys,
   exactTextQueries,
+  fetchExactCandidates,
   linkDecision,
   pendingNamesExcept,
   preferredKey,
@@ -122,5 +125,40 @@ describe("dialog helpers", () => {
     const pending = new Map([["1", "a"], ["2", "b"], ["3", "c"]])
     expect([...pendingNamesExcept(pending, ["1"])]).toEqual(["b", "c"])
     expect([...pendingNamesExcept(pending, ["1"], (nodeId) => nodeId === "3")]).toEqual(["b"])
+  })
+})
+
+describe("fetchExactCandidates (Link dialog, D40)", () => {
+  function byName(answer: (request: FigmaByNameRequest) => FigmaByNameResponse) {
+    return vi.fn(async (_projectId: string, request: FigmaByNameRequest) => answer(request))
+  }
+
+  it("sends more than 100 distinct texts in E11 requests of at most 100 texts", async () => {
+    // "Select all shown" + "Link…" hands every checked layer to the dialog; E11 rejects a request above 100 texts.
+    const nodes = Array.from({ length: 250 }, (_, i) => scannedNode("1:" + i, "Text " + i)).concat([scannedNode("2:1", " Text 7 "), scannedNode("2:2", "  ")])
+    const keysByName = byName((request) => ({
+      keys: [],
+      missing: [],
+      text_matches: (request.texts ?? [])
+        .filter((text) => text === "Text 7" || text === "Text 180" || text === "Text 240")
+        .map((text) => ({ text, keys: text === "Text 240" ? [{ id: keyId(2), key: "two" }, { id: keyId(3), key: "three" }] : [{ id: keyId(2), key: "two" }] })),
+    }))
+    const candidates = await fetchExactCandidates({ keysByName }, PROJECT_ID, nodes)
+    const sent = keysByName.mock.calls.map(([, request]) => request.texts ?? [])
+    expect(sent.length).toBe(3)
+    expect(sent.every((texts) => texts.length > 0 && texts.length <= MAX_BATCH_SIZE)).toBe(true)
+    expect(sent.flat().sort()).toEqual(Array.from({ length: 250 }, (_, i) => "Text " + i).sort())
+    expect(keysByName.mock.calls.every(([projectId, request]) => projectId === PROJECT_ID && request.names === undefined)).toBe(true)
+    // Each key once, in the order of the layers' texts, with the matched text as its main text.
+    expect(candidates).toEqual([
+      { id: keyId(2), key: "two", main_content: { value: "Text 7" } },
+      { id: keyId(3), key: "three", main_content: { value: "Text 240" } },
+    ])
+  })
+
+  it("sends nothing when no layer has a text to look up", async () => {
+    const keysByName = byName(() => ({ keys: [], missing: [], text_matches: [] }))
+    expect(await fetchExactCandidates({ keysByName }, PROJECT_ID, [scannedNode("1", "  "), scannedNode("2", "z".repeat(5001))])).toEqual([])
+    expect(keysByName).not.toHaveBeenCalled()
   })
 })
