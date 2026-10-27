@@ -8,7 +8,9 @@ export type WorkspaceScreen = "layers" | "push" | "preview" | "settings"
 
 export const WORKSPACE_SCREENS: readonly WorkspaceScreen[] = ["layers", "push", "preview", "settings"]
 
-export interface NavContext { apiBase: string; settings: FileSettings | null }
+// `locked`: a push or pull is running on the Push screen. Leaving it would drop the run's results, and a new
+// review started before the created keys are linked would offer to create them again (§7.13 rule 10).
+export interface NavContext { apiBase: string; settings: FileSettings | null; locked?: boolean }
 
 export interface AppView {
   screen: Screen
@@ -70,8 +72,11 @@ export function navigate(view: AppView, event: NavEvent, context: NavContext): A
       return { screen: "layers", notice: null, signedIn: null }
     case "change-project":
       // "Signed in as" must be answered first (D34): a project the new account can't open must not skip it.
-      return view.screen === "signed-in" ? view : { ...view, screen: "project" }
+      return view.screen === "signed-in" || context.locked === true ? view : { ...view, screen: "project" }
     case "open":
+      if (context.locked === true) {
+        return view
+      }
       if (event.screen !== "diagnostics" && event.screen !== "settings" && connectedSettings(context) === null) {
         return { ...view, screen: "project" }
       }

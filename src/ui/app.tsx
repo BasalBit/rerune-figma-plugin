@@ -111,8 +111,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [projectError, setProjectError] = useState<string | null>(null)
   const [selectionCount, setSelectionCount] = useState(init.selectionCount)
   const pageRef = useRef(init.pageId)
+  const [pushBusy, setPushBusy] = useState(false)
   const contextRef = useRef<NavContext>({ apiBase: init.apiBase, settings })
-  contextRef.current = { apiBase: init.apiBase, settings }
+  contextRef.current = { apiBase: init.apiBase, settings, locked: pushBusy }
   const [view, setView] = useState<AppView>(() => initialView(authRef.current, contextRef.current))
   const [diagnosticsReturn, setDiagnosticsReturn] = useState<Screen>("sign-in")
   const [link, setLink] = useState<{ nodes: ScannedNode[]; key: FigmaKeyRef | null } | null>(null)
@@ -272,7 +273,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     const next = connectProject(settings, picked, init.apiBase, Date.now())
     const changed = settings?.projectId !== picked.id || settings?.apiBase !== init.apiBase
     await saveSettings(next)
-    contextRef.current = { apiBase: init.apiBase, settings: next }
+    contextRef.current = { apiBase: init.apiBase, settings: next, locked: pushBusy }
     if (changed) {
       workspace.clear(true)
     }
@@ -497,6 +498,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         previewStatus={previewing}
         onOpen={(next) => go({ type: "open", screen: next })}
         onChangeProject={() => go({ type: "change-project" })}
+        locked={pushBusy}
         resetDisabled={resetting || applyingPreview}
         onResetPreview={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}
       />
@@ -562,6 +564,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             resetting={resetting}
             onResetPreviews={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
             onAvailableKeys={(availableKeys) => setActiveProject({ ...project, available_keys: availableKeys })}
+            onBusy={(busy) => {
+              setPushBusy(busy)
+              contextRef.current = { ...contextRef.current, locked: busy }
+            }}
           />
         )}
         {screen === "preview" && (

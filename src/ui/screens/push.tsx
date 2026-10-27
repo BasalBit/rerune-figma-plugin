@@ -51,6 +51,8 @@ export interface PushScreenProps {
   resetting: boolean
   onResetPreviews(scope: Scope, nodeIds: string[]): Promise<void>
   onAvailableKeys(availableKeys: number): void
+  // A push or pull starts (true) or ends (false); the app keeps the Push tab open meanwhile.
+  onBusy(busy: boolean): void
 }
 
 type Phase = "preparing" | "plan" | "pushing" | "results"
@@ -141,6 +143,7 @@ export function PushScreen(props: PushScreenProps) {
     if (prepared === null) return
     setPhase("pushing")
     setError(null)
+    props.onBusy(true)
     try {
       const result = await executePush({ api: props.api, bus: props.bus }, prepared.plan, prepared.context)
       setRun(result)
@@ -149,6 +152,8 @@ export function PushScreen(props: PushScreenProps) {
       await props.workspace.scan()
     } catch (caught) {
       setError(userMessage(caught))
+    } finally {
+      props.onBusy(false)
     }
     setPhase("results")
   }
@@ -157,10 +162,13 @@ export function PushScreen(props: PushScreenProps) {
     if (prepared === null) return
     setPulling(true)
     setError(null)
+    props.onBusy(true)
     try {
       setPulled(await executePulls({ api: props.api, bus: props.bus }, prepared.plan, prepared.context))
     } catch (caught) {
       setError(userMessage(caught))
+    } finally {
+      props.onBusy(false)
     }
     setPulling(false)
   }

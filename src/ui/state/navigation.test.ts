@@ -50,6 +50,16 @@ describe("navigation", () => {
     expect(navigate(view, { type: "pairing-cancelled" }, connected).screen).toBe("sign-in")
   })
 
+  it("stays on Push while a push runs, but still signs out", () => {
+    const locked: NavContext = { ...connected, locked: true }
+    const push = { screen: "push" as const, notice: null, signedIn: null }
+    expect(navigate(push, { type: "open", screen: "layers" }, locked)).toBe(push)
+    expect(navigate(push, { type: "open", screen: "diagnostics" }, locked)).toBe(push)
+    expect(navigate(push, { type: "change-project" }, locked)).toBe(push)
+    expect(navigate(push, { type: "signed-out", notice: SESSION_ENDED_NOTICE }, locked).screen).toBe("sign-in")
+    expect(navigate(push, { type: "open", screen: "layers" }, connected).screen).toBe("layers")
+  })
+
   it("opens workspace screens only for a connected file", () => {
     const base = { screen: "layers" as const, notice: null, signedIn: null }
     expect(navigate(base, { type: "open", screen: "push" }, connected).screen).toBe("push")

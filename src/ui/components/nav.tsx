@@ -19,6 +19,8 @@ export interface NavProps {
   selectionCount: number
   previewStatus: PreviewStatus | null
   resetDisabled?: boolean
+  // A push or pull is running: tabs and Change wait for it (its results stay on the Push screen).
+  locked?: boolean
   onOpen(screen: WorkspaceScreen): void
   onChangeProject(): void
   onResetPreview(): void
@@ -32,7 +34,9 @@ export function Nav(props: NavProps) {
           {props.projectName}
         </div>
         <span style={{ ...styles.small, ...styles.muted }}>{props.selectionCount === 1 ? "1 selected" : props.selectionCount + " selected"}</span>
-        <TextButton onClick={props.onChangeProject}>Change</TextButton>
+        <TextButton disabled={props.locked === true} onClick={props.onChangeProject}>
+          Change
+        </TextButton>
       </div>
       <div role="tablist" style={{ display: "flex", padding: "0 8px" }}>
         {TABS.map((tab) => {
@@ -43,6 +47,8 @@ export function Nav(props: NavProps) {
               type="button"
               role="tab"
               aria-selected={active}
+              disabled={props.locked === true && !active}
+              title={props.locked === true && !active ? "Wait for the push to finish" : undefined}
               onClick={() => props.onOpen(tab.screen)}
               style={{
                 background: "none",
@@ -51,7 +57,8 @@ export function Nav(props: NavProps) {
                 color: active ? "var(--figma-color-text)" : "var(--figma-color-text-secondary)",
                 fontWeight: active ? "600" : "400",
                 padding: "6px 8px",
-                cursor: "pointer",
+                cursor: props.locked === true && !active ? "default" : "pointer",
+                opacity: props.locked === true && !active ? "0.5" : "1",
                 font: "inherit",
               }}
             >
