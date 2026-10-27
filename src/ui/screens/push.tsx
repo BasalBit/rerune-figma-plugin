@@ -132,7 +132,7 @@ export function PushScreen(props: PushScreenProps) {
       const result = await executePush({ api: props.api, bus: props.bus }, prepared.plan, prepared.context)
       setRun(result)
       if (result.availableKeys !== null) props.onAvailableKeys(result.availableKeys)
-      props.workspace.setPending(prepared.plan.creates.flatMap((create) => create.nodeIds), null)
+      // The rescan drops pending names of layers that are now linked; failed creates keep the chosen name.
       await props.workspace.scan()
     } catch (caught) {
       setError(userMessage(caught))
@@ -246,7 +246,14 @@ export function PushScreen(props: PushScreenProps) {
               <Note
                 tone="warning"
                 actions={
-                  <TextButton onClick={() => void props.onResetPreviews(props.state.scope, plan.blockedByPreview).then(() => review())}>
+                  <TextButton
+                    onClick={() =>
+                      void props
+                        .onResetPreviews(props.state.scope, plan.blockedByPreview)
+                        .then(() => review())
+                        .catch((caught: unknown) => setError(userMessage(caught)))
+                    }
+                  >
                     Reset previews
                   </TextButton>
                 }

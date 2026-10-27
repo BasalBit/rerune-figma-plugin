@@ -168,11 +168,16 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     }
   }
 
+  const loadingProject = useRef<string | null>(null)
+
   async function loadProject(projectId: string): Promise<void> {
     setProjectError(null)
+    loadingProject.current = projectId
     try {
       const detail = await api.project(projectId)
-      setActiveProject(detail)
+      if (authRef.current !== null && loadingProject.current === projectId) {
+        setActiveProject(detail)
+      }
     } catch (caught) {
       if (caught instanceof ApiError && (caught.status === 403 || caught.status === 404)) {
         setProjectError("This file's ReRune project isn't available to " + (authRef.current?.user.email ?? "this account") + ". Choose a project.")
@@ -180,6 +185,18 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       } else if (!(caught instanceof ApiError && caught.status === 401)) {
         setProjectError(userMessage(caught))
       }
+    } finally {
+      if (loadingProject.current === projectId) {
+        loadingProject.current = null
+      }
+    }
+  }
+
+  // Loads the project detail (E9) unless it is already loaded or loading.
+  function ensureProject(projectId: string): void {
+    if (projectRef.current?.id !== projectId && loadingProject.current !== projectId) {
+      setActiveProject(null)
+      void loadProject(projectId)
     }
   }
 
@@ -198,9 +215,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
 
   const usable = connectedSettings({ apiBase: init.apiBase, settings })
   useEffect(() => {
-    if (auth !== null && usable !== null && project?.id !== usable.projectId) {
-      setActiveProject(null)
-      void loadProject(usable.projectId)
+    if (auth !== null && usable !== null) {
+      ensureProject(usable.projectId)
     }
   }, [auth, usable?.projectId])
 
@@ -242,9 +258,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     contextRef.current = { apiBase: init.apiBase, settings: next }
     if (changed) {
       workspace.clear(true)
-      setActiveProject(null)
     }
     setProjectError(null)
+    ensureProject(picked.id)
     go({ type: "project-connected" })
   }
 
