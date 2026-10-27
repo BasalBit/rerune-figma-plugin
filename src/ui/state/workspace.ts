@@ -3,6 +3,7 @@ import type { Scope } from "../../shared/messages"
 import type { RemoteWithMaxLength } from "../../shared/push-plan"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
+import { isLinkedForCreate } from "./link"
 import { ScanCancelledError, type ScanResult, type ScanRunner } from "./ops"
 import { linkedKeyIds, loadRemoteStates } from "./remote"
 import { createStore, type Store } from "./store"
@@ -59,8 +60,6 @@ export function emptyWorkspace(scope: Scope = "selection"): WorkspaceState {
     pending: new Map(),
   }
 }
-
-const LINKED_STATES = new Set(["ok", "copied", "inherited", "invalid"])
 
 export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "selection"): Workspace {
   const store = createStore<WorkspaceState>(emptyWorkspace(initialScope))
@@ -124,7 +123,7 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
       store.set((state) => {
         const pending = new Map(state.pending)
         for (const node of result.nodes) {
-          if (LINKED_STATES.has(node.linkState)) {
+          if (isLinkedForCreate(node)) {
             pending.delete(node.nodeId)
           }
         }

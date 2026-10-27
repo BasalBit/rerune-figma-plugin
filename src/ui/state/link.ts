@@ -1,7 +1,7 @@
 import type { FigmaKeyRef, TranslationContent } from "../../shared/api-types"
 import { BY_NAME_TEXT_MAX_UTF16, SEARCH_QUERY_MAX_RUNES } from "../../shared/constants"
 import { src } from "../../shared/hash"
-import type { LinkApplyItem, ScannedNode, TextApplyItem } from "../../shared/messages"
+import type { LinkApplyItem, LinkState, ScannedNode, TextApplyItem } from "../../shared/messages"
 import { nodeText } from "../../shared/push-plan"
 import { firstRunes, normalizeDesignText, utf16Length } from "../../shared/text"
 
@@ -26,6 +26,28 @@ export function remotePlainText(content: TranslationContent | null): string | nu
     return null
   }
   return content.value
+}
+
+// Link states that already name a key (or a broken link). "Create new key" records a pending create, and creates
+// come only from unlinked layers (none, inherited_overridden; §7.13 rule 2), so it is not offered for these: the
+// pending name would be dropped by the next scan and nothing would be created.
+export const LINKED_STATES: readonly LinkState[] = ["ok", "copied", "inherited", "invalid"]
+
+export function isLinkedForCreate(node: Pick<ScannedNode, "linkState">): boolean {
+  return LINKED_STATES.includes(node.linkState)
+}
+
+// Why "Create new key" is not available for these layers, or null when it is.
+export function createBlockedReason(nodes: readonly Pick<ScannedNode, "linkState">[]): string | null {
+  const linked = nodes.filter(isLinkedForCreate)
+  if (linked.length === 0) {
+    return null
+  }
+  const copied = linked.some((node) => node.linkState === "copied") ? " For a copied layer you can also choose New key on the Push screen." : ""
+  if (nodes.length === 1) {
+    return "This layer is linked to a key. Unlink it first to create a new key for it." + copied
+  }
+  return (linked.length === 1 ? "1 of these layers is linked to a key" : linked.length + " of these layers are linked to keys") + ". Unlink them first to create a new key." + copied
 }
 
 // Same normalised text on every layer: required to create one key for them.

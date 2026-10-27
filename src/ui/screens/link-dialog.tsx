@@ -12,6 +12,7 @@ import type { UiBus } from "../bus"
 import { Chip, ErrorGroups, ErrorNote, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { keyNameOf } from "../state/layers"
 import {
+  createBlockedReason,
   exactTextQueries,
   linkDecision,
   pendingNamesExcept,
@@ -237,6 +238,7 @@ export function LinkDialog(props: LinkDialogProps) {
 
   const single = props.nodes.length === 1 ? props.nodes[0] : null
   const linked = props.nodes.filter((node) => node.linkState !== "none")
+  const createBlocked = createBlockedReason(props.nodes)
   const currentKey = single !== null && single.link !== null ? keyNameOf(single, props.state.remote) : null
 
   if (decision !== null) {
@@ -363,7 +365,9 @@ export function LinkDialog(props: LinkDialogProps) {
         )}
 
         <SectionTitle>Create new key</SectionTitle>
-        {text === null ? (
+        {createBlocked !== null ? (
+          <Small muted>{createBlocked}</Small>
+        ) : text === null ? (
           <Small muted>Select layers with the same text to create one key for them.</Small>
         ) : (
           <div style={styles.stack}>

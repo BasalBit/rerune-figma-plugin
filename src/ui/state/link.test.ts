@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { keyId, PROJECT_ID, scannedNode } from "../../../test/fixtures"
 import { src } from "../../shared/hash"
+import type { ScannedNode } from "../../shared/messages"
 import {
+  createBlockedReason,
   EMPTY_SOURCE_NOTE,
   exactMatchKeys,
   exactTextQueries,
@@ -55,6 +57,25 @@ describe("linkDecision", () => {
     const empty = linkDecision([scannedNode("1:1", "Pay now")], { ...KEY, main_content: null }, PROJECT_ID)
     expect(empty).toMatchObject({ kind: "direct", note: EMPTY_SOURCE_NOTE })
     expect(empty.kind === "direct" && empty.links[0].src).toBe(src(""))
+  })
+})
+
+describe("Create new key availability", () => {
+  const unlinked = (nodeId: string) => scannedNode(nodeId, "Pay now")
+  const withState = (nodeId: string, linkState: ScannedNode["linkState"]) => scannedNode(nodeId, "Pay now", { linkState })
+
+  it("is offered for unlinked layers and instance text that overrides an inherited link", () => {
+    expect(createBlockedReason([unlinked("1:1"), withState("I2:1;3:3", "inherited_overridden")])).toBeNull()
+  })
+
+  it("is not offered once any layer is linked, because only unlinked layers become creates", () => {
+    expect(createBlockedReason([withState("1:1", "ok")])).toBe("This layer is linked to a key. Unlink it first to create a new key for it.")
+    expect(createBlockedReason([withState("1:1", "copied")])).toBe(
+      "This layer is linked to a key. Unlink it first to create a new key for it. For a copied layer you can also choose New key on the Push screen.",
+    )
+    expect(createBlockedReason([unlinked("1:1"), withState("I2:1;3:3", "inherited"), withState("1:3", "invalid")])).toBe(
+      "2 of these layers are linked to keys. Unlink them first to create a new key.",
+    )
   })
 })
 
