@@ -172,15 +172,41 @@ export async function preparePush(api: Pick<FigmaApi, "keysByName">, input: Push
   return { plan: withNameIssues(plan, context.isTaken), context, taken, userRefs: pendingApplied.userRefs }
 }
 
-// After the designer edits a name: look it up (E11) and refresh the issues.
-export async function recheckNames(api: Pick<FigmaApi, "keysByName">, prepared: PreparedPush, names: readonly string[]): Promise<PreparedPush> {
+// After the designer edits a name: look it up (E11). The answers go into `taken`, which every later state of the
+// same review shares, so the caller refreshes the issues on its latest plan with withCheckedNames; rebuilding
+// from the plan of the keystroke would undo decisions made while the lookup ran.
+export async function lookUpNames(api: Pick<FigmaApi, "keysByName">, prepared: Pick<PreparedPush, "taken" | "context">, names: readonly string[]): Promise<void> {
   const unknown = names.filter((name) => name.trim() !== "" && !prepared.taken.has(name))
   if (unknown.length > 0) {
     for (const [name, key] of await fetchTakenNames(api, prepared.context.projectId, unknown)) {
       prepared.taken.set(name, key)
     }
   }
+}
+
+export function withCheckedNames(prepared: PreparedPush): PreparedPush {
   return { ...prepared, plan: withNameIssues(prepared.plan, prepared.context.isTaken) }
+}
+
+// The plan needs the remote state (E12) of every linked layer in scope (§7.10). When it failed to load, linked
+// layers would read "unknown" and silently drop out of the plan, so the review stops with the error instead.
+export function remoteLoadError(state: { remoteStatus: string; remoteError: string | null }): string | null {
+  if (state.remoteStatus !== "error") {
+    return null
+  }
+  return state.remoteError ?? "The layers' state in ReRune couldn't be loaded. Try again."
+}
+
+export type PushSummary = { tone: "good" | "warning"; message: string } | null
+
+// "Everything matches" only when every layer in scope has a status; layers without one are never reported as
+// in sync.
+export function pushSummary(plan: PushPlan): PushSummary {
+  if (plan.unknown > 0) {
+    return { tone: "warning", message: (plan.unknown === 1 ? "1 linked layer has" : plan.unknown + " linked layers have") + " no status from ReRune yet. Review again." }
+  }
+  const total = plan.creates.length + plan.updates.length + plan.divergent.length + plan.conflicts.length + plan.copied.length + plan.missing.length + plan.pulls.length
+  return total === 0 ? { tone: "good", message: "Everything in scope matches ReRune. Nothing to push." } : null
 }
 
 export interface PushCounts {
@@ -243,6 +269,25 @@ export interface PushRun {
   writeErrors: NodeError[]
   requestError: string | null
   cacheEntries: CodegenCacheEntry[]
+}
+
+export interface ConflictResolution {
+  updated?: number
+  conflicts?: PushFollowUp["conflicts"]
+  failures?: PushFollowUp["failures"]
+  writeErrors?: NodeError[]
+}
+
+// Merges one resolved post-push conflict into the latest run (functional update): several conflicts can be
+// resolved at once, and each result must land on the run as it is now, not on the run its click started from.
+export function resolveConflictInRun(run: PushRun, ref: string, result: ConflictResolution): PushRun {
+  return {
+    ...run,
+    updated: run.updated + (result.updated ?? 0),
+    conflicts: run.conflicts.filter((entry) => entry.ref !== ref).concat(result.conflicts ?? []),
+    failures: run.failures.concat(result.failures ?? []),
+    writeErrors: run.writeErrors.concat(result.writeErrors ?? []),
+  }
 }
 
 export function emptyRun(): PushRun {

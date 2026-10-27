@@ -15,12 +15,16 @@ import {
   canSubmit,
   executePulls,
   executePush,
+  lookUpNames,
   overwriteChunk,
   preparePush,
   pushChunks,
   pushCounts,
-  recheckNames,
+  pushSummary,
+  remoteLoadError,
+  resolveConflictInRun,
   sendCache,
+  withCheckedNames,
   type PreparedPush,
   type PushRun,
 } from "../state/push"
@@ -82,6 +86,13 @@ export function PushScreen(props: PushScreenProps) {
       return
     }
     const state = props.workspace.store.get()
+    const remoteError = remoteLoadError(state)
+    if (remoteError !== null) {
+      setError(remoteError)
+      setPrepared(null)
+      setPhase("plan")
+      return
+    }
     try {
       const next = await preparePush(props.api, {
         projectId: props.project.id,
@@ -119,8 +130,8 @@ export function PushScreen(props: PushScreenProps) {
     setPrepared(next)
     if (nameTimer.current !== null) clearTimeout(nameTimer.current)
     nameTimer.current = setTimeout(() => {
-      recheckNames(props.api, next, [name.trim()])
-        .then((checked) => setPrepared((current) => (current === null ? current : { ...current, plan: checked.plan })))
+      lookUpNames(props.api, next, [name.trim()])
+        .then(() => setPrepared((current) => (current === null ? current : withCheckedNames(current))))
         .catch(() => {})
     }, NAME_RECHECK_MS)
   }
@@ -157,20 +168,17 @@ export function PushScreen(props: PushScreenProps) {
     if (prepared === null || run === null) return
     setResolved((current) => ({ ...current, [conflict.ref]: choice }))
     if (choice === "skip") return
+    // Several conflicts can be resolving at once: each result is merged into the latest run.
+    const merge = (result: Parameters<typeof resolveConflictInRun>[2]) =>
+      setRun((current) => (current === null ? current : resolveConflictInRun(current, conflict.ref, result)))
     try {
       if (choice === "overwrite") {
         const next = await pushChunks({ api: props.api, bus: props.bus }, [overwriteChunk(conflict)], prepared.context)
         sendCache({ bus: props.bus }, props.project.id, next.cacheEntries)
-        setRun({
-          ...run,
-          updated: run.updated + next.updated,
-          conflicts: run.conflicts.filter((entry) => entry.ref !== conflict.ref).concat(next.conflicts),
-          failures: run.failures.concat(next.failures),
-          writeErrors: run.writeErrors.concat(next.writeErrors),
-        })
+        merge({ updated: next.updated, conflicts: next.conflicts, failures: next.failures, writeErrors: next.writeErrors })
       } else {
         const written = await applyTakeReRune({ api: props.api, bus: props.bus }, conflict, prepared.context.nodes)
-        setRun({ ...run, conflicts: run.conflicts.filter((entry) => entry.ref !== conflict.ref), writeErrors: run.writeErrors.concat(written.errors) })
+        merge({ writeErrors: written.errors })
       }
       setResolved((current) => ({ ...current, [conflict.ref]: "done" }))
     } catch (caught) {
@@ -428,12 +436,8 @@ export function PushScreen(props: PushScreenProps) {
 }
 
 function Summary(props: { plan: PushPlan }) {
-  const plan = props.plan
-  const total = plan.creates.length + plan.updates.length + plan.divergent.length + plan.conflicts.length + plan.copied.length + plan.missing.length + plan.pulls.length
-  if (total === 0) {
-    return <Note tone="good">Everything in scope matches ReRune. Nothing to push.</Note>
-  }
-  return null
+  const summary = pushSummary(props.plan)
+  return summary === null ? null : <Note tone={summary.tone}>{summary.message}</Note>
 }
 
 function Counts(props: { plan: PushPlan }) {

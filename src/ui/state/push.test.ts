@@ -8,13 +8,18 @@ import { applyDecision, type RemoteWithMaxLength } from "../../shared/push-plan"
 import { ApiError } from "../api/client"
 import {
   canSubmit,
+  emptyRun,
   executePulls,
   executePush,
   overwriteChunk,
   preparePush,
   pushChunks,
   pushCounts,
-  recheckNames,
+  lookUpNames,
+  pushSummary,
+  remoteLoadError,
+  resolveConflictInRun,
+  withCheckedNames,
   takeReRuneItems,
   unlinkedGroupTexts,
   type PushInput,
@@ -92,12 +97,36 @@ describe("preparePush", () => {
     expect(prepared.taken.get("my_title")?.type).toBe("key")
   })
 
-  it("rechecks names the designer edits", async () => {
+  it("rechecks names the designer edits on the latest plan, keeping decisions made meanwhile", async () => {
     const keysByName = byName({}, ["taken_now"])
-    let prepared = await preparePush({ keysByName }, input([scannedNode("1:1", "Hello")]))
-    prepared = { ...prepared, plan: applyDecision(prepared.plan, { kind: "create-name", ref: "c0", name: "taken_now" }, prepared.context) }
-    prepared = await recheckNames({ keysByName }, prepared, ["taken_now"])
-    expect(prepared.plan.creates[0].nameIssues).toEqual([KEY_NAME_ISSUES.taken])
+    const ready = await preparePush({ keysByName }, input([scannedNode("1:1", "Hello"), scannedNode("1:2", "Bye")]))
+    const typed = { ...ready, plan: applyDecision(ready.plan, { kind: "create-name", ref: "c0", name: "taken_now" }, ready.context) }
+    // The designer unchecks another create while the lookup for the typed name runs.
+    const latest = { ...typed, plan: applyDecision(typed.plan, { kind: "create-selected", ref: "c1", selected: false }, typed.context) }
+    await lookUpNames({ keysByName }, typed, ["taken_now"])
+    const checked = withCheckedNames(latest)
+    expect(checked.plan.creates[0].nameIssues).toEqual([KEY_NAME_ISSUES.taken])
+    expect(checked.plan.creates[1].selected).toBe(false)
+  })
+})
+
+describe("review guards", () => {
+  it("stops the review when the remote state failed to load", () => {
+    expect(remoteLoadError({ remoteStatus: "ready", remoteError: null })).toBeNull()
+    expect(remoteLoadError({ remoteStatus: "error", remoteError: "Can't reach ReRune. Check your connection." })).toBe("Can't reach ReRune. Check your connection.")
+    expect(remoteLoadError({ remoteStatus: "error", remoteError: null })).toBe("The layers' state in ReRune couldn't be loaded. Try again.")
+  })
+
+  it("never says everything matches while linked layers have no status", async () => {
+    const keysByName = byName({}, [])
+    const linkedOnly = [linkedNode("1:1", "Pay securely", { keyId: keyId(1), keyName: "pay", syncedText: "Pay now" })]
+    const unknown = await preparePush({ keysByName }, input(linkedOnly))
+    expect(unknown.plan.unknown).toBe(1)
+    expect(pushSummary(unknown.plan)).toEqual({ tone: "warning", message: "1 linked layer has no status from ReRune yet. Review again." })
+    const synced = await preparePush({ keysByName }, input(linkedOnly, { remote: new Map([[keyId(1), remote("pay", "Pay securely")]]) }))
+    expect(pushSummary(synced.plan)).toEqual({ tone: "good", message: "Everything in scope matches ReRune. Nothing to push." })
+    const changed = await preparePush({ keysByName }, input(linkedOnly, { remote: new Map([[keyId(1), remote("pay", "Pay now")]]) }))
+    expect(pushSummary(changed.plan)).toBeNull()
   })
 })
 
@@ -218,6 +247,20 @@ describe("executePush", () => {
 
 describe("after-push choices and pulls", () => {
   const conflict = { ref: "u1", keyId: keyId(1), keyName: "checkout_title", nodeIds: ["1:3", "I7:1;1:5", "I8:1;1:5"], text: "Checkout now", currentText: "Checkout!" }
+
+  it("merges conflicts resolved at the same time into the latest run", () => {
+    const other = { ...conflict, ref: "u2", keyId: keyId(2), keyName: "checkout_total" }
+    const failure = { ref: "u2", reason: "source_changed" as const, message: "The source text changed in ReRune.", keyId: keyId(2), keyName: "checkout_total", nodeIds: ["1:4"] }
+    const writeError = { nodeId: "1:3", code: "missing_font" as const, message: "A font in this layer is missing. Install or replace it first." }
+    const start = { ...emptyRun(), conflicts: [conflict, other] }
+    // Both clicks start from `start`; the results arrive one after the other.
+    const afterFirst = resolveConflictInRun(start, "u1", { writeErrors: [writeError] })
+    const afterSecond = resolveConflictInRun(afterFirst, "u2", { updated: 0, conflicts: [], failures: [failure], writeErrors: [] })
+    expect(afterSecond.conflicts).toEqual([])
+    expect(afterSecond.failures).toEqual([failure])
+    expect(afterSecond.writeErrors).toEqual([writeError])
+    expect(resolveConflictInRun(afterSecond, "u9", { updated: 1 }).updated).toBe(1)
+  })
 
   it("Overwrite sends one update against the current text", () => {
     const chunk = overwriteChunk(conflict)
