@@ -217,6 +217,22 @@ describe("preview-apply (§7.14 apply)", () => {
     expect(record(node)).toBeNull()
     expect(node.autoRename).toBe(true)
   })
+  it("keeps the previous preview intact when re-previewing fails", async () => {
+    const node = fakeText("1:1", "Pay now")
+    onPage(figmaMock, [node])
+    await applyPreview(DE, [{ nodeId: "1:1", text: "Jetzt zahlen" }], 1)
+    const before = node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview)
+    Object.defineProperty(node, "characters", {
+      get: () => "Jetzt zahlen",
+      set: () => {
+        throw new Error("write refused")
+      },
+    })
+    const outcome = await applyPreview({ lang: "it", source: "draft", variationOptionId: null }, [{ nodeId: "1:1", text: "Paga ora" }], 2)
+    expect(outcome.errors[0].code).toBe("write_failed")
+    expect(node.autoRename).toBe(false)
+    expect(node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview)).toBe(before)
+  })
 })
 
 describe("preview-reset (§7.14 reset)", () => {

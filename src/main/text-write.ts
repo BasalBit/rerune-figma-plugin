@@ -304,6 +304,7 @@ async function previewNode(node: TextNode, info: Omit<PreviewInfo, "appliedAt">,
   const segments = storedSegments(record.segments) ?? liveSegments ?? (record.richLost ? readSegments(node) : null)
   await loadFontsOrFail(node, segments)
   const ownedBefore = existing !== null && existing.nid === node.id
+  const autoRenameBefore = node.autoRename
   // The record is written first so a crash mid-write never loses the original text.
   node.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview, json)
   let flattened: boolean
@@ -312,7 +313,7 @@ async function previewNode(node: TextNode, info: Omit<PreviewInfo, "appliedAt">,
     flattened = await writeTextKeepingStyles(node, text, segments)
   } catch (error) {
     node.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview, ownedBefore ? previousRaw : "")
-    node.autoRename = base.autoRename
+    node.autoRename = autoRenameBefore
     throw error
   }
   return flattened ? "mixed_styles_flattened" : "written"
