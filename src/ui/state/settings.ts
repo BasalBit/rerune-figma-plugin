@@ -164,3 +164,13 @@ export function settingsOffer(status: SettingsStatus | null): SettingsOffer | nu
 }
 
 export const API_BASE_MISMATCH = "This file is connected to a different ReRune server."
+export const API_BASE_MISMATCH_HINT = API_BASE_MISMATCH + " Nothing in this file changes unless you connect it to a project on this server."
+
+// §7.7: a file connected to another server stays read-only here. Connecting it to a project on this server replaces
+// the settings for everyone who opens the file, so the Project screen asks first (null: nothing to confirm).
+export function replaceServerQuestion(settings: Pick<FileSettings, "apiBase"> | null, apiBase: string, projectName: string): string | null {
+  if (settings === null || settings.apiBase === apiBase) {
+    return null
+  }
+  return "This file is connected to " + settings.apiBase + ". Connect it to " + projectName + " on " + apiBase + " for everyone who opens it? The plugin then stops working with the other server in this file."
+}

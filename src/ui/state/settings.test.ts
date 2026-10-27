@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { PROJECT_ID } from "../../../test/fixtures"
 import type { FileSettings } from "../../shared/messages"
 import { newFileSettings } from "../../shared/plugin-data"
-import { applyEdit, connectProject, DEFAULT_PREFS, editOf, MIRROR_MESSAGE, parsePrefs, parseSettingsReport, REPAIR_MESSAGE, sameEdit, settingsOffer } from "./settings"
+import { applyEdit, connectProject, DEFAULT_PREFS, editOf, MIRROR_MESSAGE, parsePrefs, parseSettingsReport, REPAIR_MESSAGE, replaceServerQuestion, sameEdit, settingsOffer } from "./settings"
 
 const API = "http://localhost:8080"
 
@@ -38,6 +38,15 @@ describe("file settings", () => {
   it("keeps naming and scan options when switching projects on the same server", () => {
     const next = connectProject(current, { id: "6a4600000000000000000999", name: "Other" }, API, 5)
     expect(next).toEqual({ ...current, projectId: "6a4600000000000000000999", projectName: "Other", updatedAt: 5 })
+  })
+
+  it("asks before replacing the settings of a file connected to another server (§7.7)", () => {
+    const foreign = newFileSettings({ apiBase: "https://api.rerune.io", projectId: PROJECT_ID, projectName: "Chapter", now: 1 })
+    expect(replaceServerQuestion(foreign, API, "Chapter dev")).toBe(
+      "This file is connected to https://api.rerune.io. Connect it to Chapter dev on " + API + " for everyone who opens it? The plugin then stops working with the other server in this file.",
+    )
+    expect(replaceServerQuestion(null, API, "Chapter")).toBeNull()
+    expect(replaceServerQuestion({ ...foreign, apiBase: API }, API, "Chapter")).toBeNull()
   })
 
   it("starts from defaults for a new file or another server", () => {

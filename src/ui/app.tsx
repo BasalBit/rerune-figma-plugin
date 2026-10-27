@@ -38,7 +38,7 @@ import { createPairingFlow, type PairingFlow, type PairingState } from "./state/
 import { previewStatus, resetOutcome } from "./state/preview"
 import { cacheEntriesFromResolved } from "./state/remote"
 import { SESSION_ENDED_NOTICE, signOut, usableAuth } from "./state/session"
-import { API_BASE_MISMATCH, connectProject, parsePrefs, parseSettingsReport, settingsOffer, type Prefs, type SettingsStatus } from "./state/settings"
+import { API_BASE_MISMATCH_HINT, connectProject, parsePrefs, parseSettingsReport, replaceServerQuestion, settingsOffer, type Prefs, type SettingsStatus } from "./state/settings"
 import { useStore } from "./state/use-store"
 import { createWorkspace } from "./state/workspace"
 
@@ -417,8 +417,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         api={api}
         auth={auth}
         currentProjectId={usable?.projectId ?? null}
-        banner={projectError ?? (readOnly ? API_BASE_MISMATCH + " Choose a project on this server to connect the file here." : null)}
+        banner={projectError ?? (readOnly ? API_BASE_MISMATCH_HINT : null)}
         canGoBack={usable !== null && project !== null}
+        confirmPick={(picked) => replaceServerQuestion(settings, init.apiBase, picked.name)}
         onPick={pickProject}
         onBack={() => go({ type: "open", screen: "layers" })}
         onSignOut={() => void signOutNow("signed-out")}

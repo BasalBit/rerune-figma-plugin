@@ -17,6 +17,8 @@ export interface ProjectScreenProps {
   currentProjectId: string | null
   banner: string | null
   canGoBack: boolean
+  // A question to confirm before picking replaces the file's settings (another server's file, §7.7), or null.
+  confirmPick?(project: FigmaProject): string | null
   onPick(project: FigmaProject): Promise<void>
   onBack(): void
   onSignOut(): void
@@ -27,6 +29,7 @@ export function ProjectScreen(props: ProjectScreenProps) {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
   const [picking, setPicking] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<{ project: FigmaProject; question: string } | null>(null)
 
   async function load() {
     setError(null)
@@ -41,7 +44,17 @@ export function ProjectScreen(props: ProjectScreenProps) {
     void load()
   }, [])
 
+  function choose(project: FigmaProject) {
+    const question = props.confirmPick?.(project) ?? null
+    if (question !== null) {
+      setConfirming({ project, question })
+      return
+    }
+    void pick(project)
+  }
+
   async function pick(project: FigmaProject) {
+    setConfirming(null)
     setPicking(project.id)
     setError(null)
     try {
@@ -61,6 +74,21 @@ export function ProjectScreen(props: ProjectScreenProps) {
         <Small muted>The file remembers this project for everyone who opens it with the plugin.</Small>
         <div style={{ height: "8px" }} />
         {props.banner !== null && <Note tone="warning">{props.banner}</Note>}
+        {confirming !== null && (
+          <Note
+            tone="warning"
+            actions={
+              <div style={styles.row}>
+                <TextButton onClick={() => setConfirming(null)}>Cancel</TextButton>
+                <TextButton disabled={picking !== null} onClick={() => void pick(confirming.project)}>
+                  Connect here
+                </TextButton>
+              </div>
+            }
+          >
+            {confirming.question}
+          </Note>
+        )}
         <ErrorNote message={error} onRetry={data === null ? () => void load() : undefined} />
         {data === null && error === null && <Loading label="Loading projects…" />}
         {data !== null && data.projects.length > 8 && (
@@ -83,7 +111,7 @@ export function ProjectScreen(props: ProjectScreenProps) {
                     key={project.id}
                     type="button"
                     disabled={picking !== null}
-                    onClick={() => void pick(project)}
+                    onClick={() => choose(project)}
                     style={{
                       ...styles.card,
                       textAlign: "left",
