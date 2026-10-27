@@ -1,0 +1,113 @@
+import type { FigmaFile, FigmaRegisterFileRequest } from "../../shared/api-types"
+import { EDIT_KEYS_PERMISSION, isPossibleCopy, type LinkSyncBlock, type LinkSyncGate } from "../../shared/file-link"
+import { canonicalFileUrl, isFigmaFileKey, parseFigmaUrl, type ParsedFigmaUrl } from "../../shared/figma-url"
+import type { FileSettings } from "../../shared/messages"
+import { firstRunes } from "../../shared/text"
+import { REASON_MESSAGES, userMessage } from "../api/client"
+import type { FigmaApi } from "../api/figma-api"
+
+// The pasted file link (§7.7, Phase 2): input validation, E14 registration and the banners that explain why link
+// sync is off (§7.11: skipped silently, "a banner explains how to enable").
+
+export const FILE_LINK_INVALID = REASON_MESSAGES.invalid_figma_url
+export const FILE_NAME_MAX_RUNES = 200
+
+export type FileLinkInput = { kind: "empty" } | { kind: "invalid"; message: string } | { kind: "valid"; link: ParsedFigmaUrl }
+
+export function readFileLinkInput(text: string): FileLinkInput {
+  if (text.trim() === "") {
+    return { kind: "empty" }
+  }
+  const link = parseFigmaUrl(text)
+  return link === null ? { kind: "invalid", message: FILE_LINK_INVALID } : { kind: "valid", link }
+}
+
+export const COPY_MESSAGE = "This may be a copy of another file. Paste this file's link, or confirm it is the same file."
+export const BRANCH_MESSAGE = "Links and screenshots sync after this branch is merged."
+export const NO_FILE_MESSAGE = "Paste this file's Figma link (Share → Copy link) so ReRune can show where each key is used. Until then, links stay in this file."
+export const NO_PERMISSION_MESSAGE = "Links aren't shared with ReRune because you can't edit keys in this project. Ask a project admin for the Edit keys permission."
+export const SYNC_ON_MESSAGE = "Layer links are shared with ReRune, so it shows where each key is used."
+
+export type FileLinkAction = "same-file" | "paste-link"
+
+export interface FileLinkNotice {
+  reason: LinkSyncBlock
+  tone: "info" | "warning"
+  message: string
+  actions: FileLinkAction[]
+  dismissible: boolean
+}
+
+// The banner above the workspace while link sync is off. The copy banner stays until the designer answers it:
+// sync is paused while it shows (§7.7).
+export function fileLinkNotice(gate: LinkSyncGate): FileLinkNotice | null {
+  switch (gate.reason) {
+    case null:
+      return null
+    case "possible_copy":
+      return { reason: gate.reason, tone: "warning", message: COPY_MESSAGE, actions: ["same-file", "paste-link"], dismissible: false }
+    case "branch":
+      return { reason: gate.reason, tone: "info", message: BRANCH_MESSAGE, actions: ["paste-link"], dismissible: true }
+    case "no_file":
+      return { reason: gate.reason, tone: "info", message: NO_FILE_MESSAGE, actions: ["paste-link"], dismissible: true }
+    case "no_permission":
+      return { reason: gate.reason, tone: "info", message: NO_PERMISSION_MESSAGE, actions: [], dismissible: true }
+  }
+}
+
+export const FILE_LINK_ACTION_LABELS: Record<FileLinkAction, string> = {
+  "same-file": "This is the same file",
+  "paste-link": "Paste link",
+}
+
+// One line for the Settings screen.
+export function fileLinkStatus(gate: LinkSyncGate): string {
+  switch (gate.reason) {
+    case null:
+      return SYNC_ON_MESSAGE
+    case "possible_copy":
+      return COPY_MESSAGE
+    case "branch":
+      return BRANCH_MESSAGE
+    case "no_file":
+      return NO_FILE_MESSAGE
+    case "no_permission":
+      return NO_PERMISSION_MESSAGE
+  }
+}
+
+type FileLinkFields = Pick<FileSettings, "fileKey" | "fileUrl" | "fileName" | "branchKey">
+
+// E14 body for the file's link: the canonical URL and the file's name, cut to 200 runes. Only a confirmed main
+// file is registered: a branch link names the main file, whose name is not the branch's, and a suspected copy
+// would register the original under the copy's name (sync waits for both anyway, D43).
+export function fileRegistration(settings: FileLinkFields, rootName: string): FigmaRegisterFileRequest | null {
+  if (settings.fileKey === null || !isFigmaFileKey(settings.fileKey) || settings.branchKey !== null || isPossibleCopy(settings, rootName)) {
+    return null
+  }
+  const url = settings.fileUrl ?? canonicalFileUrl(settings.fileKey, rootName)
+  const name = firstRunes(rootName.trim(), FILE_NAME_MAX_RUNES)
+  return name === "" ? { url } : { url, file_name: name }
+}
+
+export interface RegistrationResult { file: FigmaFile | null; error: string | null }
+
+// PUT /figma/projects/{id}/files after a link is pasted or confirmed (§7.7), only with edit_keys; failures are
+// reported but never undo the saved settings (links register the file themselves, D15).
+export async function registerFile(
+  api: Pick<FigmaApi, "registerFile">,
+  projectId: string,
+  settings: FileLinkFields,
+  rootName: string,
+  permissions: readonly string[],
+): Promise<RegistrationResult> {
+  const request = fileRegistration(settings, rootName)
+  if (request === null || !permissions.includes(EDIT_KEYS_PERMISSION)) {
+    return { file: null, error: null }
+  }
+  try {
+    return { file: await api.registerFile(projectId, request), error: null }
+  } catch (error) {
+    return { file: null, error: "The link is saved in this file, but ReRune couldn't register it: " + userMessage(error) }
+  }
+}

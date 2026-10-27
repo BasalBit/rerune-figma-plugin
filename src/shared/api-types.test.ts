@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest"
 import {
   ERROR_REASONS,
+  FIGMA_LINK_REJECT_REASONS,
   PUSH_ITEM_REASONS,
   type ErrorReason,
+  type FigmaFile,
+  type FigmaFilesResponse,
+  type FigmaLinkRejectReason,
+  type FigmaLinksListResponse,
+  type FigmaLinksRequest,
+  type FigmaLinksResponse,
+  type FigmaRegisterFileRequest,
   type FigmaByNameRequest,
   type FigmaByNameResponse,
   type FigmaCreateSessionResponse,
@@ -24,6 +32,7 @@ import {
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
 const errorReasonsComplete: Equal<(typeof ERROR_REASONS)[number], ErrorReason> = true
 const pushReasonsComplete: Equal<(typeof PUSH_ITEM_REASONS)[number], PushItemReason> = true
+const linkRejectReasonsComplete: Equal<(typeof FIGMA_LINK_REJECT_REASONS)[number], FigmaLinkRejectReason> = true
 
 const meta: FigmaMetaResponse = {
   api_version: 1,
@@ -183,6 +192,63 @@ const structured: TranslationContent = {
     ],
   },
 }
+
+// Phase 2 examples (E14–E18), as written in §4.
+const registerFile: FigmaRegisterFileRequest = { url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter?node-id=0-1", file_name: "Chapter" }
+
+const file: FigmaFile = {
+  file_key: "AbCdEf1234567890XyZ",
+  file_name: "Chapter",
+  url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter",
+  link_count: 0,
+  screenshot_count: 0,
+  last_push_at: null,
+  last_push_by: null,
+  created_at: "2026-10-27T10:00:00Z",
+  updated_at: "2026-10-27T10:00:00Z",
+}
+
+const files: FigmaFilesResponse = { files: [file, { ...file, last_push_at: "2026-10-27T11:00:00Z", last_push_by: { id: "kc-sub", name: "Ada Lovelace" } }] }
+
+const linksRequest: FigmaLinksRequest = {
+  file_key: "AbCdEf1234567890XyZ",
+  upserts: [{ node_id: "12:345", key_id: "6a4800000000000000000001", frame_id: "10:1", frame_name: "Checkout", page_id: "0:1", page_name: "Mobile", node_name: "Pay button" }],
+  removed_node_ids: ["12:999"],
+}
+
+const linksResponse: FigmaLinksResponse = { upserted: 1, removed: 1, rejected: [{ node_id: "12:346", reason: "key_not_found" }] }
+
+const linksList: FigmaLinksListResponse = {
+  links: [
+    {
+      node_id: "12:345",
+      key_id: "6a4800000000000000000001",
+      key: "checkout_pay_button",
+      file_key: "AbCdEf1234567890XyZ",
+      frame_id: "10:1",
+      frame_name: "Checkout",
+      page_id: "0:1",
+      page_name: "Mobile",
+      node_name: "Pay button",
+      figma_url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter?node-id=10-1",
+      updated_at: "2026-10-27T10:00:00Z",
+    },
+  ],
+  next_cursor: null,
+  has_more: false,
+}
+
+describe("wire types (§4, E14–E18)", () => {
+  it("accept the spec examples", () => {
+    const examples = [registerFile, file, files, linksRequest, linksResponse, linksList]
+    expect(JSON.parse(JSON.stringify(examples))).toEqual(examples)
+  })
+
+  it("list both E17 rejection reasons", () => {
+    expect(linkRejectReasonsComplete).toBe(true)
+    expect([...FIGMA_LINK_REJECT_REASONS].sort()).toEqual(["key_not_found", "not_a_text_key"])
+  })
+})
 
 describe("wire types (§4, E1–E13)", () => {
   it("accept the spec examples", () => {

@@ -5,8 +5,8 @@ import { parseFileSettings, resolveFileSettings, serializeFileSettings, type Res
 // File settings live on figma.root and are mirrored to each page (§7.7). Root data reportedly does not
 // survive branch merges, page data does. Pages are never loaded just to read or mirror settings.
 
-export type SyncPauseReason = "no_file" | "branch" | "possible_copy"
-export interface SyncPause { paused: boolean; reason: SyncPauseReason | null }
+// The pause rules (no file link, branch, suspected copy; D43) are pure and shared with the UI.
+export { syncPauseOf, type SyncPause, type SyncPauseReason } from "../shared/file-link"
 
 function readRaw(node: BaseNode): string {
   try {
@@ -30,21 +30,6 @@ export function saveFileSettings(settings: FileSettings, now: number = Date.now(
   figma.root.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.file, raw)
   figma.currentPage.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.file, raw)
   return parsed
-}
-
-// Link sync and screenshot upload (Phase 2) run only for a registered, non-branch file that is not a
-// suspected copy (§7.7, D43). Scan, push of text drafts and preview are never paused.
-export function syncPauseOf(settings: FileSettings | null, rootName: string): SyncPause {
-  if (settings === null || settings.fileKey === null) {
-    return { paused: true, reason: "no_file" }
-  }
-  if (settings.branchKey !== null) {
-    return { paused: true, reason: "branch" }
-  }
-  if (settings.fileName !== null && settings.fileName !== rootName) {
-    return { paused: true, reason: "possible_copy" }
-  }
-  return { paused: false, reason: null }
 }
 
 export function isApiBaseMismatch(settings: FileSettings | null, apiBase: string): boolean {

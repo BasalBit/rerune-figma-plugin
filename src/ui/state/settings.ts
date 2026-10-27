@@ -121,12 +121,14 @@ export const CASE_STYLE_LABELS: Record<CaseStyle, string> = {
   "slash.snake": "slash/snake_case",
 }
 
-// Settings resolution for the current page, read through diagnostics T7 (init has no differ/offerMirror).
+// Settings resolution for the current page, read through diagnostics T7 (init has no differ/offerMirror), plus
+// the file's current name (figma.root.name) for the copy heuristic (§7.7); null when the report lacks it.
 export interface SettingsStatus {
   settings: FileSettings | null
   source: "root" | "page" | "none"
   differ: boolean
   offerMirror: boolean
+  rootName: string | null
 }
 
 export function parseSettingsReport(report: unknown): SettingsStatus | null {
@@ -140,7 +142,8 @@ export function parseSettingsReport(report: unknown): SettingsStatus | null {
   const value = current as { settings?: unknown; source?: unknown; differ?: unknown; offerMirror?: unknown }
   const source = value.source === "root" || value.source === "page" ? value.source : "none"
   const settings = value.settings === null || value.settings === undefined ? null : parseFileSettings(JSON.stringify(value.settings))
-  return { settings, source, differ: value.differ === true, offerMirror: value.offerMirror === true }
+  const fileName = (report as { fileName?: unknown }).fileName
+  return { settings, source, differ: value.differ === true, offerMirror: value.offerMirror === true, rootName: typeof fileName === "string" ? fileName : null }
 }
 
 export type SettingsOffer = { kind: "repair" | "mirror"; settings: FileSettings; message: string; action: string }

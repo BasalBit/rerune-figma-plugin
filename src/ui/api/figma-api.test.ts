@@ -74,6 +74,43 @@ describe("createFigmaApi", () => {
     expect(calls[5]).toEqual({ method: "POST", path: "/figma/projects/" + PROJECT + "/push", options: { json: { file_key: null, items: [] }, retry: "none" } })
   })
 
+  it("builds the file and link requests (E14–E18)", async () => {
+    const { api, calls } = recorder()
+    await api.registerFile(PROJECT, { url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter", file_name: "Chapter" })
+    await api.registerFile(PROJECT, { url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter" })
+    await api.files(PROJECT)
+    await expect(api.deleteFile(PROJECT, "AbCdEf1234567890XyZ")).resolves.toBeUndefined()
+    const upserts = [{ node_id: "12:345", key_id: "6a48", frame_id: "10:1", frame_name: "Checkout", page_id: "0:1", page_name: "Mobile", node_name: "Pay" }]
+    await api.upsertLinks(PROJECT, { file_key: "AbCdEf1234567890XyZ", upserts, removed_node_ids: ["12:999"] })
+    await api.links(PROJECT, { file_key: "AbCdEf1234567890XyZ", page_id: "0:1", limit: 500 })
+    await api.links(PROJECT, { file_key: "AbCdEf1234567890XyZ", page_id: "0:1", cursor: "eyJ2IjoxfQ", limit: 500 })
+    expect(calls).toEqual([
+      {
+        method: "PUT",
+        path: "/figma/projects/" + PROJECT + "/files",
+        options: { json: { url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter", file_name: "Chapter" }, retry: "read" },
+      },
+      { method: "PUT", path: "/figma/projects/" + PROJECT + "/files", options: { json: { url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter" }, retry: "read" } },
+      { method: "GET", path: "/figma/projects/" + PROJECT + "/files", options: {} },
+      { method: "DELETE", path: "/figma/projects/" + PROJECT + "/files/AbCdEf1234567890XyZ", options: {} },
+      {
+        method: "PUT",
+        path: "/figma/projects/" + PROJECT + "/links",
+        options: { json: { file_key: "AbCdEf1234567890XyZ", upserts, removed_node_ids: ["12:999"] }, retry: "read" },
+      },
+      {
+        method: "GET",
+        path: "/figma/projects/" + PROJECT + "/links",
+        options: { query: { file_key: "AbCdEf1234567890XyZ", frame_id: null, page_id: "0:1", key_id: null, cursor: null, limit: 500 } },
+      },
+      {
+        method: "GET",
+        path: "/figma/projects/" + PROJECT + "/links",
+        options: { query: { file_key: "AbCdEf1234567890XyZ", frame_id: null, page_id: "0:1", key_id: null, cursor: "eyJ2IjoxfQ", limit: 500 } },
+      },
+    ])
+  })
+
   it("encodes path segments", async () => {
     const { api, calls } = recorder()
     await api.project("a/b")

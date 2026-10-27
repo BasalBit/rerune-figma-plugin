@@ -62,23 +62,29 @@ describe("file settings", () => {
   })
 
   it("reads the settings status from the T7 report", () => {
-    expect(parseSettingsReport({ current: { source: "root", differ: true, offerMirror: false, settings: current } })).toEqual({ settings: current, source: "root", differ: true, offerMirror: false })
-    expect(parseSettingsReport({ current: { source: "none", settings: null } })).toEqual({ settings: null, source: "none", differ: false, offerMirror: false })
+    expect(parseSettingsReport({ fileName: "Chapter", current: { source: "root", differ: true, offerMirror: false, settings: current } })).toEqual({
+      settings: current,
+      source: "root",
+      differ: true,
+      offerMirror: false,
+      rootName: "Chapter",
+    })
+    expect(parseSettingsReport({ current: { source: "none", settings: null } })).toEqual({ settings: null, source: "none", differ: false, offerMirror: false, rootName: null })
     expect(parseSettingsReport({ current: { source: "page", settings: { v: 2 } } })?.settings).toBeNull()
     expect(parseSettingsReport(null)).toBeNull()
     expect(parseSettingsReport({})).toBeNull()
   })
 
   it("offers Repair when root and page differ, else the page mirror when it is missing or older (§7.7)", () => {
-    expect(settingsOffer({ settings: current, source: "root", differ: true, offerMirror: true })).toEqual({ kind: "repair", settings: current, message: REPAIR_MESSAGE, action: "Repair settings" })
-    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: true })).toEqual({
+    expect(settingsOffer({ settings: current, source: "root", differ: true, offerMirror: true, rootName: null })).toEqual({ kind: "repair", settings: current, message: REPAIR_MESSAGE, action: "Repair settings" })
+    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: true, rootName: null })).toEqual({
       kind: "mirror",
       settings: current,
       message: MIRROR_MESSAGE,
       action: "Use this file's ReRune settings on this page",
     })
-    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: false })).toBeNull()
-    expect(settingsOffer({ settings: null, source: "none", differ: true, offerMirror: true })).toBeNull()
+    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: false, rootName: null })).toBeNull()
+    expect(settingsOffer({ settings: null, source: "none", differ: true, offerMirror: true, rootName: null })).toBeNull()
     expect(settingsOffer(null)).toBeNull()
   })
 })

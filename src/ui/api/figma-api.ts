@@ -2,6 +2,12 @@ import type {
   FigmaByNameRequest,
   FigmaByNameResponse,
   FigmaCreateSessionResponse,
+  FigmaFile,
+  FigmaFilesResponse,
+  FigmaLinksListResponse,
+  FigmaLinksQuery,
+  FigmaLinksRequest,
+  FigmaLinksResponse,
   FigmaMetaResponse,
   FigmaPairingCodeResponse,
   FigmaPairingDecisionResponse,
@@ -10,6 +16,7 @@ import type {
   FigmaProjectsResponse,
   FigmaPushRequest,
   FigmaPushResponse,
+  FigmaRegisterFileRequest,
   FigmaResolveRequest,
   FigmaResolveResponse,
   FigmaSearchResponse,
@@ -19,7 +26,8 @@ import { canonicalPairingCode } from "../../shared/pairing-code"
 import { firstRunes } from "../../shared/text"
 import type { ApiClient } from "./client"
 
-// One function per Phase 1 endpoint (E1–E13, §4). Paths are relative to __API_BASE__ (nginx strips /api).
+// One function per endpoint (Phase 1: E1–E13; Phase 2 files and links: E14–E18; §4). Paths are relative to
+// __API_BASE__ (nginx strips /api).
 
 export interface SearchParams { q: string; cursor?: string | null; limit?: number }
 
@@ -37,6 +45,11 @@ export interface FigmaApi {
   keysByName(projectId: string, request: FigmaByNameRequest): Promise<FigmaByNameResponse>    // E11
   resolveKeys(projectId: string, request: FigmaResolveRequest): Promise<FigmaResolveResponse> // E12
   push(projectId: string, request: FigmaPushRequest): Promise<FigmaPushResponse>              // E13
+  registerFile(projectId: string, request: FigmaRegisterFileRequest): Promise<FigmaFile>      // E14
+  files(projectId: string): Promise<FigmaFilesResponse>                                       // E15
+  deleteFile(projectId: string, fileKey: string): Promise<void>                               // E16
+  upsertLinks(projectId: string, request: FigmaLinksRequest): Promise<FigmaLinksResponse>     // E17
+  links(projectId: string, query: FigmaLinksQuery): Promise<FigmaLinksListResponse>           // E18
 }
 
 function segment(value: string): string {
@@ -90,5 +103,32 @@ export function createFigmaApi(client: ApiClient): FigmaApi {
     resolveKeys: (projectId, request) =>
       client.request<FigmaResolveResponse>("POST", projectPath(projectId, "/keys/resolve"), { json: request, retry: "read" }),
     push: (projectId, request) => client.request<FigmaPushResponse>("POST", projectPath(projectId, "/push"), { json: request, retry: "none" }),
+    // E14 is an upsert and E17 sets and deletes rows by node id, so both are idempotent: a lost answer is retried
+    // once like a read. E16 deletes and stays at the 429-only default.
+    registerFile: (projectId, request) =>
+      client.request<FigmaFile>("PUT", projectPath(projectId, "/files"), {
+        json: request.file_name === undefined ? { url: request.url } : { url: request.url, file_name: request.file_name },
+        retry: "read",
+      }),
+    files: (projectId) => client.request<FigmaFilesResponse>("GET", projectPath(projectId, "/files")),
+    deleteFile: async (projectId, fileKey) => {
+      await client.request<unknown>("DELETE", projectPath(projectId, "/files/" + segment(fileKey)))
+    },
+    upsertLinks: (projectId, request) =>
+      client.request<FigmaLinksResponse>("PUT", projectPath(projectId, "/links"), {
+        json: { file_key: request.file_key, upserts: request.upserts, removed_node_ids: request.removed_node_ids },
+        retry: "read",
+      }),
+    links: (projectId, query) =>
+      client.request<FigmaLinksListResponse>("GET", projectPath(projectId, "/links"), {
+        query: {
+          file_key: query.file_key ?? null,
+          frame_id: query.frame_id ?? null,
+          page_id: query.page_id ?? null,
+          key_id: query.key_id ?? null,
+          cursor: query.cursor ?? null,
+          limit: query.limit ?? null,
+        },
+      }),
   }
 }

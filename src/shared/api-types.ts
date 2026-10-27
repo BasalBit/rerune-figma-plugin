@@ -282,3 +282,68 @@ export interface FigmaPushResponse {
   summary: FigmaPushSummary
   available_keys: number | null
 }
+
+// Phase 2: files and links (E14–E18).
+
+export interface FigmaRegisterFileRequest { url: string; file_name?: string }
+
+export interface FigmaFileUserRef { id: string; name: string }
+
+export interface FigmaFile {
+  file_key: string
+  file_name: string
+  url: string
+  link_count: number
+  screenshot_count: number
+  last_push_at: string | null
+  last_push_by: FigmaFileUserRef | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FigmaFilesResponse { files: FigmaFile[] }
+
+export interface FigmaLinkUpsert {
+  node_id: string
+  key_id: string
+  frame_id: string
+  frame_name: string
+  page_id: string
+  page_name: string
+  node_name: string
+}
+
+export interface FigmaLinksRequest { file_key: string; upserts: FigmaLinkUpsert[]; removed_node_ids: string[] }
+
+export type FigmaLinkRejectReason = "key_not_found" | "not_a_text_key"
+
+export const FIGMA_LINK_REJECT_REASONS: readonly FigmaLinkRejectReason[] = ["key_not_found", "not_a_text_key"]
+
+export interface FigmaLinkRejection { node_id: string; reason: FigmaLinkRejectReason }
+
+export interface FigmaLinksResponse { upserted: number; removed: number; rejected: FigmaLinkRejection[] }
+
+export interface FigmaLink {
+  node_id: string
+  key_id: string
+  key: string
+  file_key: string
+  frame_id: string
+  frame_name: string
+  page_id: string
+  page_name: string
+  node_name: string
+  figma_url: string
+  updated_at: string
+}
+
+export interface FigmaLinksQuery {
+  file_key?: string | null
+  frame_id?: string | null
+  page_id?: string | null
+  key_id?: string | null
+  cursor?: string | null
+  limit?: number | null
+}
+
+export interface FigmaLinksListResponse { links: FigmaLink[]; next_cursor: string | null; has_more: boolean }

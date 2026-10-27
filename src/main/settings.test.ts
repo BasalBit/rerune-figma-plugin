@@ -86,22 +86,40 @@ describe("saveFileSettings", () => {
   })
 })
 
+const FILE_KEY = "AbCdEf1234567890XyZ"
+const BRANCH_KEY = "BrAnCh1234567890"
+
 describe("syncPauseOf (D43: branch / paused settings block link sync)", () => {
   it("pauses without a registered file", () => {
     expect(syncPauseOf(null, "Chapter")).toEqual({ paused: true, reason: "no_file" })
     expect(syncPauseOf(settings(), "Chapter")).toEqual({ paused: true, reason: "no_file" })
+    expect(syncPauseOf(settings({ fileKey: "abc", fileName: "Chapter" }), "Chapter")).toEqual({ paused: true, reason: "no_file" })
   })
 
   it("pauses link sync and screenshots in branch files", () => {
-    expect(syncPauseOf(settings({ fileKey: "abc", fileName: "Chapter", branchKey: "br1" }), "Chapter")).toEqual({ paused: true, reason: "branch" })
+    expect(syncPauseOf(settings({ fileKey: FILE_KEY, fileName: "Chapter", branchKey: BRANCH_KEY }), "Chapter")).toEqual({ paused: true, reason: "branch" })
   })
 
   it("pauses for a suspected copy (file name changed)", () => {
-    expect(syncPauseOf(settings({ fileKey: "abc", fileName: "Chapter" }), "Chapter (Copy)")).toEqual({ paused: true, reason: "possible_copy" })
+    expect(syncPauseOf(settings({ fileKey: FILE_KEY, fileName: "Chapter" }), "Chapter (Copy)")).toEqual({ paused: true, reason: "possible_copy" })
   })
 
   it("runs for the registered file", () => {
-    expect(syncPauseOf(settings({ fileKey: "abc", fileName: "Chapter" }), "Chapter")).toEqual({ paused: false, reason: null })
+    expect(syncPauseOf(settings({ fileKey: FILE_KEY, fileName: "Chapter" }), "Chapter")).toEqual({ paused: false, reason: null })
+  })
+
+  it("applies to the settings the file actually carries (root, or the newer page mirror)", () => {
+    figmaMock.root.name = "Chapter"
+    put(figmaMock.root, settings({ fileKey: FILE_KEY, fileName: "Chapter", updatedAt: 100 }))
+    put(figmaMock.currentPage, settings({ fileKey: FILE_KEY, fileName: "Chapter", updatedAt: 100 }))
+    expect(syncPauseOf(readFileSettings().settings, figmaMock.root.name)).toEqual({ paused: false, reason: null })
+    // A merged branch brings its page data (with the branch key) but not its root data.
+    put(figmaMock.currentPage, settings({ fileKey: FILE_KEY, fileName: "Chapter", branchKey: BRANCH_KEY, updatedAt: 200 }))
+    expect(syncPauseOf(readFileSettings().settings, figmaMock.root.name)).toEqual({ paused: true, reason: "branch" })
+    // Duplicating the file keeps the plugin data but not the name.
+    put(figmaMock.currentPage, settings({ fileKey: FILE_KEY, fileName: "Chapter", updatedAt: 300 }))
+    figmaMock.root.name = "Chapter (Copy)"
+    expect(syncPauseOf(readFileSettings().settings, figmaMock.root.name)).toEqual({ paused: true, reason: "possible_copy" })
   })
 })
 
