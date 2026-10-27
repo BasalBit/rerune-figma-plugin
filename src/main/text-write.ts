@@ -351,14 +351,16 @@ async function resetTargets(scope: Scope, nodeIds: readonly string[] | undefined
 // record of its own (or only an inherited one): the main's node is reset instead, which also ends the preview on
 // every other instance of it, and nothing is written on the sublayer (D44). Explicit node ids whose preview lives
 // in a library file report remote_component; scope resets keep the sublayer too, so a copied record on it is
-// still cleared.
+// still cleared. Nodes that own a record come first, so a main's record no longer shows through on its instances
+// when they are reached (it would otherwise look copied there and be cleared with a write on the sublayer).
 async function withPreviewOwners(nodes: readonly TextNode[], explicit: boolean, caches: NodeCaches, errors: NodeError[]): Promise<TextNode[]> {
-  const result: TextNode[] = []
+  const owners: TextNode[] = []
+  const others: TextNode[] = []
   const seen = new Set<string>()
-  const add = (node: TextNode) => {
+  const add = (list: TextNode[], node: TextNode) => {
     if (!seen.has(node.id)) {
       seen.add(node.id)
-      result.push(node)
+      list.push(node)
     }
   }
   for (let index = 0; index < nodes.length; index++) {
@@ -375,20 +377,24 @@ async function withPreviewOwners(nodes: readonly TextNode[], explicit: boolean, 
     } catch {
       shown = null
     }
-    if (shown === null || shown.owner === node) {
-      add(node)
+    if (shown === null) {
+      add(others, node)
+      continue
+    }
+    if (shown.owner === node) {
+      add(owners, node)
       continue
     }
     if (shown.owner !== null) {
-      add(shown.owner)
+      add(owners, shown.owner)
     } else if (explicit) {
       errors.push(nodeError(node.id, "remote_component"))
     }
     if (!explicit) {
-      add(node)
+      add(others, node)
     }
   }
-  return result
+  return owners.concat(others)
 }
 
 // preview-reset (§7.14 reset). Runs with skipInvisibleInstanceChildren off so hidden previewed instance

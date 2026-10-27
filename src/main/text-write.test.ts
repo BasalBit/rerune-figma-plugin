@@ -367,6 +367,20 @@ describe("preview-reset (§7.14 reset)", () => {
     expect(instance.overrides).toEqual([])
   })
 
+  it("resets main components before their instances, so nothing is written on an instance with plugin data of its own", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
+    sublayer.inheritFrom = mainText
+    sublayer.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink({ ...link("I12:34;5:67", "Pay now"), id: keyId(2) }))
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [{ id: "I12:34;5:67", overriddenFields: ["pluginData"] }] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [instance, fakeComponent("5:1", "Button", [mainText])])
+    await previewed(mainText)
+    expect(await resetPreview("page", undefined, undefined)).toEqual({ done: 1, errors: [] })
+    expect(mainText.characters).toBe("Pay now")
+    expect(sublayer.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE)).toEqual([DATA_KEYS.link])
+  })
+
   it("resets the main component, also on another page, when an instance that shows its preview is reset", async () => {
     const mainText = fakeText("5:67", "Pay now")
     const components = fakePage("0:2", "Components", [fakeComponent("5:1", "Button", [mainText])])
