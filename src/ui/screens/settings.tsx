@@ -2,13 +2,19 @@ import { Button, Checkbox, Dropdown, Textbox, Toggle } from "@create-figma-plugi
 import { h } from "preact"
 import { useEffect, useState } from "preact/hooks"
 import { CASE_STYLES } from "../../shared/constants"
+import type { LinkSyncGate } from "../../shared/file-link"
+import type { ParsedFigmaUrl } from "../../shared/figma-url"
 import type { CaseStyle, FileSettings, StoredAuth } from "../../shared/messages"
+import { userMessage } from "../api/client"
+import { DANGER_TEXT, FileLinkForm } from "../components/file-link"
 import { ErrorNote, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { fileLinkStatus } from "../state/file-link"
 import { exampleKeyName, templateIssues } from "../state/naming"
 import { applyEdit, CASE_STYLE_LABELS, editOf, sameEdit, settingsOffer, type Prefs, type SettingsEdit, type SettingsOffer, type SettingsStatus } from "../state/settings"
 
-// Settings (§7.8): key template, case style, ignore _ layers, include locked, Advanced → Diagnostics, version,
-// Sign out. File settings are written to the file (root + page mirror, §7.7); prefs stay on this machine.
+// Settings (§7.8): the Figma file link (Phase 2), key template, case style, ignore _ layers, include locked,
+// Advanced → Diagnostics, version, Sign out. File settings are written to the file (root + page mirror, §7.7);
+// prefs stay on this machine.
 
 export interface SettingsScreenProps {
   settings: FileSettings | null
@@ -23,6 +29,11 @@ export interface SettingsScreenProps {
   onChangeProject(): void
   onDiagnostics(): void
   onSignOut(): void
+  // Figma file link (§7.7): link sync state, save a pasted link, confirm a suspected copy. Each returns a warning
+  // to show (E14 failed) or null.
+  linkGate: LinkSyncGate
+  onSaveFileLink(link: ParsedFigmaUrl): Promise<string | null>
+  onConfirmSameFile(): Promise<string | null>
 }
 
 const EMPTY_EDIT: SettingsEdit = { keyTemplate: "", caseStyle: "auto", ignoreUnderscoreLayers: true, includeLocked: false }
@@ -97,6 +108,10 @@ export function SettingsScreen(props: SettingsScreenProps) {
         )}
         {offer !== null && <SettingsOfferNote offer={offer} disabled={props.readOnly || saving !== null} onApply={() => void save(offer.settings, offer.kind)} />}
 
+        {props.settings !== null && (
+          <FileSection settings={props.settings} gate={props.linkGate} readOnly={props.readOnly} onSave={props.onSaveFileLink} onConfirmSameFile={props.onConfirmSameFile} />
+        )}
+
         <SectionTitle>Key names</SectionTitle>
         <Small muted>Template</Small>
         <Textbox value={edit.keyTemplate} placeholder="{screen}_{element} (default)" disabled={props.settings === null || props.readOnly} onValueInput={(value) => setEdit({ ...edit, keyTemplate: value })} spellCheck={false} />
@@ -152,6 +167,58 @@ export function SettingsScreen(props: SettingsScreenProps) {
         </div>
         <Small muted>ReRune for Figma {props.version}</Small>
       </div>
+    </div>
+  )
+}
+
+// The file's Figma link (§7.7): which file it names, whether links sync, "This is the same file" for a suspected
+// copy, and a field to paste the link (a new link replaces the old one).
+function FileSection(props: {
+  settings: FileSettings
+  gate: LinkSyncGate
+  readOnly: boolean
+  onSave(link: ParsedFigmaUrl): Promise<string | null>
+  onConfirmSameFile(): Promise<string | null>
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [message, setMessage] = useState<{ tone: "good" | "warning"; text: string } | null>(null)
+
+  async function confirm() {
+    setConfirming(true)
+    setMessage(null)
+    try {
+      const warning = await props.onConfirmSameFile()
+      setMessage(warning === null ? { tone: "good", text: "Confirmed. Links sync with ReRune again." } : { tone: "warning", text: warning })
+    } catch (caught) {
+      setMessage({ tone: "warning", text: userMessage(caught) })
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  const linked = props.settings.fileKey !== null
+  return (
+    <div style={styles.tightStack}>
+      <SectionTitle>Figma file</SectionTitle>
+      {linked && (
+        <div>
+          <div style={{ fontWeight: "600", overflowWrap: "anywhere" }}>{props.settings.fileName ?? "This file"}</div>
+          {props.settings.fileUrl !== null && <div style={{ ...styles.mono, ...styles.muted }}>{props.settings.fileUrl}</div>}
+        </div>
+      )}
+      <Small muted={props.gate.enabled} style={props.gate.reason === "possible_copy" ? DANGER_TEXT : undefined}>
+        {fileLinkStatus(props.gate)}
+      </Small>
+      {props.gate.reason === "possible_copy" && (
+        <div>
+          <Button secondary disabled={props.readOnly || confirming} loading={confirming} onClick={() => void confirm()}>
+            This is the same file
+          </Button>
+        </div>
+      )}
+      {message !== null && <Note tone={message.tone}>{message.text}</Note>}
+      <Small muted>{linked ? "Paste a new link to replace it (Share → Copy link):" : "Paste this file's link (Share → Copy link):"}</Small>
+      <FileLinkForm disabled={props.readOnly} saveLabel={linked ? "Replace link" : "Save link"} onSave={props.onSave} />
     </div>
   )
 }

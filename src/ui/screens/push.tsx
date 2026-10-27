@@ -9,6 +9,7 @@ import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { linkSyncWarning, type LinkSyncResult } from "../state/link-sync"
 import { groupErrors, type BatchOutcome } from "../state/ops"
 import {
   applyTakeReRune,
@@ -53,6 +54,9 @@ export interface PushScreenProps {
   onAvailableKeys(availableKeys: number): void
   // A push or pull starts (true) or ends (false); the app keeps the Push tab open meanwhile.
   onBusy(busy: boolean): void
+  // Phase 2: E13 file_key of the confirmed main file (or null) and the after-push link sync (§7.13 rule 11).
+  fileKey: string | null
+  syncLinks(nodeIds: readonly string[]): Promise<LinkSyncResult | null>
 }
 
 type Phase = "preparing" | "plan" | "pushing" | "results"
@@ -145,7 +149,7 @@ export function PushScreen(props: PushScreenProps) {
     setError(null)
     props.onBusy(true)
     try {
-      const result = await executePush({ api: props.api, bus: props.bus }, prepared.plan, prepared.context)
+      const result = await executePush(pushDeps(), prepared.plan, prepared.context)
       setRun(result)
       if (result.availableKeys !== null) props.onAvailableKeys(result.availableKeys)
       // The rescan drops pending names of layers that are now linked; failed creates keep the chosen name.
@@ -156,6 +160,10 @@ export function PushScreen(props: PushScreenProps) {
       props.onBusy(false)
     }
     setPhase("results")
+  }
+
+  function pushDeps() {
+    return { api: props.api, bus: props.bus, fileKey: props.fileKey, syncLinks: props.syncLinks }
   }
 
   async function pull() {
@@ -182,7 +190,7 @@ export function PushScreen(props: PushScreenProps) {
       setRun((current) => (current === null ? current : resolveConflictInRun(current, conflict.ref, result)))
     try {
       if (choice === "overwrite") {
-        const next = await pushChunks({ api: props.api, bus: props.bus }, [overwriteChunk(conflict)], prepared.context)
+        const next = await pushChunks({ api: props.api, bus: props.bus, fileKey: props.fileKey }, [overwriteChunk(conflict)], prepared.context)
         sendCache({ bus: props.bus }, props.project.id, next.cacheEntries)
         merge({ updated: next.updated, conflicts: next.conflicts, failures: next.failures, writeErrors: next.writeErrors })
       } else {
@@ -556,6 +564,7 @@ function Results(props: {
       <Note tone={run.failures.length === 0 && run.conflicts.length === 0 ? "good" : "info"}>
         {done.length > 0 ? done.join(" · ") + "." : "Nothing was changed."} Drafts are never published from Figma.
       </Note>
+      {linkSyncWarning(run.linkSync) !== null && <Note tone="warning">{linkSyncWarning(run.linkSync)}</Note>}
       {run.quotaExceeded && (
         <Note tone="warning" actions={<TextButton onClick={() => screen.onOpenExternal(screen.dashboardBase + "/translator")}>Open ReRune</TextButton>}>
           Your plan's key limit is reached.

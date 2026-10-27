@@ -1,15 +1,19 @@
-import { Button, SearchTextbox } from "@create-figma-plugin/ui"
+import { Button, SearchTextbox, Textbox } from "@create-figma-plugin/ui"
 import { h } from "preact"
 import { useEffect, useState } from "preact/hooks"
 import type { FigmaProject, FigmaProjectsResponse } from "../../shared/api-types"
+import type { ParsedFigmaUrl } from "../../shared/figma-url"
 import type { StoredAuth } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
+import { FILE_LINK_PLACEHOLDER, FileLinkFeedback } from "../components/file-link"
 import { Chip, ErrorNote, Loading, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { readFileLinkInput } from "../state/file-link"
 import { groupProjects, permissionLabel } from "../state/projects"
 
 // Project (§7.8): organisations and projects from E8 with permission badges; picking one connects the file
-// (settings-save). Account and Sign out at the bottom.
+// (settings-save), with the pasted Figma file link when one is given (Phase 2, §7.7). Account and Sign out at
+// the bottom.
 
 export interface ProjectScreenProps {
   api: Pick<FigmaApi, "projects">
@@ -19,7 +23,8 @@ export interface ProjectScreenProps {
   canGoBack: boolean
   // A question to confirm before picking replaces the file's settings (another server's file, §7.7), or null.
   confirmPick?(project: FigmaProject): string | null
-  onPick(project: FigmaProject): Promise<void>
+  // `link`: the optional "Paste file link" field, saved with the project (null keeps the file's current link).
+  onPick(project: FigmaProject, link: ParsedFigmaUrl | null): Promise<void>
   onBack(): void
   onSignOut(): void
 }
@@ -29,7 +34,8 @@ export function ProjectScreen(props: ProjectScreenProps) {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
   const [picking, setPicking] = useState<string | null>(null)
-  const [confirming, setConfirming] = useState<{ project: FigmaProject; question: string } | null>(null)
+  const [confirming, setConfirming] = useState<{ project: FigmaProject; link: ParsedFigmaUrl | null; question: string } | null>(null)
+  const [linkText, setLinkText] = useState("")
 
   async function load() {
     setError(null)
@@ -45,20 +51,26 @@ export function ProjectScreen(props: ProjectScreenProps) {
   }, [])
 
   function choose(project: FigmaProject) {
-    const question = props.confirmPick?.(project) ?? null
-    if (question !== null) {
-      setConfirming({ project, question })
+    const input = readFileLinkInput(linkText)
+    if (input.kind === "invalid") {
+      // The field already says why; nothing is connected until the link is fixed or cleared.
       return
     }
-    void pick(project)
+    const link = input.kind === "valid" ? input.link : null
+    const question = props.confirmPick?.(project) ?? null
+    if (question !== null) {
+      setConfirming({ project, link, question })
+      return
+    }
+    void pick(project, link)
   }
 
-  async function pick(project: FigmaProject) {
+  async function pick(project: FigmaProject, link: ParsedFigmaUrl | null) {
     setConfirming(null)
     setPicking(project.id)
     setError(null)
     try {
-      await props.onPick(project)
+      await props.onPick(project, link)
     } catch (caught) {
       setError(userMessage(caught))
     } finally {
@@ -80,7 +92,7 @@ export function ProjectScreen(props: ProjectScreenProps) {
             actions={
               <div style={styles.row}>
                 <TextButton onClick={() => setConfirming(null)}>Cancel</TextButton>
-                <TextButton disabled={picking !== null} onClick={() => void pick(confirming.project)}>
+                <TextButton disabled={picking !== null} onClick={() => void pick(confirming.project, confirming.link)}>
                   Connect here
                 </TextButton>
               </div>
@@ -89,6 +101,20 @@ export function ProjectScreen(props: ProjectScreenProps) {
             {confirming.question}
           </Note>
         )}
+        <div style={{ ...styles.tightStack, margin: "4px 0 8px" }}>
+          <Small muted>Figma file link (optional, Share → Copy link). ReRune then shows where each key is used.</Small>
+          <Textbox
+            value={linkText}
+            placeholder={FILE_LINK_PLACEHOLDER}
+            disabled={picking !== null}
+            spellCheck={false}
+            onValueInput={(value) => {
+              setLinkText(value)
+              setError(null)
+            }}
+          />
+          <FileLinkFeedback text={linkText} />
+        </div>
         <ErrorNote message={error} onRetry={data === null ? () => void load() : undefined} />
         {data === null && error === null && <Loading label="Loading projects…" />}
         {data !== null && data.projects.length > 8 && (

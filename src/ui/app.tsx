@@ -3,11 +3,14 @@ import { Fragment, h } from "preact"
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import type { FigmaKeyRef, FigmaProject, FigmaProjectDetail } from "../shared/api-types"
 import { DESIGN_UI_MAX_SIZE, DESIGN_UI_MIN_SIZE } from "../shared/constants"
+import { confirmSameFile, linkSyncGate, pushFileKey, withFileLink, type LinkSyncBlock } from "../shared/file-link"
+import type { ParsedFigmaUrl } from "../shared/figma-url"
 import type { FileSettings, MainToUiOf, ScannedNode, Scope, StoredAuth } from "../shared/messages"
 import { ApiError, createApiClient, userMessage, type FetchLike } from "./api/client"
 import { createFigmaApi, type FigmaApi } from "./api/figma-api"
 import { browserEnvironment, createUiBus, type UiBus } from "./bus"
 import { copyText } from "./clipboard"
+import { FileLinkNote } from "./components/file-link"
 import { Nav } from "./components/nav"
 import { ErrorGroups, GlobalStyle, Loading, Note, styles, TextButton } from "./components/ui"
 import { runNetworkCheck } from "./diagnostics"
@@ -33,6 +36,8 @@ import {
   type NavEvent,
   type Screen,
 } from "./state/navigation"
+import { fileLinkNotice, registerFile, type FileLinkAction } from "./state/file-link"
+import { createLinkSyncer, linkSyncWarning } from "./state/link-sync"
 import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, singleFlight, type ErrorGroup } from "./state/ops"
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
 import { previewStatus, resetOutcome } from "./state/preview"
@@ -126,6 +131,11 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [applyingPreview, setApplyingPreview] = useState(false)
   const [banner, setBanner] = useState<Banner | null>(null)
   const signedOutRef = useRef<() => void>(() => {})
+  // figma.root.name for the copy heuristic (§7.7): from init, refreshed with the T7 settings status.
+  const [rootName, setRootName] = useState(init.fileName)
+  const rootNameRef = useRef(init.fileName)
+  const [dismissedNotices, setDismissedNotices] = useState<LinkSyncBlock[]>([])
+  const [noticeBusy, setNoticeBusy] = useState(false)
 
   const api = useMemo(() => createApi(init, () => authRef.current?.token ?? null, () => signedOutRef.current()), [])
   const workspace = useMemo(
@@ -168,7 +178,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     go({ type: "signed-out", notice: SESSION_ENDED_NOTICE })
   }
 
-  async function refreshStatus(): Promise<void> {
+  // Re-reads the settings status (T7) and returns it, or null when it could not be read.
+  async function refreshStatus(): Promise<SettingsStatus | null> {
     try {
       const report = await bus.request((requestId) => ({ type: "diagnostics-read", requestId, test: "T7-settings" }), {
         done: (message) => (message.type === "diagnostics-result" ? message.report : undefined),
@@ -177,9 +188,15 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       if (next !== null) {
         setStatus(next)
         setSettings(next.settings)
+        if (next.rootName !== null) {
+          rootNameRef.current = next.rootName
+          setRootName(next.rootName)
+        }
       }
+      return next
     } catch {
-      // The status only adds the Repair/mirror offers; init's settings stay in use.
+      // The status only adds the Repair/mirror offers and the file's current name; init's values stay in use.
+      return null
     }
   }
 
@@ -229,6 +246,11 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   }, [])
 
   const usable = connectedSettings({ apiBase: init.apiBase, settings })
+  // Link sync (Phase 2, §7.11): on only for a confirmed main file and a user with edit_keys (D43).
+  const gate = linkSyncGate(usable, rootName, project?.permissions ?? [])
+  const gateRef = useRef(gate)
+  gateRef.current = gate
+  const linkSyncer = useMemo(() => createLinkSyncer({ api, bus, projectId: () => projectRef.current?.id ?? null, gate: () => gateRef.current }), [])
   // The file's project (E9) loads only after "Signed in as" is confirmed: a 403/404 for the new account then
   // leads to the Project screen instead of skipping the confirmation (D34).
   const confirming = awaitingSignInConfirmation(view)
@@ -269,8 +291,15 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     await refreshStatus()
   }
 
-  async function pickProject(picked: FigmaProject): Promise<void> {
-    const next = connectProject(settings, picked, init.apiBase, Date.now())
+  // Picking a project saves the pasted file link with it (§7.7) and registers the file in that project (E14).
+  async function pickProject(picked: FigmaProject, link: ParsedFigmaUrl | null): Promise<void> {
+    if (link !== null) {
+      await refreshStatus()
+    }
+    let next = connectProject(settings, picked, init.apiBase, Date.now())
+    if (link !== null) {
+      next = withFileLink(next, link, rootNameRef.current, Date.now())
+    }
     const changed = settings?.projectId !== picked.id || settings?.apiBase !== init.apiBase
     await saveSettings(next)
     contextRef.current = { apiBase: init.apiBase, settings: next, locked: pushBusy }
@@ -280,6 +309,70 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setProjectError(null)
     ensureProject(picked.id)
     go({ type: "project-connected" })
+    void registerFile(api, picked.id, next, rootNameRef.current, picked.permissions).then((result) => {
+      if (result.error !== null) {
+        setBanner({ tone: "warning", message: result.error, errors: [] })
+      }
+    })
+  }
+
+  function knownNodes(): ScannedNode[] {
+    return workspace.store.get().result?.nodes ?? []
+  }
+
+  // Link sync after the Link dialog wrote or removed links (§7.11); a failure becomes a banner.
+  async function syncAfterWrite(nodeIds: string[]): Promise<void> {
+    if (nodeIds.length === 0) {
+      return
+    }
+    const warning = linkSyncWarning(await linkSyncer.syncNodes(nodeIds, knownNodes()))
+    if (warning !== null) {
+      setBanner({ tone: "warning", message: warning, errors: [] })
+    }
+  }
+
+  // A pasted file link (§7.7): saved to the file, then registered (E14). Returns a warning when E14 failed.
+  async function saveFileLink(link: ParsedFigmaUrl): Promise<string | null> {
+    const fresh = await refreshStatus()
+    const current = connectedSettings({ apiBase: init.apiBase, settings: fresh?.settings ?? contextRef.current.settings })
+    const active = projectRef.current
+    if (current === null || active === null) {
+      throw new Error("Connect this file to a ReRune project first.")
+    }
+    const next = withFileLink(current, link, rootNameRef.current, Date.now())
+    await saveSettings(next)
+    return (await registerFile(api, active.id, next, rootNameRef.current, active.permissions)).error
+  }
+
+  // "This is the same file" (§7.7): the stored name follows the file's current name, which resumes sync.
+  async function confirmFile(): Promise<string | null> {
+    const fresh = await refreshStatus()
+    const current = connectedSettings({ apiBase: init.apiBase, settings: fresh?.settings ?? contextRef.current.settings })
+    const active = projectRef.current
+    if (current === null || active === null) {
+      return null
+    }
+    const next = confirmSameFile(current, rootNameRef.current, Date.now())
+    await saveSettings(next)
+    return (await registerFile(api, active.id, next, rootNameRef.current, active.permissions)).error
+  }
+
+  async function fileNoticeAction(action: FileLinkAction): Promise<void> {
+    if (action === "paste-link") {
+      go({ type: "open", screen: "settings" })
+      return
+    }
+    setNoticeBusy(true)
+    try {
+      const warning = await confirmFile()
+      if (warning !== null) {
+        setBanner({ tone: "warning", message: warning, errors: [] })
+      }
+    } catch (caught) {
+      setBanner({ tone: "warning", message: caught instanceof Error ? caught.message : "The settings couldn't be saved.", errors: [] })
+    } finally {
+      setNoticeBusy(false)
+    }
   }
 
   function startSignIn() {
@@ -469,6 +562,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             void workspace.scan()
           }
         }}
+        onLinksWritten={syncAfterWrite}
       />
     )
   }
@@ -476,6 +570,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const previewing = previewStatus(space.result?.nodes ?? [])
   // §7.7 Repair / page-mirror offer when the plugin opens on a page that needs it (Settings shows its own copy).
   const offer = screen !== "settings" && offerDismissedOn !== pageRef.current ? settingsOffer(status) : null
+  // Why link sync is off (§7.7, §7.11); Settings shows the same state in its Figma file section.
+  const notice = screen !== "settings" ? fileLinkNotice(gate) : null
+  const fileNotice = notice !== null && !(notice.dismissible && dismissedNotices.includes(notice.reason)) ? notice : null
 
   async function applyOffer(): Promise<void> {
     if (offer === null) return
@@ -505,6 +602,17 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       {offer !== null && (
         <div style={{ padding: "8px 12px 0" }}>
           <SettingsOfferNote offer={offer} disabled={readOnly || offerSaving} onApply={() => void applyOffer()} onDismiss={() => setOfferDismissedOn(pageRef.current)} />
+        </div>
+      )}
+      {fileNotice !== null && (
+        <div style={{ padding: "8px 12px 0" }}>
+          <FileLinkNote
+            notice={fileNotice}
+            busy={noticeBusy}
+            disabled={readOnly}
+            onAction={(action) => void fileNoticeAction(action)}
+            onDismiss={() => setDismissedNotices((current) => [...current, fileNotice.reason])}
+          />
         </div>
       )}
       {editedPrompt !== null && (
@@ -545,6 +653,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             bus={bus}
             onOpenLink={(nodes) => setLink({ nodes, key: null })}
             onSelect={selectNodes}
+            linkSync={linkSyncer}
+            syncEnabled={gate.enabled}
+            pageId={pageRef.current}
           />
         )}
         {screen === "push" && (
@@ -568,6 +679,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
               setPushBusy(busy)
               contextRef.current = { ...contextRef.current, locked: busy }
             }}
+            fileKey={pushFileKey(usable, rootName)}
+            syncLinks={(nodeIds) => linkSyncer.syncNodes(nodeIds, knownNodes())}
           />
         )}
         {screen === "preview" && (
@@ -600,6 +713,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onChangeProject={() => go({ type: "change-project" })}
             onDiagnostics={openDiagnostics}
             onSignOut={() => void signOutNow("signed-out")}
+            linkGate={gate}
+            onSaveFileLink={saveFileLink}
+            onConfirmSameFile={confirmFile}
           />
         )}
       </div>

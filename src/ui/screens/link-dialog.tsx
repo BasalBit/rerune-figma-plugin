@@ -43,6 +43,8 @@ export interface LinkDialogProps {
   state: WorkspaceState
   onClose(changed: boolean): void
   onSelect(nodeIds: string[]): void
+  // Phase 2 link sync (§7.11) for layers whose links were just written or removed; never throws.
+  onLinksWritten(nodeIds: string[]): Promise<void>
 }
 
 const NAME_CHECK_DEBOUNCE_MS = 400
@@ -184,6 +186,7 @@ export function LinkDialog(props: LinkDialogProps) {
     try {
       const linked = await runBatched(props.bus, mainsFirst(links), (requestId, batch) => ({ type: "link-apply", requestId, items: batch }))
       const written = texts.length > 0 ? await runBatched(props.bus, mainsFirst(texts), (requestId, batch) => ({ type: "text-apply", requestId, items: batch })) : { done: 0, errors: [] }
+      await props.onLinksWritten(links.map((item) => item.nodeId))
       const all = [...linked.errors, ...written.errors]
       props.workspace.setPending(nodeIds, null)
       if (all.length === 0) {
@@ -203,7 +206,9 @@ export function LinkDialog(props: LinkDialogProps) {
     setBusy(true)
     setError(null)
     try {
-      const removed = await removeLinksBatched(props.bus, unlinkTargets(props.nodes))
+      const targets = unlinkTargets(props.nodes)
+      const removed = await removeLinksBatched(props.bus, targets)
+      await props.onLinksWritten(targets)
       if (removed.errors.length === 0) {
         props.onClose(true)
         return

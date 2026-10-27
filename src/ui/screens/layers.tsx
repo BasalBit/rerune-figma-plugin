@@ -1,6 +1,7 @@
 import { Button, SearchTextbox, SegmentedControl } from "@create-figma-plugin/ui"
 import { h } from "preact"
 import { useEffect, useMemo, useState } from "preact/hooks"
+import type { FigmaLink } from "../../shared/api-types"
 import type { ScannedNode, Scope } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
@@ -25,11 +26,14 @@ import {
   type LayerRow,
   type StateFilter,
 } from "../state/layers"
+import { linkSyncWarning, pageSyncSummary, rejectedWarning, unresolvedSummary, type LinkSyncer, type PageSyncResult } from "../state/link-sync"
 import { groupErrors, mainsFirst, removeLinksBatched, runBatched, type ErrorGroup } from "../state/ops"
 import { fetchTextMatches } from "../state/remote"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
-// Layers (§7.8): scope, scan, list grouped by frame with state chips, filters, bulk actions and badges.
+// Layers (§7.8): scope, scan, list grouped by frame with state chips, filters, bulk actions and badges. Phase 2:
+// link changes are synced with ReRune, and "Sync links on this page" compares ReRune's links of the page with the
+// layers (§7.15).
 
 export interface LayersScreenProps {
   workspace: Workspace
@@ -40,6 +44,9 @@ export interface LayersScreenProps {
   bus: UiBus
   onOpenLink(nodes: ScannedNode[]): void
   onSelect(nodeIds: string[]): void
+  linkSync: LinkSyncer
+  syncEnabled: boolean           // link sync is on for this file and user (§7.11)
+  pageId: string
 }
 
 interface ActionResult {
@@ -47,7 +54,11 @@ interface ActionResult {
   tone: "good" | "info" | "warning"
   lists: { label: string; nodeIds: string[] }[]
   errors: ErrorGroup[]
+  touched?: string[]             // layers whose links the action wrote or removed (synced with ReRune)
+  syncWarning?: string | null
 }
+
+const UNRESOLVED_SHOWN = 20
 
 const PAGE_SIZE = 200
 
@@ -65,6 +76,11 @@ export function LayersScreen(props: LayersScreenProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [result, setResult] = useState<ActionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pageSync, setPageSync] = useState<PageSyncResult | null>(null)
+
+  useEffect(() => {
+    setPageSync(null)
+  }, [props.pageId])
 
   const rows = useMemo(
     () => layerRows(state.result?.nodes ?? [], props.projectId, state.remote, state.pending),
@@ -110,7 +126,11 @@ export function LayersScreen(props: LayersScreenProps) {
     setResult(null)
     try {
       const outcome = await action()
-      setResult(outcome)
+      // Link sync before the rescan: both read the canvas, and the sync reads hidden instance children.
+      const synced = outcome !== null && outcome.touched !== undefined && outcome.touched.length > 0
+        ? await props.linkSync.syncNodes(outcome.touched, state.result?.nodes ?? [])
+        : null
+      setResult(outcome === null ? null : { ...outcome, syncWarning: linkSyncWarning(synced) })
       await workspace.scan()
     } catch (caught) {
       setError(userMessage(caught))
@@ -133,6 +153,7 @@ export function LayersScreen(props: LayersScreenProps) {
         tone: written.done > 0 ? "good" : "info",
         lists,
         errors: groupErrors(written.errors),
+        touched: plan.links.map((item) => item.nodeId),
       }
     })
 
@@ -140,7 +161,7 @@ export function LayersScreen(props: LayersScreenProps) {
     run("unlink", async () => {
       const ids = unlinkableIds(checkedRows)
       const written = await removeLinksBatched(props.bus, ids)
-      return { message: "Unlinked " + plural(written.done, "layer", "layers") + ".", tone: "info", lists: [], errors: groupErrors(written.errors) }
+      return { message: "Unlinked " + plural(written.done, "layer", "layers") + ".", tone: "info", lists: [], errors: groupErrors(written.errors), touched: ids }
     })
 
   const copiedTargets = checkedRows.length > 0 ? checkedRows : rows
@@ -148,8 +169,54 @@ export function LayersScreen(props: LayersScreenProps) {
   const keepCopied = () =>
     run("copied", async () => {
       const written = await runBatched(props.bus, copiedItems, (requestId, batch) => ({ type: "link-apply", requestId, items: batch }))
-      return { message: "Kept " + plural(written.done, "copied link", "copied links") + ".", tone: "good", lists: [], errors: groupErrors(written.errors) }
+      return {
+        message: "Kept " + plural(written.done, "copied link", "copied links") + ".",
+        tone: "good",
+        lists: [],
+        errors: groupErrors(written.errors),
+        touched: copiedItems.map((item) => item.nodeId),
+      }
     })
+
+  // §7.15 page link sync: a fresh page scan, then ReRune's links of this page compared with the layers.
+  async function syncPage() {
+    setBusy("sync")
+    setError(null)
+    setResult(null)
+    setPageSync(null)
+    setLimit(PAGE_SIZE)
+    try {
+      const scanned = await workspace.scan("page")
+      if (scanned === null) {
+        setError(workspace.store.get().error ?? "The scan didn't finish. Try again.")
+        return
+      }
+      setPageSync(await props.linkSync.syncPage(props.pageId, scanned.nodes))
+    } catch (caught) {
+      setError(userMessage(caught))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // The explicit Remove for links whose layer is not in this file (never automatic, D43).
+  async function removeUnresolved(links: readonly FigmaLink[]) {
+    const nodeIds = links.map((link) => link.node_id)
+    setBusy("remove")
+    setError(null)
+    try {
+      const outcome = await props.linkSync.removeServerLinks(nodeIds)
+      if (outcome !== null && outcome.error !== null) {
+        setError(outcome.error)
+        return
+      }
+      setPageSync((current) => (current === null ? current : { ...current, removed: current.removed + (outcome?.removed ?? 0), unresolved: current.unresolved.filter((link) => !nodeIds.includes(link.node_id)) }))
+    } catch (caught) {
+      setError(userMessage(caught))
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const groups = groupByFrame(visible.slice(0, limit))
   const scanning = state.status === "scanning"
@@ -163,10 +230,17 @@ export function LayersScreen(props: LayersScreenProps) {
           <div style={styles.grow}>
             <SegmentedControl value={state.scope} options={SCOPE_OPTIONS} onValueChange={(value) => scan(value as Scope)} />
           </div>
-          <Button secondary loading={scanning} disabled={scanning} onClick={() => scan(state.scope)}>
+          <Button secondary loading={scanning && busy !== "sync"} disabled={scanning || busy !== null} onClick={() => scan(state.scope)}>
             Scan
           </Button>
         </div>
+        {props.syncEnabled && (
+          <div style={styles.row}>
+            <TextButton disabled={props.readOnly || busy !== null || scanning} onClick={() => void syncPage()}>
+              {busy === "sync" ? "Syncing links…" : "Sync links on this page"}
+            </TextButton>
+          </div>
+        )}
         {rows.length > 0 && (
           <div style={styles.wrapRow}>
             {FILTER_ORDER.filter((entry) => entry === "all" || counts[entry] > 0).map((entry) => (
@@ -222,6 +296,16 @@ export function LayersScreen(props: LayersScreenProps) {
           </Note>
         )}
         {result !== null && <ErrorGroups groups={result.errors} onSelect={props.onSelect} />}
+        {result !== null && result.syncWarning !== null && result.syncWarning !== undefined && <Note tone="warning">{result.syncWarning}</Note>}
+        {pageSync !== null && (
+          <Note tone={pageSync.error !== null ? "warning" : "good"} actions={<TextButton onClick={() => setPageSync(null)}>Dismiss</TextButton>}>
+            {pageSyncSummary(pageSync)}
+            {rejectedWarning(pageSync.rejected.length) !== null ? " " + rejectedWarning(pageSync.rejected.length) : ""}
+          </Note>
+        )}
+        {pageSync !== null && pageSync.unresolved.length > 0 && (
+          <UnresolvedLinks links={pageSync.unresolved} disabled={props.readOnly || busy !== null} onRemove={(links) => void removeUnresolved(links)} />
+        )}
 
         {visible.length > 0 && (
           <div style={{ ...styles.row, margin: "8px 0 4px" }}>
@@ -309,5 +393,40 @@ function LayerRowView(props: { row: LayerRow; checked: boolean; onToggle(): void
         </div>
       </button>
     </div>
+  )
+}
+
+// Links whose layer resolves to null (§7.15): listed, removed only through Remove (needs edit_keys, like every
+// link sync). A branch or a copy of this file shares its node ids, so these may be valid links of another file.
+function UnresolvedLinks(props: { links: readonly FigmaLink[]; disabled: boolean; onRemove(links: readonly FigmaLink[]): void }) {
+  const shown = props.links.slice(0, UNRESOLVED_SHOWN)
+  return (
+    <Note
+      tone="warning"
+      actions={
+        <TextButton disabled={props.disabled} onClick={() => props.onRemove(props.links)}>
+          {props.links.length === 1 ? "Remove" : "Remove all " + props.links.length}
+        </TextButton>
+      }
+    >
+      <div style={styles.tightStack}>
+        <span>
+          {unresolvedSummary(props.links.length)}. The layers may have been deleted, or the links belong to a branch or a copy of this file.
+          Remove them only if the layers are gone.
+        </span>
+        {shown.map((link) => (
+          <div key={link.node_id} style={styles.row}>
+            <span style={styles.grow}>
+              <span style={styles.mono}>{link.key}</span>
+              <span style={styles.muted}> · {[link.node_name, link.frame_name].filter((name) => name !== "").join(" in ") || link.node_id}</span>
+            </span>
+            <TextButton disabled={props.disabled} onClick={() => props.onRemove([link])}>
+              Remove
+            </TextButton>
+          </div>
+        ))}
+        {props.links.length > shown.length && <span style={styles.muted}>and {props.links.length - shown.length} more</span>}
+      </div>
+    </Note>
   )
 }
