@@ -425,10 +425,13 @@ export function applyDecision(plan: PushPlan, decision: PlanDecision, context: P
           if (decision.decision === "create") {
             return { ...create, match: { ...create.match, decision: "create", linkKeyId: null } }
           }
-          const candidates = create.match.candidates.some((candidate) => candidate.id === decision.key.id)
-            ? create.match.candidates
-            : [...create.match.candidates, decision.key]
-          return { ...create, match: { candidates, decision: "link", linkKeyId: decision.key.id } }
+          // Only exact-text candidates (E11 text_matches, D40) link from the plan, because the link is written
+          // with src(create.text). Any other key goes through the Link dialog, which asks Use ReRune text / Keep
+          // layer text when the texts differ (§7.11).
+          if (!create.match.candidates.some((candidate) => candidate.id === decision.key.id)) {
+            return create
+          }
+          return { ...create, match: { ...create.match, decision: "link", linkKeyId: decision.key.id } }
         }),
       }
       break

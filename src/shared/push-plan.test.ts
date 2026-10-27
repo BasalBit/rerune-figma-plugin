@@ -154,6 +154,10 @@ describe("rule 2: unlinked layers become creates", () => {
     expect(planLinkApplies(plan, context)).toEqual([])
     const picked = applyDecision(plan, { kind: "create-match", ref: "c0", decision: "link", key: candidates[1] }, context)
     expect(planLinkApplies(picked, context).map((item) => item.keyId)).toEqual([K2])
+    // A key whose text was not matched (e.g. a taken name) never links with src(layer text) from the plan (§7.11).
+    const other = applyDecision(picked, { kind: "create-match", ref: "c0", decision: "link", key: { id: K3, key: "checkout_pay_now" } }, context)
+    expect(other.creates[0].match).toEqual(picked.creates[0].match)
+    expect(planLinkApplies(other, context).map((item) => item.keyId)).toEqual([K2])
     const created = applyDecision(plan, { kind: "create-match", ref: "c0", decision: "create" }, context)
     expect(planToRequests(created)[0].items).toEqual([
       { client_ref: "c0", op: "create", key: "checkout_pay_now", text: "Pay now", description: "Checkout", max_length: null },

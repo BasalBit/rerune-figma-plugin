@@ -291,6 +291,7 @@ export function PushScreen(props: PushScreenProps) {
                 onSelect={() => props.onSelect(create.nodeIds)}
                 onDecide={decide}
                 onRename={(name) => rename(create.ref, name)}
+                onLinkExisting={(key) => props.onOpenLink(nodesOf(create.nodeIds), key)}
               />
             ))}
             {plan.updates.length > 0 && <SectionTitle>Changed in Figma ({plan.updates.length})</SectionTitle>}
@@ -460,6 +461,7 @@ function CreateCard(props: {
   onSelect(): void
   onDecide(decision: PlanDecision): void
   onRename(name: string): void
+  onLinkExisting(key: FigmaKeyRef): void
 }) {
   const { create } = props
   const options = [
@@ -506,7 +508,8 @@ function CreateCard(props: {
           ))}
           {props.taken !== null && props.taken.type === "key" && create.nameIssues.length > 0 && (
             <div>
-              <TextButton onClick={() => props.onDecide({ kind: "create-match", ref: create.ref, decision: "link", key: { id: props.taken?.id ?? "", key: props.taken?.key ?? "" } })}>
+              {/* The Link dialog compares the layer text with the key's text and asks when they differ (§7.11). */}
+              <TextButton onClick={() => props.taken !== null && props.onLinkExisting({ id: props.taken.id, key: props.taken.key })}>
                 Link to existing key {props.taken.key}
               </TextButton>
             </div>
