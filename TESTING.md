@@ -94,6 +94,7 @@ Plugin side: **Sign in with ReRune** → Pairing screen (code, "Check that the c
 - [ ] **Another network.** Open the connect link on a phone using mobile data: the code is hidden, the page asks "Enter the code from Figma", a wrong code shows "This code doesn't match…", and **Connect** works only with the matching code. Locally the phone needs the dashboard and API through a tunnel; otherwise do this check in production acceptance (§9, step 4).
 - [ ] **Approved by another account.** Start sign-in, approve the link as account B, then open the same link as account A: "This code was approved by another account". The plugin shows "Signed in as {B's email}".
 - [ ] **Not me** on "Signed in as" signs the plugin out (Sign in screen) and the connection disappears from B's Profile → Connected apps.
+- [ ] **Account without access to the file's project.** In a file already connected to Chapter, sign in and approve as an account that is not a Chapter member: the plugin still shows "Signed in as {email}" first. **Continue** → the Project screen says "This file's ReRune project isn't available to {email}. Choose a project."
 - [ ] **Connection email** ("Figma plugin connected": "The ReRune Figma plugin was connected to your account at …") arrives after a successful sign-in; **Review connected apps** opens Profile.
 - [ ] **Sandbox user.** Pairing works, the connect page says "This connection ends when your sandbox ends.", no connection email is sent, and (Phase 2) Settings has no "Upload screenshots on push" option.
 - [ ] **Revoke in Profile** (Profile → Connected apps → Revoke → confirm): the plugin's next call ends on the Sign in screen with "Your session ended. Sign in again."
@@ -121,7 +122,7 @@ Plugin side: **Sign in with ReRune** → Pairing screen (code, "Check that the c
 - [ ] **Link existing keys:** click a row → Link dialog → **Search keys** (prefilled with the layer text) → pick a key. Same text → the row turns **Synced** and shows the key name.
 - [ ] **Different text:** the dialog says "The layer text differs from ReRune." **Use ReRune text** replaces the layer text (Synced); **Keep layer text** links it as **Changed in Figma** (pushed later as a draft).
 - [ ] **Link exact matches:** select unlinked rows whose texts exist in ReRune → **Link exact matches** → "Linked N layers to keys with the same text." Texts with several matching keys are listed as "Several keys match "…" · Select", texts without a match as "N layers have no exact match · Select".
-- [ ] **Create new keys:** Link dialog → **Create new key**: the suggested name follows the dominant pattern of Chapter's key names (check a few), can be edited, and is validated as you type. **Create on push** marks the row with "→ name". Nothing reaches ReRune yet.
+- [ ] **Create new keys:** Link dialog → **Create new key**: the suggested name follows the dominant pattern of Chapter's key names (check a few), can be edited, and is validated as you type. **Create on push** marks the row with "→ name". Nothing reaches ReRune yet. For a linked layer the section says to unlink it first (copied layers: or **New key** on the Push screen).
 - [ ] **Push:** Push tab → the review lists "New text (N)", "Changed in Figma (N)" and the quota line ("N keys left on your plan"). **Push N changes** → results. In the dashboard: new keys exist as drafts in the main language, tagged `figma`, description = the frame name, a placeholder exists for every `{{x}}` in the text, nothing is published.
 - [ ] **Edit in ReRune → pull:** change a linked key's main text in the dashboard → Scan → row **Changed in ReRune** → Push tab "Changed in ReRune (N)" → **Update layers from ReRune** → layers show the new text and turn Synced.
 - [ ] **Edit both → conflict:** change the same key in Figma and in ReRune → Push shows "Changed in both" with **Skip** / **Overwrite ReRune** / **Take ReRune text**; each does what it says. Change ReRune again between review and push: results show "Changed in ReRune meanwhile" with **Overwrite** and **Take ReRune text**.
@@ -139,7 +140,7 @@ Plugin side: **Sign in with ReRune** → Pairing screen (code, "Check that the c
 - [ ] **Viewer:** the Project screen marks the project **View only**; the Push tab says "You can view this project but not edit its keys, so you can't push."
 - [ ] **Relaunch button:** select a linked layer → the right sidebar shows **Open ReRune** → it opens the plugin on Layers with the selection scanned.
 - [ ] **Key-name settings:** Settings → Key names → Template (e.g. `{frame}_{layer}`) and Case style change the suggestions.
-- [ ] **Settings repair and page mirror:** on a page whose settings differ from the file's, Settings shows **Repair settings**; on a new page without settings it offers **Use this file's ReRune settings on this page**.
+- [ ] **Settings repair and page mirror:** on a page whose settings differ from the file's, Settings shows **Repair settings**; on a new page without settings it offers **Use this file's ReRune settings on this page**. The same offer appears above Layers, Push and Preview when the plugin opens on such a page; **Not now** hides it until you switch pages.
 - [ ] **Different server** (needs a production sign-in, so it can wait for §9): open a file connected with the development build in a production build → the Project screen says "This file is connected to a different ReRune server." and nothing is written until you choose a project on this server.
 
 Dev Mode in Phase 1 (the full inspect panel is Phase 2, §5):
@@ -168,6 +169,9 @@ Preview tab: **Language** (with its inheritance chain), **Source** Draft / Publi
 - [ ] **Push blocked while previewing:** Push shows "Reset previews before pushing…" with **Reset previews**; the Push button stays disabled until then.
 - [ ] **Reset selection** and **Reset page** reset only their scope; the header's **Reset** resets the page.
 - [ ] **Instances:** preview the main component and its instances, then Reset: both are restored. If an instance keeps Figma's override flag, the plugin says "N instances keep a text override after reset."
+- [ ] **Instances of a main previewed elsewhere:** preview the Components page, then open a page that holds only instances of those components (also: select only instances on a page that holds the main). The instances show the preview, count in the header, show the Preview badge, and Push says "Reset previews before pushing…". **Reset previews** (or the header's **Reset**) resets the main on the Components page and the instances follow; nothing German reaches ReRune.
+- [ ] **Re-preview an instance:** select only an instance of a local or library component (its main not previewed), preview `de`, then `fr`: the instance switches to French, stays linked in Layers (not "Not linked") and Reset brings back the original.
+- [ ] **Double-click Reset** (header and Push): one reset runs; afterwards Diagnostics → T10 still reports `skipInvisibleInstanceChildrenNow: true`.
 - [ ] **RTL** (optional): the plugin writes RTL text as is and Figma handles the direction; note how it renders.
 
 ---
