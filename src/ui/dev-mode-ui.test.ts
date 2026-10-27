@@ -71,7 +71,8 @@ describe("Dev Mode UI (inspect panel)", () => {
     expect(refusedInDevMode(env)).toContain("link-apply")
     const offenders = refusedBuilders(env)
     expect(Object.keys(offenders)).toEqual(["diagnostics.ts"])
-    expect(codeReachableFrom(sources["diagnostics.ts"], ["messageFor"])).toContain(offenders["diagnostics.ts"].map((type) => `type: "${type}"`)[0])
+    // All of them come from messageFor, which the Diagnostics screen calls only for the tests diagnosticsFor offers.
+    expect(builtMessageTypes(codeReachableFrom(sources["diagnostics.ts"], ["messageFor"]), refusedInDevMode(env))).toEqual(offenders["diagnostics.ts"])
   })
 
   it.each(ENVS)("offers in Dev Mode only diagnostics whose message the impact map allows (%s build)", (env) => {
