@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { diagnosticsFor, jpgSampleOf, messageFor, printableReport, withUiFacts } from "./diagnostics"
+import { diagnosticsFor, jpgSampleOf, messageFor, printableReport, runNetworkCheck, withUiFacts } from "./diagnostics"
 import { cornerPixel } from "./image"
 
 describe("diagnosticsFor", () => {
@@ -53,5 +53,23 @@ describe("reports", () => {
 
   it("cannot decode images without browser APIs", async () => {
     expect(await cornerPixel(new Uint8Array([0xff, 0xd8]), "image/jpeg")).toBeNull()
+  })
+})
+
+describe("runNetworkCheck", () => {
+  it("reports status, CORS outcome and latency", async () => {
+    let clock = 1000
+    const now = () => clock
+    const ok = await runNetworkCheck(async () => {
+      clock += 42
+      return { api_version: 1 }
+    }, "http://localhost:8080", now)
+    expect(ok).toEqual({ test: "network-check", apiBase: "http://localhost:8080", ok: true, status: 200, cors: "ok", latencyMs: 42, meta: { api_version: 1 }, error: null })
+
+    const blocked = await runNetworkCheck(async () => Promise.reject(Object.assign(new Error("Can't reach ReRune."), { status: 0 })), "x", now)
+    expect(blocked).toMatchObject({ ok: false, status: 0, cors: "failed", error: "Can't reach ReRune." })
+
+    const server = await runNetworkCheck(async () => Promise.reject(Object.assign(new Error("Bad Gateway"), { status: 502 })), "x", now)
+    expect(server).toMatchObject({ ok: false, status: 502, cors: "ok" })
   })
 })

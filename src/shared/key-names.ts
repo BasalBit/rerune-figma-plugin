@@ -65,7 +65,7 @@ const LETTER_FOLDS: readonly [RegExp, string][] = [
 ]
 const NUMERIC_WORD = /^[0-9]+$/
 const TEMPLATE_PART = /\{([a-z]+)\}/g
-const TEMPLATE_TOKENS: readonly TemplateToken[] = ["page", "frame", "screen", "layer", "element", "text", "component"]
+export const TEMPLATE_TOKENS: readonly TemplateToken[] = ["page", "frame", "screen", "layer", "element", "text", "component"]
 const DROP_ORDER: readonly TemplateToken[] = ["element", "layer", "text", "screen", "frame", "component", "page"]
 const SEPARATOR_RUN = /[._:/-]{2,}/g
 const EDGE_SEPARATORS = /^[._:/-]+|[._:/-]+$/g

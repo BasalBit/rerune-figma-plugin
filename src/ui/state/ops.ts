@@ -1,0 +1,161 @@
+import { REQUEST_IDLE_TIMEOUT_MS } from "../../shared/constants"
+import type { MainToUi, MainToUiOf, NodeError, RequestId, ScannedNode, Scope, UiToMain } from "../../shared/messages"
+import { isWarning } from "../../shared/node-errors"
+import { createIdleTimeout, HandlerError, RequestTimeoutError, type UiBus } from "../bus"
+
+// Request/response helpers over the UI bus: scans, document writes (op-result) and batching.
+
+export type OpResult = MainToUiOf<"op-result">
+export type SkipCounts = MainToUiOf<"scan-done">["skipped"]
+export type BusLike = Pick<UiBus, "send" | "on" | "nextRequestId" | "request">
+
+export const WRITE_BATCH_SIZE = 200
+export const LONG_OP_IDLE_MS = 300000
+
+export interface ScanResult { scope: Scope; nodes: ScannedNode[]; total: number; truncated: boolean; skipped: SkipCounts }
+
+export class ScanCancelledError extends Error {
+  constructor() {
+    super("Scan cancelled")
+    this.name = "ScanCancelledError"
+  }
+}
+
+export interface ScanRunner {
+  run(scope: Scope, onProgress?: (scanned: number) => void): Promise<ScanResult>
+  cancel(): void
+}
+
+// Collects scan-batch messages until scan-done (§7.9). A new run or cancel() sends scan-cancel for the running
+// scan; main then stops without a scan-done, so the old promise is rejected here.
+export function createScanRunner(bus: Pick<UiBus, "send" | "on" | "nextRequestId">, idleMs: number = REQUEST_IDLE_TIMEOUT_MS): ScanRunner {
+  let active: { requestId: RequestId; abort(): void } | null = null
+
+  function cancel(): void {
+    if (active !== null) {
+      const current = active
+      active = null
+      bus.send({ type: "scan-cancel", requestId: current.requestId })
+      current.abort()
+    }
+  }
+
+  return {
+    cancel,
+    run(scope, onProgress) {
+      cancel()
+      const requestId = bus.nextRequestId()
+      return new Promise<ScanResult>((resolve, reject) => {
+        const nodes: ScannedNode[] = []
+        const offs: (() => void)[] = []
+        const finish = () => {
+          watchdog.clear()
+          offs.forEach((off) => off())
+          if (active?.requestId === requestId) {
+            active = null
+          }
+        }
+        const watchdog = createIdleTimeout(idleMs, () => {
+          finish()
+          bus.send({ type: "scan-cancel", requestId })
+          reject(new RequestTimeoutError(requestId))
+        })
+        active = {
+          requestId,
+          abort() {
+            finish()
+            reject(new ScanCancelledError())
+          },
+        }
+        offs.push(
+          bus.on("scan-progress", (message) => {
+            if (message.requestId === requestId) {
+              watchdog.touch()
+              onProgress?.(message.scanned)
+            }
+          }),
+          bus.on("scan-batch", (message) => {
+            if (message.requestId === requestId) {
+              watchdog.touch()
+              nodes.push(...message.nodes)
+              onProgress?.(nodes.length)
+            }
+          }),
+          bus.on("scan-done", (message) => {
+            if (message.requestId === requestId) {
+              finish()
+              resolve({ scope, nodes, total: message.total, truncated: message.truncated, skipped: message.skipped })
+            }
+          }),
+          bus.on("handler-error", (message) => {
+            if (message.requestId === requestId) {
+              finish()
+              reject(new HandlerError(message.forType, message.message))
+            }
+          }),
+        )
+        bus.send({ type: "scan-request", requestId, scope })
+      })
+    },
+  }
+}
+
+export function runOp(bus: Pick<UiBus, "request">, build: (requestId: RequestId) => UiToMain, idleMs?: number): Promise<OpResult> {
+  return bus.request((requestId) => build(requestId), {
+    done: (message: MainToUi) => (message.type === "op-result" ? message : undefined),
+    idleMs,
+  })
+}
+
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let start = 0; start < items.length; start += size) {
+    chunks.push(items.slice(start, start + size))
+  }
+  return chunks
+}
+
+// Main writes main components before instances inside one message; batching keeps that order across messages.
+export function mainsFirst<T extends { nodeId: string }>(items: readonly T[]): T[] {
+  return items.filter((item) => !item.nodeId.startsWith("I")).concat(items.filter((item) => item.nodeId.startsWith("I")))
+}
+
+export interface BatchOutcome { done: number; errors: NodeError[] }
+
+// Sends a document write in batches so each op-result arrives within the bus watchdog (main sends no progress
+// for writes). Results are merged.
+export async function runBatched<T>(
+  bus: Pick<UiBus, "request">,
+  items: readonly T[],
+  build: (requestId: RequestId, batch: T[]) => UiToMain,
+  size: number = WRITE_BATCH_SIZE,
+): Promise<BatchOutcome> {
+  const outcome: BatchOutcome = { done: 0, errors: [] }
+  for (const batch of chunk(items, size)) {
+    const result = await runOp(bus, (requestId) => build(requestId, batch))
+    outcome.done += result.done
+    outcome.errors.push(...result.errors)
+  }
+  return outcome
+}
+
+export interface ErrorGroup { code: NodeError["code"]; message: string; nodeIds: string[]; warning: boolean }
+
+// One line per error code with the affected layers (Select on canvas uses nodeIds).
+export function groupErrors(errors: readonly NodeError[]): ErrorGroup[] {
+  const groups = new Map<string, ErrorGroup>()
+  for (const error of errors) {
+    const id = error.code + "\u0000" + error.message
+    const group = groups.get(id)
+    if (group === undefined) {
+      groups.set(id, { code: error.code, message: error.message, nodeIds: [error.nodeId], warning: isWarning(error) })
+    } else if (!group.nodeIds.includes(error.nodeId)) {
+      group.nodeIds.push(error.nodeId)
+    }
+  }
+  return [...groups.values()]
+}
+
+export function layerCount(count: number): string {
+  return count === 1 ? "1 layer" : count + " layers"
+}

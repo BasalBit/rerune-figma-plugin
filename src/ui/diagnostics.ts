@@ -77,3 +77,28 @@ export function withUiFacts(test: DiagnosticTest, report: unknown, facts: { user
   }
   return report
 }
+
+export interface NetworkCheckReport {
+  test: "network-check"
+  apiBase: string
+  ok: boolean
+  status: number
+  cors: "ok" | "failed"
+  latencyMs: number
+  meta: unknown
+  error: string | null
+}
+
+// "Network check" (§7.21): E1 status, CORS outcome and latency. A fetch that never yields a response (status
+// 0, network) is what a CORS rejection or an offline machine looks like from the iframe.
+export async function runNetworkCheck(meta: () => Promise<unknown>, apiBase: string, now: () => number = Date.now): Promise<NetworkCheckReport> {
+  const started = now()
+  try {
+    const body = await meta()
+    return { test: "network-check", apiBase, ok: true, status: 200, cors: "ok", latencyMs: now() - started, meta: body, error: null }
+  } catch (error) {
+    const status = typeof error === "object" && error !== null && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 0
+    const message = error instanceof Error ? error.message : String(error)
+    return { test: "network-check", apiBase, ok: false, status, cors: status === 0 ? "failed" : "ok", latencyMs: now() - started, meta: null, error: message }
+  }
+}

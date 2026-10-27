@@ -1,0 +1,62 @@
+import { describe, expect, it } from "vitest"
+import { PROJECT_ID } from "../../../test/fixtures"
+import type { FileSettings } from "../../shared/messages"
+import { newFileSettings } from "../../shared/plugin-data"
+import { applyEdit, connectProject, DEFAULT_PREFS, editOf, parsePrefs, parseSettingsReport, sameEdit } from "./settings"
+
+const API = "http://localhost:8080"
+
+describe("prefs", () => {
+  it("parses stored prefs with defaults", () => {
+    expect(parsePrefs({})).toEqual(DEFAULT_PREFS)
+    expect(
+      parsePrefs({
+        lastLanguage: "de",
+        lastSource: "published",
+        lastVariationOptionId: "v",
+        uploadScreenshotsOnPush: false,
+        inspectPlatform: "flutter",
+        groupIdenticalTexts: false,
+        samples: { p: { name: "Ada", n: 3 }, bad: "x" },
+      }),
+    ).toEqual({
+      lastLanguage: "de",
+      lastSource: "published",
+      lastVariationOptionId: "v",
+      uploadScreenshotsOnPush: false,
+      inspectPlatform: "flutter",
+      groupIdenticalTexts: false,
+      samples: { p: { name: "Ada" } },
+    })
+    expect(parsePrefs({ lastSource: "weird", groupIdenticalTexts: "yes" })).toMatchObject({ lastSource: "draft", groupIdenticalTexts: true })
+  })
+})
+
+describe("file settings", () => {
+  const current: FileSettings = { ...newFileSettings({ apiBase: API, projectId: PROJECT_ID, projectName: "Chapter", now: 1 }), keyTemplate: "{frame}_{layer}", caseStyle: "camel", includeLocked: true }
+
+  it("keeps naming and scan options when switching projects on the same server", () => {
+    const next = connectProject(current, { id: "6a4600000000000000000999", name: "Other" }, API, 5)
+    expect(next).toEqual({ ...current, projectId: "6a4600000000000000000999", projectName: "Other", updatedAt: 5 })
+  })
+
+  it("starts from defaults for a new file or another server", () => {
+    expect(connectProject(null, { id: PROJECT_ID, name: "Chapter" }, API, 5)).toEqual(newFileSettings({ apiBase: API, projectId: PROJECT_ID, projectName: "Chapter", now: 5 }))
+    expect(connectProject({ ...current, apiBase: "https://rerune.io/api" }, { id: PROJECT_ID, name: "Chapter" }, API, 5).keyTemplate).toBeNull()
+  })
+
+  it("applies edits with a fresh updatedAt", () => {
+    const edit = { ...editOf(current), keyTemplate: "  ", caseStyle: "kebab" as const, includeLocked: false }
+    expect(applyEdit(current, edit, 9)).toEqual({ ...current, keyTemplate: null, caseStyle: "kebab", includeLocked: false, updatedAt: 9 })
+    expect(sameEdit(editOf(current), { ...editOf(current), keyTemplate: " {frame}_{layer} " })).toBe(true)
+    expect(sameEdit(editOf(current), edit)).toBe(false)
+  })
+
+  it("reads the settings status from the T7 report", () => {
+    expect(parseSettingsReport({ current: { source: "root", differ: true, offerMirror: false, settings: current } })).toEqual({ settings: current, source: "root", differ: true, offerMirror: false })
+    expect(parseSettingsReport({ current: { source: "none", settings: null } })).toEqual({ settings: null, source: "none", differ: false, offerMirror: false })
+    expect(parseSettingsReport({ current: { source: "page", settings: { v: 2 } } })?.settings).toBeNull()
+    expect(parseSettingsReport(null)).toBeNull()
+    expect(parseSettingsReport({})).toBeNull()
+  })
+})
