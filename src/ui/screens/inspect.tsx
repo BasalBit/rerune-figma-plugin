@@ -49,7 +49,7 @@ const codeStyle: JSX.CSSProperties = {
 const valueRowStyle: JSX.CSSProperties = { display: "flex", gap: "8px", alignItems: "flex-start" }
 const langStyle: JSX.CSSProperties = { ...styles.mono, flexShrink: "0", width: "52px", color: "var(--figma-color-text-secondary)", paddingTop: "1px" }
 
-export function copyId(kind: "name" | "snippet", keyId: string): string {
+function copyId(kind: "name" | "snippet", keyId: string): string {
   return kind + ":" + keyId
 }
 
@@ -154,7 +154,7 @@ export function InspectScreen(props: InspectScreenProps) {
   )
 }
 
-export function InspectFooter(props: { email: string | null; showDiagnostics: boolean; onSignOut?: () => void; onOpenDiagnostics(): void }) {
+function InspectFooter(props: { email: string | null; showDiagnostics: boolean; onSignOut?: () => void; onOpenDiagnostics(): void }) {
   if (props.email === null && !props.showDiagnostics) {
     return null
   }

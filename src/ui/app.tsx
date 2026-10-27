@@ -8,7 +8,6 @@ import type { ParsedFigmaUrl } from "../shared/figma-url"
 import type { FileSettings, MainToUiOf, ScannedNode, Scope, StoredAuth } from "../shared/messages"
 import { ApiError, userMessage } from "./api/client"
 import { createBrowserApi } from "./api/browser"
-import type { FigmaApi } from "./api/figma-api"
 import { browserEnvironment, createUiBus, type UiBus } from "./bus"
 import { InspectApp } from "./inspect-app"
 import { measureImage } from "./image"
@@ -60,10 +59,6 @@ import { createWorkspace } from "./state/workspace"
 
 type Init = MainToUiOf<"init">
 
-function createApi(init: Init, getToken: () => string | null, onUnauthorized: () => void): FigmaApi {
-  return createBrowserApi(init.apiBase, getToken, onUnauthorized)
-}
-
 interface Banner { tone: "good" | "info" | "warning"; message: string; errors: ErrorGroup[] }
 
 // Design mode (§7.8): sign-in, project, and the Layers / Push / Preview / Settings workspace.
@@ -100,7 +95,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [dismissedNotices, setDismissedNotices] = useState<LinkSyncBlock[]>([])
   const [noticeBusy, setNoticeBusy] = useState(false)
 
-  const api = useMemo(() => createApi(init, () => authRef.current?.token ?? null, () => signedOutRef.current()), [])
+  const api = useMemo(() => createBrowserApi(init.apiBase, () => authRef.current?.token ?? null, () => signedOutRef.current()), [])
   // E1 screenshots_enabled and E8 sandbox_expires_at for screenshots on push (§7.16, D4), once per session.
   const availabilityLoader = useMemo(() => createAvailability(api), [])
   const [availability, setAvailability] = useState<Availability>(() => availabilityLoader.current())
