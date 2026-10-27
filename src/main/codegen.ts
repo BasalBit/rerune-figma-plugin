@@ -1,15 +1,16 @@
+import { CODEGEN_PLATFORMS, codegenCode, isCodegenPlatform, MORE_KEYS_LINE, oneLine, platformInfo, type CodegenKey, type CodegenPlatform } from "../codegen/snippets"
 import { CODEGEN_MAX_KEYS, CODEGEN_WALK_BUDGET_MS } from "../shared/constants"
 import { readCodegenCache, type CodegenCache } from "./auth-storage"
 import { readLinkInfo } from "./links"
 import { createNodeCaches, isTextNode, type NodeCaches } from "./node-utils"
 import { readFileSettings } from "./settings"
 
-// Codegen (§7.17, D31): no network, no preferences. Phase 1 returns linked key names as PLAINTEXT; Phase 2
-// swaps the line builder for platform snippets. Reads only plugin data and the clientStorage value cache.
+// Codegen (§7.17, D31): no network, no preferences. Reads only plugin data and the clientStorage value cache
+// (filled by the inspect panel and Design-mode loads) and answers with the snippets of the chosen platform.
 
 export const DIAGNOSTICS_LANGUAGE = "rerune-diagnostics"
 export const NO_KEY_CODE = "No ReRune key is linked to this layer."
-export const MORE_KEYS_LINE = "More keys not shown"
+export { MORE_KEYS_LINE }
 
 export interface LinkedKey { keyId: string; projectId: string; k: string }
 export interface LinkedKeys { keys: LinkedKey[]; more: boolean; complete: boolean }
@@ -67,10 +68,7 @@ export function collectLinkedKeys(node: SceneNode, now: () => number = Date.now)
   return { keys, more: false, complete: true }
 }
 
-function oneLine(text: string): string {
-  return text.replace(/\s+/g, " ").trim()
-}
-
+// Phase 1 output, kept for a language value the manifest does not list: key names as PLAINTEXT.
 export function keyLines(keys: readonly LinkedKey[], caches: ReadonlyMap<string, CodegenCache>, more: boolean): string[] {
   const lines: string[] = []
   for (const key of keys) {
@@ -85,6 +83,21 @@ export function keyLines(keys: readonly LinkedKey[], caches: ReadonlyMap<string,
     lines.push(MORE_KEYS_LINE)
   }
   return lines
+}
+
+// Key name, placeholders and source text per key: the cache's entry when present (renames in ReRune reach codegen
+// through it), else the link's key name with no known placeholders.
+export function codegenKeys(keys: readonly LinkedKey[], caches: ReadonlyMap<string, CodegenCache>): { keys: CodegenKey[]; uncached: boolean } {
+  let uncached = false
+  const result = keys.map((key) => {
+    const cached = caches.get(key.projectId)?.[key.keyId]
+    if (cached === undefined) {
+      uncached = true
+      return { name: key.k, placeholders: [], sourceText: null }
+    }
+    return { name: cached.k, placeholders: cached.placeholders, sourceText: cached.sourceText }
+  })
+  return { keys: result, uncached }
 }
 
 // The project cache is read once per generate call (memoised per project id).
@@ -102,13 +115,28 @@ async function readCaches(keys: readonly LinkedKey[]): Promise<Map<string, Codeg
   return result
 }
 
+function noKeyResult(): CodegenResult[] {
+  return [{ title: "ReRune", language: "PLAINTEXT", code: NO_KEY_CODE }]
+}
+
 export async function generateKeyNames(node: SceneNode): Promise<CodegenResult[]> {
   const linked = collectLinkedKeys(node)
   if (linked.keys.length === 0 && linked.complete) {
-    return [{ title: "ReRune", language: "PLAINTEXT", code: NO_KEY_CODE }]
+    return noKeyResult()
   }
   const caches = await readCaches(linked.keys)
   return [{ title: "ReRune keys", language: "PLAINTEXT", code: keyLines(linked.keys, caches, linked.more).join("\n") }]
+}
+
+// Snippets of the selected keys for one platform (§7.17 table), one block per key.
+export async function generateSnippets(node: SceneNode, platform: CodegenPlatform): Promise<CodegenResult[]> {
+  const linked = collectLinkedKeys(node)
+  if (linked.keys.length === 0 && linked.complete) {
+    return noKeyResult()
+  }
+  const caches = await readCaches(linked.keys)
+  const { keys, uncached } = codegenKeys(linked.keys, caches)
+  return [{ title: "ReRune keys", language: platformInfo(platform).language, code: codegenCode(platform, keys, { more: linked.more, uncached }) }]
 }
 
 function sleep(ms: number): Promise<void> {
@@ -138,7 +166,10 @@ export async function diagnosticsReport(node: SceneNode): Promise<CodegenResult[
   }
   const cacheMs = Date.now() - cacheStarted
   const caches = await readCaches(linked.keys)
-  keyLines(linked.keys, caches, linked.more)
+  const built = codegenKeys(linked.keys, caches)
+  for (const platform of CODEGEN_PLATFORMS) {
+    codegenCode(platform.value, built.keys, { more: linked.more, uncached: built.uncached })
+  }
   const buildMs = Date.now() - buildStarted - cacheMs
   const lines = [
     "ReRune diagnostics (T6-codegen)",
@@ -160,6 +191,9 @@ export async function diagnosticsReport(node: SceneNode): Promise<CodegenResult[
 export async function generateCode(event: CodegenEvent, env: "production" | "development" = __RERUNE_ENV__): Promise<CodegenResult[]> {
   if (event.language === DIAGNOSTICS_LANGUAGE && env === "development") {
     return diagnosticsReport(event.node)
+  }
+  if (isCodegenPlatform(event.language)) {
+    return generateSnippets(event.node, event.language)
   }
   return generateKeyNames(event.node)
 }

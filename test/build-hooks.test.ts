@@ -3,6 +3,7 @@ import overrideMain from "../build-figma-plugin.main.js"
 import overrideManifest from "../build-figma-plugin.manifest.js"
 import overrideUi from "../build-figma-plugin.ui.js"
 import pkg from "../package.json"
+import { CODEGEN_PLATFORMS } from "../src/codegen/snippets"
 
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env
 const original = env.RERUNE_ENV
@@ -26,6 +27,10 @@ describe("build-figma-plugin.manifest.js", () => {
     expect(result.networkAccess).toEqual(pkg["figma-plugin"].networkAccess)
     expect(result).not.toHaveProperty("menu")
     expect(result).not.toHaveProperty("codegenPreferences")
+  })
+
+  it("lists the same codegen languages, in the same order, as the snippet builders", () => {
+    expect(pkg["figma-plugin"].codegenLanguages).toEqual(CODEGEN_PLATFORMS.map((platform) => ({ label: platform.label, value: platform.value })))
   })
 
   it("adds the ReRune diagnostics language only in development builds", () => {

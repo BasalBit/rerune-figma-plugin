@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { fakeText, installFigma, onPage, uninstallFigma, type FigmaMock } from "../../test/figma-mock"
+import { UNCACHED_NOTE } from "../codegen/snippets"
 import { DATA_KEYS, PLUGIN_DATA_NAMESPACE } from "../shared/constants"
 import { serializeLink } from "../shared/plugin-data"
 import main from "./index"
@@ -55,7 +56,7 @@ describe("main entry (§7.4 mode dispatch)", () => {
     expect(figmaMock.notify).toHaveBeenCalledWith("Not available in Dev Mode", { error: true })
   })
 
-  it("Dev Mode codegen: no UI, registers generate and answers with linked key names", async () => {
+  it("Dev Mode codegen: no UI, registers generate and answers with the platform's snippets", async () => {
     const figmaMock = installFigma({ editorType: "dev", mode: "codegen", command: "generate" })
     main()
     expect(figmaMock.showUI).not.toHaveBeenCalled()
@@ -67,7 +68,10 @@ describe("main entry (§7.4 mode dispatch)", () => {
       DATA_KEYS.link,
       serializeLink({ v: 1, id: "6a4800000000000000000001", k: "checkout_pay_button", p: "6a4600000000000000000c35", src: "c53:1", nid: "12:345", t: 1 }),
     )
-    expect(await generate({ node: linked, language: "flutter" })).toEqual([{ title: "ReRune keys", language: "PLAINTEXT", code: "checkout_pay_button" }])
+    expect(await generate({ node: linked, language: "flutter" })).toEqual([
+      { title: "ReRune keys", language: "PLAINTEXT", code: "AppLocalizations.of(context)!.checkout_pay_button\n\n// " + UNCACHED_NOTE },
+    ])
+    expect((await generate({ node: linked, language: "ios" }))[0]).toMatchObject({ language: "SWIFT", code: expect.stringContaining('NSLocalizedString("checkout_pay_button", comment: "")') })
     expect(await generate({ node: fakeText("1:2", "Plain"), language: "flutter" })).toEqual([
       { title: "ReRune", language: "PLAINTEXT", code: "No ReRune key is linked to this layer." },
     ])
