@@ -146,6 +146,15 @@ describe("createApiClient", () => {
     expect(calls).toHaveLength(0)
   })
 
+  it("treats a token that is not a string as missing (never sends Bearer undefined)", async () => {
+    const { fetch, calls } = stubFetch()
+    const { api, onUnauthorized } = client(fetch, { getToken: () => undefined as unknown as string })
+    const error = await rejection(api.request("GET", "/figma/projects"))
+    expect(error).toMatchObject({ status: 401, reason: "plugin_token_invalid" })
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+    expect(calls).toHaveLength(0)
+  })
+
   it("retries a 429 once after Retry-After seconds", async () => {
     const { fetch, calls } = stubFetch(text(429, "Too many requests", { "Retry-After": "7" }), json(200, { done: true }))
     const { api, sleep } = client(fetch)

@@ -230,8 +230,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     if (request.bearer !== undefined) {
       headers.Authorization = "Bearer " + request.bearer
     } else if (request.auth !== false) {
-      const token = options.getToken()
-      if (token === null || token === "") {
+      const token: unknown = options.getToken()
+      if (typeof token !== "string" || token === "") {
         const error = new ApiError(401, "plugin_token_invalid", SESSION_ENDED_MESSAGE)
         options.onUnauthorized?.(error)
         throw error

@@ -4,7 +4,7 @@ import type { StoredAuth } from "../../shared/messages"
 import { displayPairingCode } from "../../shared/pairing-code"
 import { ApiError, userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
-import { storedAuthFromApproved } from "./session"
+import { parsePollResponse, storedAuthFromApproved, UNEXPECTED_POLL_MESSAGE } from "./session"
 
 // Pairing poller (§3.1, §7.19): E2 → show the code → open the dashboard once → poll E3 every interval until
 // expires_at. Pure state machine with an injectable clock so tests drive it with fake timers.
@@ -169,11 +169,15 @@ export function createPairingFlow(deps: PairingDeps): PairingFlow {
     }
     const current = session
     try {
-      const response = await deps.api.pollSession(current.id, current.secret)
+      const response = parsePollResponse(await deps.api.pollSession(current.id, current.secret))
       if (mine !== generation) {
         return
       }
       networkFailures = 0
+      if (response === null) {
+        stop({ kind: "failed", reason: "error", message: UNEXPECTED_POLL_MESSAGE })
+        return
+      }
       if (response.status === "pending") {
         withStatus("polling")
         current.interval = intervalMs(response.interval_seconds)
@@ -206,7 +210,7 @@ export function createPairingFlow(deps: PairingDeps): PairingFlow {
         networkFailures++
         return
       }
-      stop({ kind: "failed", reason: "error", message: userMessage(error) })
+      stop({ kind: "failed", reason: "error", message: error instanceof ApiError ? userMessage(error) : UNEXPECTED_POLL_MESSAGE })
     }
   }
 

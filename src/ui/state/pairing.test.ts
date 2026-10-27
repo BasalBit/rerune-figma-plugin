@@ -14,7 +14,7 @@ import {
   secondsLeft,
   type PairingState,
 } from "./pairing"
-import { signOut } from "./session"
+import { parsePollResponse, signOut, UNEXPECTED_POLL_MESSAGE, usableAuth } from "./session"
 
 const API = "http://localhost:8080"
 const DASHBOARD = "http://localhost:3000"
@@ -33,15 +33,16 @@ function session(overrides: Partial<FigmaCreateSessionResponse> = {}): FigmaCrea
 }
 
 const PENDING: FigmaPollResponse = { status: "pending", expires_at: "2026-10-27T10:10:00Z", interval_seconds: 2 }
+const TOKEN = "rrf_" + "0b".repeat(32)
 const APPROVED: FigmaPollResponse = {
   status: "approved",
-  token: "rrf_" + "0b".repeat(32),
+  token: TOKEN,
   token_id: "671e2b114c1d2b3a4f5e6d7d",
   token_expires_at: "2027-01-25T10:01:12Z",
   user: { id: "kc-sub-uuid", email: "ada@example.com", first_name: "Ada", last_name: "Lovelace" },
 }
 
-type PollStep = FigmaPollResponse | ApiError
+type PollStep = FigmaPollResponse | ApiError | Record<string, unknown> | string
 
 function harness(options: { create?: () => Promise<FigmaCreateSessionResponse>; polls?: PollStep[]; env?: "production" | "development" } = {}) {
   const polls = options.polls ?? []
@@ -55,7 +56,7 @@ function harness(options: { create?: () => Promise<FigmaCreateSessionResponse>; 
       if (next instanceof ApiError) {
         throw next
       }
-      return next
+      return next as FigmaPollResponse
     }),
   }
   const openExternal = vi.fn()
@@ -152,6 +153,24 @@ describe("pairing flow", () => {
     expect(flow.getState()).toEqual({ kind: "failed", reason: "denied", message: PAIRING_MESSAGES.denied })
     await vi.advanceTimersByTimeAsync(10000)
     expect(api.pollSession).toHaveBeenCalledTimes(2)
+  })
+
+  it("stops with a fixed message on an answer it doesn't recognise, and stores no token", async () => {
+    const unexpected: PollStep[] = [
+      { status: "expired" },
+      "<html>Bad gateway</html>",
+      { ...APPROVED, token: undefined },
+      { ...APPROVED, token: "rrf_short" },
+      { status: "approved", token: TOKEN, token_id: "t", token_expires_at: "", user: null },
+    ]
+    for (const answer of unexpected) {
+      const { flow, saveAuth } = harness({ polls: [answer] })
+      await flow.start()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(flow.getState()).toEqual({ kind: "failed", reason: "error", message: UNEXPECTED_POLL_MESSAGE })
+      expect(saveAuth).not.toHaveBeenCalled()
+      flow.dispose()
+    }
   })
 
   it("treats 404 and 410 as an expired code", async () => {
@@ -257,6 +276,33 @@ describe("pairing flow", () => {
     const { flow } = harness({ env: "development", create: async () => session({ approve_url: "http://localhost:3001/figma/connect?code=K7P-4QX" }) })
     await flow.start()
     expect(flow.getState()).toMatchObject({ kind: "waiting", urlWarning: expect.stringContaining("FIGMA_CONNECT_URL") })
+  })
+})
+
+describe("parsePollResponse", () => {
+  it("accepts the three E3 answers and fills optional text", () => {
+    expect(parsePollResponse(PENDING)).toEqual(PENDING)
+    expect(parsePollResponse({ status: "denied" })).toEqual({ status: "denied" })
+    expect(parsePollResponse(APPROVED)).toEqual(APPROVED)
+    expect(parsePollResponse({ ...APPROVED, token_expires_at: 5, user: { id: "u", email: "", first_name: null } })).toEqual({
+      ...APPROVED,
+      token_expires_at: "",
+      user: { id: "u", email: "", first_name: "", last_name: "" },
+    })
+  })
+
+  it("refuses unknown statuses, malformed tokens and missing users", () => {
+    expect(parsePollResponse(null)).toBeNull()
+    expect(parsePollResponse("approved")).toBeNull()
+    expect(parsePollResponse({ status: "expired" })).toBeNull()
+    expect(parsePollResponse({ ...APPROVED, token: "rrf_" + "0B".repeat(32) })).toBeNull()
+    expect(parsePollResponse({ ...APPROVED, token_id: "" })).toBeNull()
+    expect(parsePollResponse({ ...APPROVED, user: { email: "ada@example.com" } })).toBeNull()
+  })
+
+  it("never treats a stored non-string token as usable", () => {
+    const auth = { apiBase: API, token: undefined as unknown as string, tokenId: "t", tokenExpiresAt: "", user: { id: "u", email: "", firstName: "", lastName: "" }, savedAt: 1 }
+    expect(usableAuth(auth, API)).toBeNull()
   })
 })
 
