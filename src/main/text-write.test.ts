@@ -70,6 +70,7 @@ describe("preview-apply (§7.14 apply)", () => {
       characters: "Pay now",
       autoRename: true,
       textOverridden: false,
+      pluginDataOverridden: false,
       segments: before,
       richLost: false,
       lang: "de",

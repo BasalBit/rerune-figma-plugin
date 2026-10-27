@@ -21,6 +21,11 @@ export interface PreviewRecord {
   characters: string
   autoRename: boolean
   textOverridden: boolean
+  // Optional addition to §7.6: whether an instance ancestor listed a `pluginData` override for the node before
+  // the preview (null: overrides unreadable). While the node carries its own record, the record write itself
+  // may be listed as such an override, so link classification uses this value instead (D44). Absent in records
+  // written by earlier builds.
+  pluginDataOverridden?: boolean | null
   segments: unknown[] | null
   richLost: boolean
   lang: string
@@ -176,7 +181,7 @@ export function parsePreviewRecord(raw: string): PreviewRecord | null {
   if (object === null || object === "empty" || object.v !== PLUGIN_DATA_VERSION || object.none === true) {
     return null
   }
-  const { nid, previewSrc, characters, autoRename, textOverridden, segments, richLost, lang, source, variationOptionId, appliedAt } = object
+  const { nid, previewSrc, characters, autoRename, textOverridden, pluginDataOverridden, segments, richLost, lang, source, variationOptionId, appliedAt } = object
   if (
     !isString(nid) || !isString(previewSrc) || !isString(characters) || typeof autoRename !== "boolean" ||
     typeof textOverridden !== "boolean" || !(segments === null || Array.isArray(segments)) || typeof richLost !== "boolean" ||
@@ -192,6 +197,8 @@ export function parsePreviewRecord(raw: string): PreviewRecord | null {
     characters,
     autoRename,
     textOverridden,
+    // An unreadable optional value never costs the stored original: it is dropped, not the record.
+    ...(typeof pluginDataOverridden === "boolean" || pluginDataOverridden === null ? { pluginDataOverridden } : {}),
     segments: segments as unknown[] | null,
     richLost,
     lang,
@@ -209,6 +216,7 @@ export function serializePreviewRecord(record: PreviewRecord): string {
     characters: record.characters,
     autoRename: record.autoRename,
     textOverridden: record.textOverridden,
+    ...(record.pluginDataOverridden !== undefined ? { pluginDataOverridden: record.pluginDataOverridden } : {}),
     segments: record.segments,
     richLost: record.richLost,
     lang: record.lang,

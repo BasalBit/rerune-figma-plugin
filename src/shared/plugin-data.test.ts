@@ -161,6 +161,16 @@ describe("preview records", () => {
     expect(previewInfoOf(record)).toEqual({ lang: "de-AT", source: "draft", variationOptionId: null, appliedAt: 1761550000000 })
   })
 
+  it("keeps the optional pre-preview pluginData override state and drops an unreadable value", () => {
+    for (const value of [true, false, null]) {
+      const record = previewRecord({ pluginDataOverridden: value })
+      expect(parsePreviewRecord(serializePreviewRecord(record))).toEqual(record)
+    }
+    const earlier = previewRecord()
+    expect(serializePreviewRecord(earlier)).not.toContain("pluginDataOverridden")
+    expect(parsePreviewRecord(JSON.stringify({ ...earlier, pluginDataOverridden: "yes" }))).toEqual(earlier)
+  })
+
   it("accepts rich-lost records without segments", () => {
     const record = previewRecord({ segments: null, richLost: true, source: "pseudo" })
     expect(parsePreviewRecord(serializePreviewRecord(record))).toEqual(record)

@@ -96,6 +96,35 @@ describe("readLinkInfo", () => {
     expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches()).state).toBe("inherited_overridden")
   })
 
+  it("keeps a previewed library instance's inherited link inherited when the record write is listed as a pluginData override (A.9)", async () => {
+    clearFontCache()
+    const libraryText = fakeText("77:1", "Pay now")
+    setLink(libraryText, link("3:9"))
+    fakeComponent("77:0", "Button", [libraryText], { remote: true })
+    const sublayer = fakeText("I12:34;77:1", "Pay now")
+    sublayer.inheritFrom = libraryText
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [] })
+    followText(sublayer, libraryText, instance)
+    onPage(figmaMock, [fakeFrame("10:1", "Checkout", [instance])])
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches()).state).toBe("inherited")
+
+    expect(await applyPreview({ lang: "de", source: "draft", variationOptionId: null }, [{ nodeId: "I12:34;77:1", text: "Jetzt zahlen" }], 1)).toEqual({ done: 1, errors: [] })
+    instance.overrides[0].overriddenFields.push("pluginData")
+    // The id pattern cannot match a library nid (3:9), so the pre-preview override state decides (D44).
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches())).toMatchObject({ state: "inherited", ownPluginDataOverride: false, textOverridden: false })
+  })
+
+  it("keeps a duplicated instance's own copied link copied while it previews", async () => {
+    clearFontCache()
+    const sublayer = fakeText("I99:1;5:67", "Pay now")
+    setLink(sublayer, link("I12:34;5:67"))
+    const instance = fakeInstance("99:1", "Button", [sublayer], { overrides: [{ id: "I99:1;5:67", overriddenFields: ["pluginData"] }] })
+    onPage(figmaMock, [instance])
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches()).state).toBe("copied")
+    await applyPreview({ lang: "de", source: "draft", variationOptionId: null }, [{ nodeId: "I99:1;5:67", text: "Jetzt zahlen" }], 1)
+    expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches()).state).toBe("copied")
+  })
+
   it("keeps an instance sublayer whose text was overridden before the preview inherited_overridden", async () => {
     clearFontCache()
     const { sublayer } = componentWithInstance({ overrides: [{ id: "I12:34;5:67", overriddenFields: ["characters"] }] })

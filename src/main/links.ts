@@ -16,9 +16,11 @@ export interface LinkInfo {
 
 // D44 inputs for classifying a node's link. While an instance sublayer shows its own preview, the preview write
 // itself created a `characters` override (and Figma may list the record as a `pluginData` override), so the link
-// is classified with the text-override state stored in the record and, for pluginData, the id-pattern fallback.
-// Otherwise every previewed library or component instance would read as inherited_overridden (or copied) until
-// reset: no re-preview in another language, "Not linked" in Layers.
+// is classified with the override state stored in the record before the preview. Otherwise every previewed
+// library or component instance would read as inherited_overridden or copied until reset: no re-preview in
+// another language, "Not linked" or "Copied" in Layers, and "Keep copied links" would turn the component link
+// into a per-instance link. Records of earlier builds carry no pluginData state: a live `true` then falls back
+// to the id pattern (null), which cannot match a library nid.
 export function classificationFlags(node: BaseNode, caches: NodeCaches): OverrideFlags {
   const flags = overrideFlags(node, caches)
   if (node.id.charAt(0) !== "I") {
@@ -28,7 +30,10 @@ export function classificationFlags(node: BaseNode, caches: NodeCaches): Overrid
   if (record === null || record.nid !== node.id) {
     return flags
   }
-  return { ownPluginDataOverride: flags.ownPluginDataOverride === true ? null : flags.ownPluginDataOverride, textOverridden: record.textOverridden }
+  const ownPluginDataOverride = record.pluginDataOverridden !== undefined
+    ? record.pluginDataOverridden
+    : flags.ownPluginDataOverride === true ? null : flags.ownPluginDataOverride
+  return { ownPluginDataOverride, textOverridden: record.textOverridden }
 }
 
 export function readLinkInfo(node: BaseNode, caches: NodeCaches): LinkInfo {
