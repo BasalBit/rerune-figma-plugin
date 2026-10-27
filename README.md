@@ -21,16 +21,40 @@ No AI features run inside the plugin. Keys created from Figma count toward the R
 
 ## Development
 
-Requirements: Node 24 (see `.nvmrc`) and npm.
+Requirements: Node 24 (see `.nvmrc`), npm, and the Figma desktop app (macOS or Windows). Plugins in development are imported in the desktop app.
+
+### Build
 
 ```bash
 npm ci
-npm run watch        # development build (localhost API and dashboard), rebuilds on change
+npm run build:dev    # development build: manifest.json and build/
+npm run watch        # the same, rebuilding on every change
 ```
 
-Then in the Figma desktop app: **Plugins → Development → Import plugin from manifest…** and pick `manifest.json` in this folder.
+| Build | Command | ReRune API | Dashboard (sign-in page) |
+|---|---|---|---|
+| Development | `npm run build:dev`, `npm run watch` | `http://localhost:8080` | `http://localhost:3000` |
+| Production | `npm run build`, `npm run zip` | `https://rerune.io/api` | `https://rerune.io` |
 
-The development build talks to a local ReRune server on `http://localhost:8080` and opens the dashboard on `http://localhost:3000`. The production build (`npm run build`) uses `https://rerune.io/api` and `https://rerune.io`.
+`RERUNE_ENV` picks the build (`production` by default, or `development`); any other value fails the build. The development build adds the "ReRune diagnostics" codegen language. Both builds write the same `manifest.json` (not committed), so run `npm run build:dev` again after a production build before testing locally.
+
+### Import the development build into Figma
+
+1. Figma desktop → **Plugins → Development → Import plugin from manifest…** → pick `manifest.json` in this folder.
+2. Run it from **Plugins → Development → ReRune** in Figma Design. In Dev Mode it is in the inspect panel's plugins, and its languages are in the Code section's language dropdown.
+3. After a rebuild, run it again (⌥⌘P on macOS, Ctrl+Alt+P on Windows) or turn on **Plugins → Development → Hot reload plugin**.
+
+Figma keys the plugin's local storage (sign-in, preferences) by the plugin ID in `package.json` → `figma-plugin.id`. It is a placeholder until the plugin is created in Figma; `TESTING.md` §0.1 explains how to get the real ID.
+
+### Point it at a local ReRune
+
+The development build always calls `http://localhost:8080` and opens the dashboard on `http://localhost:3000`. The manifest allows the local API only for imported development plugins (`devAllowedDomains`); other hosts are blocked by Figma.
+
+1. **Server** (`rerune-server`): in `.env`, set `HASH_SECRET` and `FIGMA_CONNECT_URL=http://localhost:3000/figma/connect`, then `go run ./cmd/api`. Without `FIGMA_CONNECT_URL`, sign-in fails with "Sign-in with ReRune isn't available right now". The `/figma/` routes accept the plugin's `null` origin by themselves; never add `null` to `CORS_ALLOWED_ORIGINS`.
+2. **Dashboard** (`rerune-dashboard`): `pnpm dev`. It calls `http://localhost:8080` unless `NEXT_PUBLIC_API_URL` says otherwise. **Sign in with ReRune** opens `http://localhost:3000/figma/connect?code=…` there.
+3. **Check the connection:** in the plugin, **Diagnostics** (on the Sign in screen, or Settings → Advanced → Diagnostics) → **Network check** should report status 200 and `"cors": "ok"`.
+
+### Scripts
 
 | Script | What it does |
 |---|---|
@@ -39,10 +63,10 @@ The development build talks to a local ReRune server on `http://localhost:8080` 
 | `npm run watch` | Development build in watch mode |
 | `npm run typecheck` | Type checks main thread, UI and tests with separate configs |
 | `npm run lint` | ESLint, including Figma's plugin rules for main-thread code |
-| `npm test` | Unit tests (vitest) |
+| `npm test` | Unit tests (vitest, node environment, with a fake `figma` global in `test/figma-mock.ts`) |
 | `npm run zip` | Production build packed as `rerune-figma-plugin.zip` |
 
-Manual test steps live in `TESTING.md`.
+Everything that depends on real Figma behaviour (sign-in, scans of large files, instances, preview restore, Dev Mode, the spike questions) is tested by hand: see [`TESTING.md`](TESTING.md).
 
 ## Build and release
 
@@ -55,15 +79,19 @@ The plugin is built with [Create Figma Plugin](https://yuanqing.github.io/create
 - `src/main` runs in Figma's main thread: canvas reads and writes, plugin data, `clientStorage`. It targets ES2017 and has no DOM types.
 - `src/ui` runs in the plugin iframe: screens and every call to the ReRune API. `src/ui/api` is the fetch client and one function per endpoint, `src/ui/state` the framework-free screen logic (pairing poller, scans, push and preview orchestration, unit-tested in node), `src/ui/screens` the Preact screens.
 - `src/shared` holds pure, unit-tested logic used by both: message types, wire types, plugin-data parsing, hashing, key-name suggestions, sync state and the push plan.
-- Main and UI talk only through typed messages (`src/shared/messages.ts`). A central policy (`src/shared/message-policy.ts`) blocks every write in Dev Mode.
+- Main and UI talk only through typed messages (`src/shared/messages.ts`). A central policy (`src/shared/message-policy.ts`) blocks every write in Dev Mode. `test/message-contract.test.ts` checks that every message type is sent by one side and handled by the other.
 
-Links live in shared plugin data (namespace `rerune`) on each text layer:
+Everything the plugin stores in a file is shared plugin data in the namespace `rerune` (JSON strings, readable by every build of the plugin):
 
-```json
-{"v":1,"id":"<keyId>","k":"<keyName>","p":"<projectId>","src":"<hash>","nid":"<node id at link time>","t":1761550000000}
-```
+| Node | Key | Value |
+|---|---|---|
+| text layer | `link` | `{"v":1,"id":"<keyId>","k":"<keyName>","p":"<projectId>","src":"<hash>","nid":"<node id at link time>","t":1761550000000}`, or the tombstone `{"v":1,"none":true}` after an unlink that could not clear inherited data |
+| text layer | `preview` | the original text and styles while a preview is shown, with the `nid` it was written on |
+| text layer | `diag` | diagnostics marker (development tests only) |
+| frame | `langCopy` | marks a per-language copy of a frame (Phase 3) |
+| document and each page | `file` | the file's settings: ReRune server, project, key template and scan options |
 
-File settings live on the document and are mirrored to each page.
+`src` is a hash of the normalised text, so the plugin can tell which side changed. `nid` lets it recognise copied layers and layers inside instances. Sign-in, preferences and the Dev Mode codegen cache live in Figma's local plugin storage on your machine, not in the file.
 
 ## Privacy
 
