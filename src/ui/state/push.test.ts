@@ -236,6 +236,49 @@ describe("executePush", () => {
     expect(canSubmit(ready.plan, true)).toBe(false)
   })
 
+  it("sends the file key and syncs the links of every layer the push linked or unlinked (Phase 2)", async () => {
+    const { plan, context } = await prepared()
+    const main = fakeMain()
+    const push = vi.fn(async (_projectId: string, request: FigmaPushRequest) =>
+      response(request.items.map((item) => (item.op === "create" ? result(item.client_ref, "created", { key_id: keyId(10), key: item.key }) : result(item.client_ref, "updated", { key_id: item.key_id, key: "checkout_title" })))),
+    )
+    const syncLinks = vi.fn(async (nodeIds: readonly string[]) => ({ upserted: nodeIds.length, removed: 0, rejected: [], error: null }))
+    const run = await executePush({ api: { push }, bus: main.bus, fileKey: "AbCdEf1234567890XyZ", syncLinks }, plan, context)
+    expect(push.mock.calls[0][1].file_key).toBe("AbCdEf1234567890XyZ")
+    // The link decision (1:2), the created key's layer (1:1) and the refreshed layers (1:3, the inherited sublayer).
+    expect(syncLinks).toHaveBeenCalledTimes(1)
+    expect([...syncLinks.mock.calls[0][0]].sort()).toEqual(["1:1", "1:2", "1:3", "I7:1;1:5"])
+    expect(run.linkSync).toEqual({ upserted: 4, removed: 0, rejected: [], error: null })
+  })
+
+  it("includes unlinked layers in the link sync, and a failing sync never fails the push", async () => {
+    const keysByName = byName({}, [])
+    const missingKey = linkedNode("1:9", "Gone", { keyId: keyId(9), keyName: "gone", syncedText: "Gone" })
+    const ready = await preparePush({ keysByName }, input([missingKey], { remote: new Map([[keyId(9), { ...remote("gone", ""), found: false }]]) }))
+    const plan = applyDecision(ready.plan, { kind: "missing", keyId: keyId(9), decision: "unlink" }, ready.context)
+    const main = fakeMain()
+    const syncLinks = vi.fn(async () => Promise.reject(new ApiError(0, "network", "offline")))
+    const run = await executePush({ api: { push: vi.fn() }, bus: main.bus, syncLinks }, plan, ready.context)
+    expect(run.unlinked).toBe(1)
+    expect(syncLinks).toHaveBeenCalledWith(["1:9"])
+    expect(run.linkSync?.error).toBe("Can't reach ReRune. Check your connection.")
+  })
+
+  it("skips the link sync when nothing was linked or unlinked, or when it is off", async () => {
+    const keysByName = byName({}, [])
+    const ready = await preparePush({ keysByName }, input([linkedNode("1:3", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout" })], { remote: new Map([[keyId(1), remote("checkout_title", "Checkout")]]) }))
+    const main = fakeMain()
+    const failingPush = vi.fn(async () => Promise.reject(new ApiError(500, null, "boom")))
+    const syncLinks = vi.fn()
+    const run = await executePush({ api: { push: failingPush }, bus: main.bus, syncLinks }, ready.plan, ready.context)
+    expect(failingPush.mock.calls[0]).toEqual([PROJECT_ID, expect.objectContaining({ file_key: null })])
+    expect(syncLinks).not.toHaveBeenCalled()
+    expect(run.linkSync).toBeNull()
+    const { plan, context } = await prepared()
+    const withoutSync = await executePush({ api: { push: vi.fn(async () => response([])) }, bus: fakeMain().bus }, plan, context)
+    expect(withoutSync.linkSync).toBeNull()
+  })
+
   it("adds the max length to max_length_exceeded failures", async () => {
     const { context } = await prepared()
     const lengthy = { ...context, remote: new Map([[keyId(1), remote("checkout_title", "Checkout", 8)]]) }

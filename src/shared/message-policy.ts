@@ -19,6 +19,7 @@ export const MESSAGE_IMPACT: Record<UiToMain["type"], Impact> = {
   "scan-request": "read",
   "scan-cancel": "read",
   "inspect-request": "read",
+  "link-check": "read",
   "screenshots-export": "read",
   "diagnostics-read": "read",
   "settings-save": "metadata",

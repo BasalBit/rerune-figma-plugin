@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest"
 import { IMPACTS, impactOf, isAllowed, isMessageAllowed, MESSAGE_IMPACT, type BuildEnv, type Impact, type PluginEditorType } from "./message-policy"
 import type { UiToMain } from "./messages"
 
+// The §7.5 table plus the Phase 2 addition `link-check` (a read: link sync looks up nodes, it never writes).
 const SPEC_TABLE: Record<Impact, UiToMain["type"][]> = {
   ui: ["ui-ready", "auth-save", "auth-clear", "prefs-save", "cache-save", "open-external", "notify", "resize"],
-  read: ["select-nodes", "scan-request", "scan-cancel", "inspect-request", "screenshots-export", "diagnostics-read"],
+  read: ["select-nodes", "scan-request", "scan-cancel", "inspect-request", "screenshots-export", "diagnostics-read", "link-check"],
   metadata: ["settings-save", "link-apply", "link-remove"],
   canvas: ["text-apply", "preview-apply", "preview-reset", "overflow-check", "language-copies", "diagnostics-write"],
   devprobe: ["diagnostics-devmode-probe"],

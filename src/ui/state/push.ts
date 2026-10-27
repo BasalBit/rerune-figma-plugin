@@ -31,6 +31,7 @@ import { truncateUtf16 } from "../../shared/text"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
+import type { LinkSyncResult } from "./link-sync"
 import { styleFor, suggesterFor } from "./naming"
 import { mainsFirst, removeLinksBatched, runBatched, type BatchOutcome } from "./ops"
 import { fetchTakenNames, fetchTextMatches, type TakenName } from "./remote"
@@ -253,6 +254,10 @@ export function canSubmit(plan: PushPlan, editKeys: boolean): boolean {
 export interface PushDeps {
   api: Pick<FigmaApi, "push">
   bus: Pick<UiBus, "request" | "send">
+  // E13 file_key (Phase 2): the confirmed main file's key records the file's last push; null otherwise.
+  fileKey?: string | null
+  // Link sync for the layers whose links the push wrote or removed (§7.13 rule 11); null when it is off.
+  syncLinks?: (nodeIds: readonly string[]) => Promise<LinkSyncResult | null>
 }
 
 export interface PushRun {
@@ -269,6 +274,8 @@ export interface PushRun {
   writeErrors: NodeError[]
   requestError: string | null
   cacheEntries: CodegenCacheEntry[]
+  linkedNodeIds: string[]          // layers whose links the push wrote or removed (link sync input)
+  linkSync: LinkSyncResult | null
 }
 
 export interface ConflictResolution {
@@ -305,6 +312,8 @@ export function emptyRun(): PushRun {
     writeErrors: [],
     requestError: null,
     cacheEntries: [],
+    linkedNodeIds: [],
+    linkSync: null,
   }
 }
 
@@ -329,7 +338,7 @@ export async function pushChunks(deps: PushDeps, chunks: readonly PushRequestChu
     const chunk = chunks[index]
     let response
     try {
-      response = await deps.api.push(context.projectId, { file_key: null, items: chunk.items })
+      response = await deps.api.push(context.projectId, { file_key: deps.fileKey ?? null, items: chunk.items })
     } catch (error) {
       run.requestError = userMessage(error)
       for (const rest of chunks.slice(index)) {
@@ -347,8 +356,10 @@ export async function pushChunks(deps: PushDeps, chunks: readonly PushRequestChu
       break
     }
     const followUp = pushFollowUp({ projectId: context.projectId, chunk, results: response.results, nodes: context.nodes })
-    const writes = await linkApply(deps, [...followUp.linkApplies, ...followUp.mainComponentLinkApplies])
+    const followUpLinks = [...followUp.linkApplies, ...followUp.mainComponentLinkApplies]
+    const writes = await linkApply(deps, followUpLinks)
     run.writeErrors.push(...writes.errors)
+    run.linkedNodeIds.push(...followUpLinks.map((item) => item.nodeId))
     run.created += response.summary.created
     run.updated += response.summary.updated
     run.unchanged += response.summary.unchanged
@@ -382,21 +393,38 @@ export async function executePush(deps: PushDeps, plan: PushPlan, context: PlanC
   if (!canPush(plan)) {
     return run
   }
-  const links = await linkApply(deps, planLinkApplies(plan, context))
+  const linkItems = planLinkApplies(plan, context)
+  const links = await linkApply(deps, linkItems)
   run.linked = links.done
   run.writeErrors.push(...links.errors)
+  run.linkedNodeIds.push(...linkItems.map((item) => item.nodeId))
   const unlinks = planUnlinks(plan)
   if (unlinks.length > 0) {
     const removed = await removeLinksBatched(deps.bus, unlinks)
     run.unlinked = removed.done
     run.writeErrors.push(...removed.errors)
+    run.linkedNodeIds.push(...unlinks)
   }
   const texts = await textApply(deps, planTextApplies(plan, context))
   run.textsApplied = texts.done
   run.writeErrors.push(...texts.errors)
   await pushChunks(deps, planToRequests(plan), context, run)
   sendCache(deps, context.projectId, run.cacheEntries)
+  run.linkSync = await syncPushedLinks(deps, run.linkedNodeIds)
   return run
+}
+
+// Phase 2 after-push link sync (§7.13 rule 11). Each layer is checked once; a failure is reported on the run and
+// never fails the push.
+export async function syncPushedLinks(deps: Pick<PushDeps, "syncLinks">, nodeIds: readonly string[]): Promise<LinkSyncResult | null> {
+  if (deps.syncLinks === undefined || nodeIds.length === 0) {
+    return null
+  }
+  try {
+    return await deps.syncLinks([...new Set(nodeIds)])
+  } catch (error) {
+    return { upserted: 0, removed: 0, rejected: [], error: userMessage(error) }
+  }
 }
 
 export function sendCache(deps: Pick<PushDeps, "bus">, projectId: string, entries: readonly CodegenCacheEntry[]): void {

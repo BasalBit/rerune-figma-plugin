@@ -6,6 +6,7 @@ import { clearAuth, loadAuth, loadPrefs, saveAuth, saveCodegenCache, savePrefs }
 import { notifyText, type MainBus } from "./bus"
 import { runDevModeProbe, runReadDiagnostic, runWriteDiagnostic } from "./diagnostics"
 import { inspectSelection, type InspectWatcher } from "./inspect"
+import { checkLinks, nodeIdsOf } from "./link-check"
 import { applyLinks, removeLinks, type OpOutcome } from "./links"
 import { pageOf } from "./node-utils"
 import { createScanner } from "./scan"
@@ -171,6 +172,10 @@ export function registerHandlers(bus: MainBus, context: MainContext): void {
   })
   bus.on("link-remove", async (message) => {
     sendOutcome(bus, message.requestId, await removeLinks(message.nodeIds))
+  })
+  bus.on("link-check", async (message) => {
+    const nodes = await checkLinks(nodeIdsOf(message.nodeIds))
+    bus.send({ type: "link-check-result", requestId: message.requestId, nodes })
   })
   bus.on("text-apply", async (message) => {
     sendOutcome(bus, message.requestId, await applyTexts(message.items, Date.now()))

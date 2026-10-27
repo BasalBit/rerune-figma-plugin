@@ -37,6 +37,17 @@ export interface NodeError {
     | "bound_to_variable" | "edited_during_preview" | "override_kept" | "subtree_mismatch" | "remote_component"
   message: string
 }
+// Phase 2 addition to §7.5 (link sync, §7.11 and §7.15, D43): the current link of nodes the server has links for,
+// read with skipInvisibleInstanceChildren off. "not_found": getNodeByIdAsync returned null (hidden, or a node of
+// another branch or file), never treated as deleted; "unreadable": the lookup or a read threw. Metadata is set
+// only for found nodes ("" / null otherwise).
+export interface LinkCheck {
+  nodeId: string
+  status: "found" | "not_found" | "unreadable"
+  linkState: LinkState
+  link: NodeLink | null
+  name: string; pageId: string; pageName: string; frameId: string | null; frameName: string | null
+}
 export interface CodegenCacheEntry { keyId: string; k: string; placeholders: string[]; sourceText: string }
 export type ReadDiagnostic = "T1-check" | "T2-instances" | "T3-export" | "T4-export-page" | "T7-settings" | "T10-environment"
 export type WriteDiagnostic = "T1-mark" | "T2-clear" | "T5-fonts" | "T8-relaunch"
@@ -57,6 +68,7 @@ export type UiToMain =
   | { type: "scan-cancel"; requestId: RequestId }
   | { type: "link-apply"; requestId: RequestId; items: { nodeId: string; keyId: string; keyName: string; projectId: string; src: string }[] }
   | { type: "link-remove"; requestId: RequestId; nodeIds: string[] }
+  | { type: "link-check"; requestId: RequestId; nodeIds: string[] }                       // Phase 2 addition (link sync)
   | { type: "text-apply"; requestId: RequestId; items: { nodeId: string; text: string; src: string }[] }
   | { type: "preview-apply"; requestId: RequestId; info: Omit<PreviewInfo, "appliedAt">; items: { nodeId: string; text: string }[] }
   | { type: "preview-reset"; requestId: RequestId; scope: Scope; nodeIds?: string[]; edited?: "restore" | "keep" }
@@ -79,6 +91,7 @@ export type MainToUi =
   | { type: "scan-done"; requestId: RequestId; total: number; truncated: boolean
       skipped: { hidden: number; locked: number; empty: number; numeric: number; underscore: number; languageCopy: number; unavailable: number } }
   | { type: "op-result"; requestId: RequestId; ok: boolean; done: number; errors: NodeError[] }
+  | { type: "link-check-result"; requestId: RequestId; nodes: LinkCheck[] }               // Phase 2 addition (link sync)
   | { type: "frame-image"; requestId: RequestId; frameId: string; frameName: string; pageId: string; pageName: string
       format: "JPG" | "PNG"; bytes: Uint8Array; width: number; height: number; boxes: Box[] }
   | { type: "frame-images-done"; requestId: RequestId; exported: number; skipped: { frameId: string; reason: "no_bounds" | "too_large" | "not_found" | "export_failed" }[] }
@@ -103,6 +116,7 @@ const MAIN_TO_UI_TYPE_SET: Record<MainToUiType, true> = {
   "scan-batch": true,
   "scan-done": true,
   "op-result": true,
+  "link-check-result": true,
   "frame-image": true,
   "frame-images-done": true,
   "inspect-selection": true,

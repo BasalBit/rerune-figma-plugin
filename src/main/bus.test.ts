@@ -35,6 +35,7 @@ const SAMPLE_MESSAGES: Record<UiToMainType, Record<string, unknown>> = {
   "scan-cancel": { requestId: "r1" },
   "link-apply": { requestId: "r1", items: [] },
   "link-remove": { requestId: "r1", nodeIds: [] },
+  "link-check": { requestId: "r1", nodeIds: [] },
   "text-apply": { requestId: "r1", items: [] },
   "preview-apply": { requestId: "r1", info: {}, items: [] },
   "preview-reset": { requestId: "r1", scope: "page" },

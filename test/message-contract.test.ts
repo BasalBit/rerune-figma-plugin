@@ -9,6 +9,7 @@ import { installFigma, uninstallFigma, type FigmaMock } from "./figma-mock"
 // Whole-repo contract for the §7.5 messages: every type is sent by one side and handled by the other.
 // Types of later phases are already typed and in the impact map; until their phase lands, the UI never sends
 // them, main never posts them, and main answers them with a handler-error so nothing waits for the watchdog.
+// "PHASE_1" below means "built": Phase 1 plus what Phase 2 has added so far (link-check / link-check-result).
 
 const LATER_PHASE: Partial<Record<UiToMainType | MainToUiType, 2 | 3>> = {
   "screenshots-export": 2,
@@ -79,8 +80,10 @@ describe("§7.5 message contract", () => {
   it("splits the message types into Phase 1 and later phases", () => {
     expect(LATER_UI_TO_MAIN).toEqual(["screenshots-export", "overflow-check", "language-copies"])
     expect(LATER_MAIN_TO_UI).toEqual(["frame-image", "frame-images-done", "overflow-result"])
-    expect(PHASE_1_UI_TO_MAIN).toHaveLength(21)
-    expect(PHASE_1_MAIN_TO_UI).toHaveLength(9)
+    expect(PHASE_1_UI_TO_MAIN).toHaveLength(22)
+    expect(PHASE_1_MAIN_TO_UI).toHaveLength(10)
+    expect(PHASE_1_UI_TO_MAIN).toContain("link-check")
+    expect(PHASE_1_MAIN_TO_UI).toContain("link-check-result")
   })
 
   it("main registers exactly one handler for every Phase 1 UI → main type", () => {
