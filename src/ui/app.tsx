@@ -6,17 +6,17 @@ import { DESIGN_UI_MAX_SIZE, DESIGN_UI_MIN_SIZE } from "../shared/constants"
 import { confirmSameFile, linkSyncGate, pushFileKey, withFileLink, type LinkSyncBlock } from "../shared/file-link"
 import type { ParsedFigmaUrl } from "../shared/figma-url"
 import type { FileSettings, MainToUiOf, ScannedNode, Scope, StoredAuth } from "../shared/messages"
-import { ApiError, createApiClient, userMessage, type FetchLike } from "./api/client"
-import { createFigmaApi, type FigmaApi } from "./api/figma-api"
+import { ApiError, userMessage } from "./api/client"
+import { createBrowserApi } from "./api/browser"
+import type { FigmaApi } from "./api/figma-api"
 import { browserEnvironment, createUiBus, type UiBus } from "./bus"
-import { copyText } from "./clipboard"
+import { InspectApp } from "./inspect-app"
 import { measureImage } from "./image"
 import { FileLinkNote } from "./components/file-link"
 import { Nav } from "./components/nav"
 import { ErrorGroups, GlobalStyle, Loading, Note, styles, TextButton } from "./components/ui"
 import { runNetworkCheck } from "./diagnostics"
 import { DiagnosticsScreen } from "./screens/diagnostics"
-import { InspectScreen } from "./screens/inspect"
 import { LayersScreen } from "./screens/layers"
 import { LinkDialog } from "./screens/link-dialog"
 import { PairingScreen } from "./screens/pairing"
@@ -60,56 +60,8 @@ import { createWorkspace } from "./state/workspace"
 
 type Init = MainToUiOf<"init">
 
-const COPIED_RESET_MS = 1500
-const browserFetch: FetchLike = (url, request) => fetch(url, request)
-
 function createApi(init: Init, getToken: () => string | null, onUnauthorized: () => void): FigmaApi {
-  return createFigmaApi(createApiClient({ apiBase: init.apiBase, fetch: browserFetch, getToken, onUnauthorized }))
-}
-
-// Dev Mode inspect panel (Phase 1 minimum): linked key names with Copy; development builds add Diagnostics.
-function InspectApp(props: { bus: UiBus; init: Init }) {
-  const [selection, setSelection] = useState<MainToUiOf<"inspect-selection"> | null>(null)
-  const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  const [view, setView] = useState<"inspect" | "diagnostics">("inspect")
-  const development = props.init.env === "development"
-  const api = useMemo(() => createApi(props.init, () => props.init.auth?.token ?? null, () => {}), [])
-
-  useEffect(() => {
-    const off = props.bus.on("inspect-selection", setSelection)
-    props.bus.send({ type: "inspect-request" })
-    return off
-  }, [props.bus])
-
-  async function copy(keyName: string) {
-    if (await copyText(keyName)) {
-      setCopiedKey(keyName)
-      setTimeout(() => setCopiedKey((current) => (current === keyName ? null : current)), COPIED_RESET_MS)
-    } else {
-      props.bus.send({ type: "notify", message: "Couldn't copy the key name", error: true })
-    }
-  }
-
-  if (view === "diagnostics" && development) {
-    return (
-      <DiagnosticsScreen
-        bus={props.bus}
-        editorType="dev"
-        env={props.init.env}
-        onBack={() => setView("inspect")}
-        networkCheck={() => runNetworkCheck(() => api.meta(), props.init.apiBase)}
-      />
-    )
-  }
-  return (
-    <InspectScreen
-      selection={selection}
-      copiedKey={copiedKey}
-      showDiagnostics={development}
-      onCopy={(keyName) => void copy(keyName)}
-      onOpenDiagnostics={() => setView("diagnostics")}
-    />
-  )
+  return createBrowserApi(init.apiBase, getToken, onUnauthorized)
 }
 
 interface Banner { tone: "good" | "info" | "warning"; message: string; errors: ErrorGroup[] }
