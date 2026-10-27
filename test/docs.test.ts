@@ -4,7 +4,11 @@ import overrideMain from "../build-figma-plugin.main.js"
 import overrideManifest from "../build-figma-plugin.manifest.js"
 import pkg from "../package.json"
 import readme from "../README.md?raw"
+import snippets from "../src/codegen/snippets.ts?raw"
 import fileLinkComponents from "../src/ui/components/file-link.tsx?raw"
+import inspectApp from "../src/ui/inspect-app.tsx?raw"
+import inspectScreen from "../src/ui/screens/inspect.tsx?raw"
+import inspectState from "../src/ui/state/inspect.ts?raw"
 import uiDiagnostics from "../src/ui/diagnostics.ts?raw"
 import layersScreen from "../src/ui/screens/layers.tsx?raw"
 import settingsScreen from "../src/ui/screens/settings.tsx?raw"
@@ -105,6 +109,26 @@ describe("TESTING.md", () => {
     const preview = screenshotState.match(/preview_active: "([^"]+)"/)
     expect(testing).toContain(preview?.[1] ?? "missing")
     expect(readme).toContain("Upload screenshots on push")
+  })
+
+  it("names the Dev Mode inspect controls, notes and codegen lines the plugin shows (P2.4, P2.5)", () => {
+    for (const label of ["Copy code", "Open in ReRune", "Refresh", "Check again", "Inherited from ", "Missing", "Too long", "Plural/ICU"]) {
+      expect([inspectScreen, inspectApp, inspectState].join("\n")).toContain(label)
+      expect(testing).toContain(label)
+    }
+    for (const name of ["INSPECT_DESCRIPTION", "NOT_CONNECTED_MESSAGE", "MISSING_KEY_NOTE", "OTHER_PROJECT_NOTE", "NOT_PUBLISHED_NOTE"]) {
+      const match = inspectState.match(new RegExp("export const " + name + ' = "([^"]+)"'))
+      expect(match).not.toBeNull()
+      expect(testing).toContain(match?.[1] ?? "")
+    }
+    for (const name of ["MORE_KEYS_LINE", "UNCACHED_NOTE"]) {
+      const match = snippets.match(new RegExp("export const " + name + ' = "([^"]+)"'))
+      expect(match).not.toBeNull()
+      expect(testing).toContain(match?.[1] ?? "")
+    }
+    for (const platform of pkg["figma-plugin"].codegenLanguages) {
+      expect(testing).toContain(platform.label)
+    }
   })
 
   it("uses the development hosts, the connect URL and the relaunch button name of the build", () => {
