@@ -53,7 +53,7 @@ Manual test steps live in `TESTING.md`.
 The plugin is built with [Create Figma Plugin](https://yuanqing.github.io/create-figma-plugin/) and Preact.
 
 - `src/main` runs in Figma's main thread: canvas reads and writes, plugin data, `clientStorage`. It targets ES2017 and has no DOM types.
-- `src/ui` runs in the plugin iframe: screens and every call to the ReRune API.
+- `src/ui` runs in the plugin iframe: screens and every call to the ReRune API. `src/ui/api` is the fetch client and one function per endpoint, `src/ui/state` the framework-free screen logic (pairing poller, scans, push and preview orchestration, unit-tested in node), `src/ui/screens` the Preact screens.
 - `src/shared` holds pure, unit-tested logic used by both: message types, wire types, plugin-data parsing, hashing, key-name suggestions, sync state and the push plan.
 - Main and UI talk only through typed messages (`src/shared/messages.ts`). A central policy (`src/shared/message-policy.ts`) blocks every write in Dev Mode.
 

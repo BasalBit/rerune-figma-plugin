@@ -5,6 +5,7 @@ import type { LinkApplyItem, ScannedNode } from "../../shared/messages"
 import { nodeText, type RemoteWithMaxLength } from "../../shared/push-plan"
 import { computeSyncState, layerText, type SyncState } from "../../shared/sync-state"
 import { utf16Length } from "../../shared/text"
+import type { SkipCounts } from "./ops"
 
 // Layers screen model (§7.8, §7.10): sync state per layer, grouping by top-level frame, state filters and the
 // bulk actions. Pure; the screen renders it.
@@ -234,4 +235,20 @@ export function unlinkableIds(rows: readonly LayerRow[]): string[] {
 
 export function linkedCount(rows: readonly LayerRow[]): number {
   return rows.filter((row) => row.state !== "unlinked" && row.state !== "invalid_link").length
+}
+
+const SKIP_LABELS: Record<keyof SkipCounts, string> = {
+  hidden: "hidden",
+  locked: "locked",
+  empty: "empty",
+  numeric: "numbers only",
+  underscore: "named _…",
+  languageCopy: "in language copies",
+  unavailable: "unavailable",
+}
+
+// "Skipped: 3 hidden, 2 locked" under the scan results (§7.9 filters).
+export function skippedSummary(skipped: SkipCounts): string | null {
+  const parts = (Object.keys(SKIP_LABELS) as (keyof SkipCounts)[]).filter((reason) => skipped[reason] > 0).map((reason) => skipped[reason] + " " + SKIP_LABELS[reason])
+  return parts.length === 0 ? null : "Skipped " + parts.join(", ")
 }

@@ -11,6 +11,7 @@ import {
   matchesFilter,
   planExactMatches,
   searchRows,
+  skippedSummary,
   unlinkableIds,
   unlinkedTexts,
 } from "./layers"
@@ -106,5 +107,13 @@ describe("Link exact matches", () => {
     expect(plan.ambiguous).toEqual([{ text: "Title", nodeIds: ["1:3"], keys: [{ id: keyId(2), key: "b" }, { id: keyId(3), key: "c" }] }])
     expect(plan.unmatched.map((entry) => entry.nodeIds)).toEqual([["1:4"], ["1:6"]])
     expect(plan.skipped).toBe(1)
+  })
+})
+
+describe("skippedSummary", () => {
+  it("lists non-zero skip reasons", () => {
+    const none = { hidden: 0, locked: 0, empty: 0, numeric: 0, underscore: 0, languageCopy: 0, unavailable: 0 }
+    expect(skippedSummary(none)).toBeNull()
+    expect(skippedSummary({ ...none, hidden: 3, numeric: 1, unavailable: 2 })).toBe("Skipped 3 hidden, 1 numbers only, 2 unavailable")
   })
 })

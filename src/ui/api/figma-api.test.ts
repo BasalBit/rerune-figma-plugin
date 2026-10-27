@@ -26,7 +26,7 @@ describe("createFigmaApi", () => {
     await api.pollSession("671e2a9f4c1d2b3a4f5e6d7c", "ab".repeat(32))
     expect(calls).toEqual([
       { method: "GET", path: "/figma/meta", options: { auth: false } },
-      { method: "POST", path: "/figma/auth/sessions", options: { auth: false, json: {}, retry: "rate" } },
+      { method: "POST", path: "/figma/auth/sessions", options: { auth: false, json: {}, retry: "none" } },
       { method: "POST", path: "/figma/auth/sessions/671e2a9f4c1d2b3a4f5e6d7c/poll", options: { auth: false, json: { poll_secret: "ab".repeat(32) }, retry: "none" } },
     ])
   })

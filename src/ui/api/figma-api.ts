@@ -59,7 +59,8 @@ export function searchQuery(q: string): string {
 export function createFigmaApi(client: ApiClient): FigmaApi {
   return {
     meta: () => client.request<FigmaMetaResponse>("GET", "/figma/meta", { auth: false }),
-    createSession: () => client.request<FigmaCreateSessionResponse>("POST", "/figma/auth/sessions", { auth: false, json: {}, retry: "rate" }),
+    // Sign-in reports a 429 at once instead of waiting up to a minute behind "Starting sign-in…".
+    createSession: () => client.request<FigmaCreateSessionResponse>("POST", "/figma/auth/sessions", { auth: false, json: {}, retry: "none" }),
     pollSession: (sessionId, pollSecret) =>
       client.request<FigmaPollResponse>("POST", "/figma/auth/sessions/" + segment(sessionId) + "/poll", {
         auth: false,

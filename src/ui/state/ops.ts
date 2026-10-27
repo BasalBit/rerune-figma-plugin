@@ -7,7 +7,6 @@ import { createIdleTimeout, HandlerError, RequestTimeoutError, type UiBus } from
 
 export type OpResult = MainToUiOf<"op-result">
 export type SkipCounts = MainToUiOf<"scan-done">["skipped"]
-export type BusLike = Pick<UiBus, "send" | "on" | "nextRequestId" | "request">
 
 export const WRITE_BATCH_SIZE = 200
 export const LONG_OP_IDLE_MS = 300000

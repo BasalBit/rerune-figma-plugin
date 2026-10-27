@@ -163,6 +163,13 @@ describe("pairing flow", () => {
     }
   })
 
+  it("reports a busy server at once when E2 answers 429", async () => {
+    const { flow, openExternal } = harness({ create: async () => Promise.reject(new ApiError(429, null, "Too many requests", 30)) })
+    await flow.start()
+    expect(flow.getState()).toEqual({ kind: "failed", reason: "error", message: "ReRune is busy. Wait a moment and try again." })
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
   it("reports an unavailable server when E2 answers 503", async () => {
     const { flow, openExternal } = harness({ create: async () => Promise.reject(new ApiError(503, null, "Figma sign-in is not configured")) })
     await flow.start()

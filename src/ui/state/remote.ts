@@ -1,9 +1,10 @@
 import type { FigmaKeyRef, FigmaResolvedKey, FigmaResolveRequest, FigmaResolveResponse } from "../../shared/api-types"
-import { BY_NAME_TEXT_MAX_UTF16, MAX_BATCH_SIZE, MAX_REQUESTS_IN_FLIGHT, RESOLVE_CHUNK_SIZE } from "../../shared/constants"
-import type { ScannedNode } from "../../shared/messages"
+import { BY_NAME_TEXT_MAX_UTF16, CODEGEN_SOURCE_TEXT_MAX_CHARS, MAX_BATCH_SIZE, MAX_REQUESTS_IN_FLIGHT, RESOLVE_CHUNK_SIZE } from "../../shared/constants"
+import { renderContent } from "../../shared/icu"
+import type { CodegenCacheEntry, ScannedNode } from "../../shared/messages"
 import type { RemoteWithMaxLength } from "../../shared/push-plan"
 import { missingRemoteState, remoteStateFromResolved } from "../../shared/sync-state"
-import { utf16Length } from "../../shared/text"
+import { truncateUtf16, utf16Length } from "../../shared/text"
 import type { FigmaApi } from "../api/figma-api"
 import { chunk } from "./ops"
 
@@ -109,4 +110,20 @@ export async function fetchTakenNames(api: Pick<FigmaApi, "keysByName">, project
     }
   })
   return taken
+}
+
+// Codegen cache entries (§7.17, §7.19) from resolved keys, so renames in ReRune reach Dev Mode codegen.
+export function cacheEntriesFromResolved(resolved: ReadonlyMap<string, FigmaResolvedKey>, mainLanguage: string): CodegenCacheEntry[] {
+  const entries: CodegenCacheEntry[] = []
+  for (const key of resolved.values()) {
+    if (key.type !== "key") {
+      continue
+    }
+    const main = key.values.find((value) => value.lang === mainLanguage)
+    const content = main !== undefined && main.present ? main.content : null
+    const structured = content !== null && content.message !== undefined && content.message !== null
+    const text = content === null ? "" : structured ? renderContent(content, { lang: mainLanguage }) : content.value
+    entries.push({ keyId: key.id, k: key.key, placeholders: key.placeholders.map((placeholder) => placeholder.name), sourceText: truncateUtf16(text, CODEGEN_SOURCE_TEXT_MAX_CHARS) })
+  }
+  return entries
 }

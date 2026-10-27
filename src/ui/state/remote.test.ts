@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { keyId, linkedNode, OTHER_PROJECT_ID, PROJECT_ID, scannedNode } from "../../../test/fixtures"
 import type { FigmaByNameRequest, FigmaByNameResponse, FigmaResolvedKey, FigmaResolveRequest, FigmaResolveResponse } from "../../shared/api-types"
 import { ApiError } from "../api/client"
-import { fetchTakenNames, fetchTextMatches, linkedKeyIds, loadRemoteStates, mapPool } from "./remote"
+import { cacheEntriesFromResolved, fetchTakenNames, fetchTextMatches, linkedKeyIds, loadRemoteStates, mapPool } from "./remote"
 import { resolvedKey } from "./test-fakes"
 
 function resolver(table: Map<string, FigmaResolvedKey>) {
@@ -115,5 +115,22 @@ describe("mapPool", () => {
   it("keeps input order", async () => {
     await expect(mapPool([3, 1, 2], 2, async (n) => n * 2)).resolves.toEqual([6, 2, 4])
     await expect(mapPool([], 4, async (n: number) => n)).resolves.toEqual([])
+  })
+})
+
+describe("cacheEntriesFromResolved", () => {
+  it("caches key names, placeholders and up to 60 chars of source text for text keys", () => {
+    const entries = cacheEntriesFromResolved(
+      new Map([
+        [keyId(1), resolvedKey(keyId(1), "greeting", "Hi {{name}}, " + "x".repeat(80), { placeholders: [{ name: "name", type: "string", format: "" }] })],
+        [keyId(2), resolvedKey(keyId(2), "group", null, { type: "object", values: [] })],
+        [keyId(3), resolvedKey(keyId(3), "empty", null)],
+      ]),
+      "en",
+    )
+    expect(entries).toEqual([
+      { keyId: keyId(1), k: "greeting", placeholders: ["name"], sourceText: ("Hi {{name}}, " + "x".repeat(80)).slice(0, 60) },
+      { keyId: keyId(3), k: "empty", placeholders: [], sourceText: "" },
+    ])
   })
 })
