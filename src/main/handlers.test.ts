@@ -239,8 +239,17 @@ describe("document handlers through the bus", () => {
 
   it("answers later-phase messages with a handler-error", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {})
-    await setup().dispatch({ type: "screenshots-export", requestId: "s", frameIds: [] })
-    expect(sent).toEqual([{ type: "handler-error", forType: "screenshots-export", requestId: "s", message: "Not available in this version of the plugin" }])
+    await setup().dispatch({ type: "overflow-check", requestId: "s", nodeIds: [] })
+    expect(sent).toEqual([{ type: "handler-error", forType: "overflow-check", requestId: "s", message: "Not available in this version of the plugin" }])
+  })
+
+  it("answers screenshots-export with frame-images-done (and refuses ids that are not a list)", async () => {
+    const bus = setup()
+    await bus.dispatch({ type: "screenshots-export", requestId: "s1", frameIds: ["99:1"] })
+    expect(sent).toEqual([{ type: "frame-images-done", requestId: "s1", exported: 0, skipped: [{ frameId: "99:1", reason: "not_found" }] }])
+    sent = []
+    await bus.dispatch({ type: "screenshots-export", requestId: "s2", frameIds: "10:1" })
+    expect(sent).toEqual([{ type: "handler-error", forType: "screenshots-export", requestId: "s2", message: "frameIds must be a list of frame ids" }])
   })
 })
 

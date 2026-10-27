@@ -9,12 +9,10 @@ import { installFigma, uninstallFigma, type FigmaMock } from "./figma-mock"
 // Whole-repo contract for the §7.5 messages: every type is sent by one side and handled by the other.
 // Types of later phases are already typed and in the impact map; until their phase lands, the UI never sends
 // them, main never posts them, and main answers them with a handler-error so nothing waits for the watchdog.
-// "PHASE_1" below means "built": Phase 1 plus what Phase 2 has added so far (link-check / link-check-result).
+// "PHASE_1" below means "built": Phase 1 plus what Phase 2 has added so far (link-check / link-check-result,
+// screenshots-export / frame-image / frame-images-done).
 
 const LATER_PHASE: Partial<Record<UiToMainType | MainToUiType, 2 | 3>> = {
-  "screenshots-export": 2,
-  "frame-image": 2,
-  "frame-images-done": 2,
   "overflow-check": 3,
   "overflow-result": 3,
   "language-copies": 3,
@@ -78,12 +76,14 @@ describe("§7.5 message contract", () => {
   })
 
   it("splits the message types into Phase 1 and later phases", () => {
-    expect(LATER_UI_TO_MAIN).toEqual(["screenshots-export", "overflow-check", "language-copies"])
-    expect(LATER_MAIN_TO_UI).toEqual(["frame-image", "frame-images-done", "overflow-result"])
-    expect(PHASE_1_UI_TO_MAIN).toHaveLength(22)
-    expect(PHASE_1_MAIN_TO_UI).toHaveLength(10)
+    expect(LATER_UI_TO_MAIN).toEqual(["overflow-check", "language-copies"])
+    expect(LATER_MAIN_TO_UI).toEqual(["overflow-result"])
+    expect(PHASE_1_UI_TO_MAIN).toHaveLength(23)
+    expect(PHASE_1_MAIN_TO_UI).toHaveLength(12)
     expect(PHASE_1_UI_TO_MAIN).toContain("link-check")
     expect(PHASE_1_MAIN_TO_UI).toContain("link-check-result")
+    expect(PHASE_1_UI_TO_MAIN).toContain("screenshots-export")
+    expect(PHASE_1_MAIN_TO_UI).toEqual(expect.arrayContaining(["frame-image", "frame-images-done"]))
   })
 
   it("main registers exactly one handler for every Phase 1 UI → main type", () => {

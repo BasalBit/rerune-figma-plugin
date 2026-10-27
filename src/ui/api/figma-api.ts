@@ -19,6 +19,9 @@ import type {
   FigmaRegisterFileRequest,
   FigmaResolveRequest,
   FigmaResolveResponse,
+  FigmaScreenshotContentType,
+  FigmaScreenshotMeta,
+  FigmaScreenshotUploadResponse,
   FigmaSearchResponse,
 } from "../../shared/api-types"
 import { SEARCH_QUERY_MAX_RUNES } from "../../shared/constants"
@@ -26,10 +29,19 @@ import { canonicalPairingCode } from "../../shared/pairing-code"
 import { firstRunes } from "../../shared/text"
 import type { ApiClient } from "./client"
 
-// One function per endpoint (Phase 1: E1–E13; Phase 2 files and links: E14–E18; §4). Paths are relative to
-// __API_BASE__ (nginx strips /api).
+// One function per endpoint (Phase 1: E1–E13; Phase 2 files, links and screenshot upload: E14–E19; §4). Paths are
+// relative to __API_BASE__ (nginx strips /api).
 
 export interface SearchParams { q: string; cursor?: string | null; limit?: number }
+
+// E19 multipart parts (§7.16): the image as `image/jpeg` or `image/png` named `<frame id>.jpg|png`, and `meta` as a
+// JSON blob.
+export interface ScreenshotUpload {
+  image: Uint8Array
+  contentType: FigmaScreenshotContentType
+  fileName: string
+  meta: FigmaScreenshotMeta
+}
 
 export interface FigmaApi {
   meta(): Promise<FigmaMetaResponse>                                                          // E1
@@ -50,6 +62,7 @@ export interface FigmaApi {
   deleteFile(projectId: string, fileKey: string): Promise<void>                               // E16
   upsertLinks(projectId: string, request: FigmaLinksRequest): Promise<FigmaLinksResponse>     // E17
   links(projectId: string, query: FigmaLinksQuery): Promise<FigmaLinksListResponse>           // E18
+  uploadScreenshot(projectId: string, upload: ScreenshotUpload): Promise<FigmaScreenshotUploadResponse> // E19
 }
 
 function segment(value: string): string {
@@ -67,6 +80,15 @@ function codePath(code: string, rest = ""): string {
 
 export function searchQuery(q: string): string {
   return firstRunes(q.trim(), SEARCH_QUERY_MAX_RUNES)
+}
+
+export function screenshotForm(upload: ScreenshotUpload): FormData {
+  const form = new FormData()
+  // .slice(): a Uint8Array over a shared or offset buffer is not a BlobPart for TypeScript ≥ 5.7, and the copy
+  // never sends bytes outside the view.
+  form.append("image", new Blob([upload.image.slice()], { type: upload.contentType }), upload.fileName)
+  form.append("meta", new Blob([JSON.stringify(upload.meta)], { type: "application/json" }), "meta.json")
+  return form
 }
 
 export function createFigmaApi(client: ApiClient): FigmaApi {
@@ -130,5 +152,9 @@ export function createFigmaApi(client: ApiClient): FigmaApi {
           limit: query.limit ?? null,
         },
       }),
+    // Uploads are never retried by the client (§7.20): the upload queue honours 429 Retry-After itself. The client
+    // gives multipart requests the 60 s upload timeout.
+    uploadScreenshot: (projectId, upload) =>
+      client.request<FigmaScreenshotUploadResponse>("POST", projectPath(projectId, "/screenshots"), { form: screenshotForm(upload), retry: "none" }),
   }
 }

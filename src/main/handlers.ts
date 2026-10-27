@@ -10,6 +10,7 @@ import { checkLinks, nodeIdsOf } from "./link-check"
 import { applyLinks, removeLinks, type OpOutcome } from "./links"
 import { pageOf } from "./node-utils"
 import { createScanner } from "./scan"
+import { exportScreenshots, frameIdsOf } from "./screenshots"
 import { readFileSettings, saveFileSettings } from "./settings"
 import { applyPreview, applyTexts, resetPreview } from "./text-write"
 
@@ -119,8 +120,8 @@ function sendOutcome(bus: MainBus, requestId: RequestId, outcome: OpOutcome): vo
   bus.send({ type: "op-result", requestId, ok: outcomeOk(outcome.errors), done: outcome.done, errors: outcome.errors })
 }
 
-// One handler per message type. Types without a handler yet (Phase 2/3: screenshots-export, overflow-check,
-// language-copies) are answered by the bus with a handler-error.
+// One handler per message type. Types without a handler yet (Phase 3: overflow-check, language-copies) are
+// answered by the bus with a handler-error.
 export function registerHandlers(bus: MainBus, context: MainContext): void {
   const scanner = createScanner(bus.send)
 
@@ -176,6 +177,9 @@ export function registerHandlers(bus: MainBus, context: MainContext): void {
   bus.on("link-check", async (message) => {
     const nodes = await checkLinks(nodeIdsOf(message.nodeIds))
     bus.send({ type: "link-check-result", requestId: message.requestId, nodes })
+  })
+  bus.on("screenshots-export", async (message) => {
+    await exportScreenshots(message.requestId, frameIdsOf(message.frameIds), bus.send)
   })
   bus.on("text-apply", async (message) => {
     sendOutcome(bus, message.requestId, await applyTexts(message.items, Date.now()))

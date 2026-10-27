@@ -276,6 +276,9 @@ export interface PushRun {
   cacheEntries: CodegenCacheEntry[]
   linkedNodeIds: string[]          // layers whose links the push wrote or removed (link sync input)
   linkSync: LinkSyncResult | null
+  // Layers the push changed in ReRune or in Figma: pushed (created, updated or unchanged), linked, unlinked or given
+  // ReRune's text. Their top frames get screenshots (§7.13 rule 11).
+  affectedNodeIds: string[]
 }
 
 export interface ConflictResolution {
@@ -314,6 +317,7 @@ export function emptyRun(): PushRun {
     cacheEntries: [],
     linkedNodeIds: [],
     linkSync: null,
+    affectedNodeIds: [],
   }
 }
 
@@ -377,6 +381,7 @@ export async function pushChunks(deps: PushDeps, chunks: readonly PushRequestChu
     const texts = new Map(chunk.items.map((item) => [item.client_ref, item.text]))
     for (const result of response.results) {
       if (result.status === "created" || result.status === "updated" || result.status === "unchanged") {
+        run.affectedNodeIds.push(...(chunk.nodeIdsByRef.get(result.client_ref) ?? []))
         const entry = cacheEntry(result, texts.get(result.client_ref) ?? "")
         if (entry !== null) {
           run.cacheEntries.push(entry)
@@ -408,10 +413,16 @@ export async function executePush(deps: PushDeps, plan: PushPlan, context: PlanC
   const texts = await textApply(deps, planTextApplies(plan, context))
   run.textsApplied = texts.done
   run.writeErrors.push(...texts.errors)
+  run.affectedNodeIds.push(...run.linkedNodeIds, ...takeReRuneNodeIds(plan))
   await pushChunks(deps, planToRequests(plan), context, run)
   sendCache(deps, context.projectId, run.cacheEntries)
   run.linkSync = await syncPushedLinks(deps, run.linkedNodeIds)
+  run.affectedNodeIds = [...new Set([...run.affectedNodeIds, ...run.linkedNodeIds])]
   return run
+}
+
+function takeReRuneNodeIds(plan: PushPlan): string[] {
+  return plan.conflicts.filter((conflict) => conflict.decision === "take_rerune").flatMap((conflict) => conflict.nodeIds)
 }
 
 // Phase 2 after-push link sync (§7.13 rule 11). Each layer is checked once; a failure is reported on the run and

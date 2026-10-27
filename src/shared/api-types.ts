@@ -347,3 +347,52 @@ export interface FigmaLinksQuery {
 }
 
 export interface FigmaLinksListResponse { links: FigmaLink[]; next_cursor: string | null; has_more: boolean }
+
+// Phase 2: screenshots (E19; FigmaScreenshot is shared by E19–E22).
+
+export interface FigmaScreenshotBox { key_id: string; node_id: string; x: number; y: number; w: number; h: number }
+
+// The `meta` part of the E19 multipart upload (strict JSON on the server).
+export interface FigmaScreenshotMeta {
+  file_key: string
+  frame_id: string
+  frame_name: string
+  page_id: string
+  page_name: string
+  width: number
+  height: number
+  boxes: FigmaScreenshotBox[]
+}
+
+export type FigmaScreenshotContentType = "image/jpeg" | "image/png"
+
+export interface FigmaScreenshot {
+  id: string
+  file_key: string
+  frame_id: string
+  frame_name: string
+  page_id: string
+  page_name: string
+  content_type: FigmaScreenshotContentType
+  width: number
+  height: number
+  size_bytes: number
+  boxes: FigmaScreenshotBox[]
+  image_url: string | null
+  image_url_expires_at: string | null
+  figma_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type FigmaDroppedBoxReason = "out_of_bounds" | "invalid_node_id" | "key_not_found"
+
+export const FIGMA_DROPPED_BOX_REASONS: readonly FigmaDroppedBoxReason[] = ["out_of_bounds", "invalid_node_id", "key_not_found"]
+
+export interface FigmaDroppedBox { node_id: string; key_id: string; reason: FigmaDroppedBoxReason }
+
+export interface FigmaScreenshotUploadResponse {
+  screenshot: FigmaScreenshot
+  unchanged_image: boolean
+  dropped_boxes: FigmaDroppedBox[]
+}

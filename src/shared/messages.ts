@@ -48,6 +48,10 @@ export interface LinkCheck {
   link: NodeLink | null
   name: string; pageId: string; pageName: string; frameId: string | null; frameName: string | null
 }
+// Frames screenshots-export did not export (§7.16). "preview_active" is a Phase 2 addition: a frame whose text shows
+// a language preview would upload preview text as the design (D23), so it is skipped until the preview is reset.
+export type FrameSkipReason = "no_bounds" | "too_large" | "not_found" | "export_failed" | "preview_active"
+export interface FrameSkip { frameId: string; reason: FrameSkipReason }
 export interface CodegenCacheEntry { keyId: string; k: string; placeholders: string[]; sourceText: string }
 export type ReadDiagnostic = "T1-check" | "T2-instances" | "T3-export" | "T4-export-page" | "T7-settings" | "T10-environment"
 export type WriteDiagnostic = "T1-mark" | "T2-clear" | "T5-fonts" | "T8-relaunch"
@@ -94,7 +98,7 @@ export type MainToUi =
   | { type: "link-check-result"; requestId: RequestId; nodes: LinkCheck[] }               // Phase 2 addition (link sync)
   | { type: "frame-image"; requestId: RequestId; frameId: string; frameName: string; pageId: string; pageName: string
       format: "JPG" | "PNG"; bytes: Uint8Array; width: number; height: number; boxes: Box[] }
-  | { type: "frame-images-done"; requestId: RequestId; exported: number; skipped: { frameId: string; reason: "no_bounds" | "too_large" | "not_found" | "export_failed" }[] }
+  | { type: "frame-images-done"; requestId: RequestId; exported: number; skipped: FrameSkip[] }
   | { type: "inspect-selection"; kind: "text" | "container" | "none"; nodes: ScannedNode[] }
   | { type: "overflow-result"; requestId: RequestId; items: { nodeId: string; kind: "clipped" | "truncated" | "exceeds_parent"; by: number }[] }
   | { type: "diagnostics-result"; requestId: RequestId; test: DiagnosticTest; report: unknown }

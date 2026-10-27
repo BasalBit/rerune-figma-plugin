@@ -1,6 +1,26 @@
-// Image helpers for the UI iframe (browser APIs). Phase 2 adds the screenshot rescale/re-encode helpers here.
+import { imageSize } from "../shared/image-size"
+
+// Image helpers for the UI iframe (browser APIs): the T3 corner pixel and the decoded size of a frame image.
 
 export interface Rgba { r: number; g: number; b: number; a: number }
+export interface PixelSize { width: number; height: number }
+
+// Decoded size of an exported frame image (§7.16): createImageBitmap when the browser has it, else the PNG/JPEG
+// header (what the server's image.DecodeConfig reads); null when neither can tell.
+export async function measureImage(bytes: Uint8Array, type: "image/jpeg" | "image/png"): Promise<PixelSize | null> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(new Blob([bytes.slice()], { type }))
+      const size = { width: bitmap.width, height: bitmap.height }
+      bitmap.close()
+      return size
+    } catch {
+      // Fall back to the header below.
+    }
+  }
+  const header = imageSize(bytes)
+  return header === null ? null : { width: header.width, height: header.height }
+}
 
 // Top-left pixel of an encoded image (diagnostics T3: background of a transparent frame exported as JPG).
 // Returns null where the browser APIs are missing (tests, old engines) or decoding fails.

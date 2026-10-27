@@ -195,6 +195,21 @@ describe("executePush", () => {
     })
   })
 
+  it("collects the layers the push changed, for the screenshots of their frames (§7.13 rule 11)", async () => {
+    const { plan, context } = await prepared()
+    const push = vi.fn(async (_projectId: string, request: FigmaPushRequest) =>
+      response(request.items.map((item) => (item.op === "create" ? result(item.client_ref, "created", { key_id: keyId(10), key: item.key }) : result(item.client_ref, "unchanged", { key_id: item.key_id, key: "checkout_title" })))),
+    )
+    const run = await executePush({ api: { push }, bus: fakeMain().bus }, plan, context)
+    // Linked to an exact match (1:2), given ReRune's text (1:4), created (1:1), and every layer of the pushed key.
+    expect(run.affectedNodeIds).toEqual(["1:2", "1:4", "1:1", "1:3", "I7:1;1:5"])
+    const failing = vi.fn(async () =>
+      response([result("c0", "failed", { reason: "quota_exceeded" }), result("u" + keyId(1), "conflict", { key_id: keyId(1), reason: "source_changed", current_text: "x" })]),
+    )
+    const notPushed = await executePush({ api: { push: failing }, bus: fakeMain().bus }, plan, context)
+    expect(notPushed.affectedNodeIds).toEqual(["1:2", "1:4"])
+  })
+
   it("reports item failures, conflicts and quota", async () => {
     const { plan, context } = await prepared()
     const main = fakeMain()

@@ -1,7 +1,12 @@
-import { MAX_IMAGE_SIDE, MAX_IMAGE_UPLOAD_BYTES } from "../shared/constants"
+import { MAX_IMAGE_SIDE, MAX_IMAGE_UPLOAD_BYTES, OBJECT_ID_PATTERN, SCAN_YIELD_EVERY_TEXTS, SCREENSHOT_MAX_BOXES } from "../shared/constants"
+import type { Box, FrameSkip, FrameSkipReason, MainToUi, MainToUiOf, RequestId } from "../shared/messages"
+import { readLinkInfo } from "./links"
+import { createNodeCaches, isHidden, pageOf, yieldToCanvas, type NodeCaches } from "./node-utils"
+import { readFileSettings } from "./settings"
+import { shownPreview } from "./shown-preview"
 
-// Frame export rules (§7.16) and key boxes (Appendix A.8). Phase 1 uses them for diagnostics T3/T4; the
-// Phase 2 screenshots-export handler builds on the same functions.
+// Frame export rules (§7.16) and key boxes (Appendix A.8), used by diagnostics T3/T4 and by the Phase 2
+// screenshots-export handler (one frame-image per exported frame, then frame-images-done).
 
 export interface BoxRect { x: number; y: number; width: number; height: number }
 export interface ImageBox { x: number; y: number; w: number; h: number }
@@ -105,4 +110,160 @@ export async function exportFrameImage(frame: ExportableNode): Promise<FrameExpo
     bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
     attempts,
   }
+}
+
+export type FrameImage = Omit<MainToUiOf<"frame-image">, "type" | "requestId">
+export type ScreenshotExport = { ok: true; image: FrameImage } | { ok: false; reason: FrameSkipReason }
+
+interface BoxSource { nodeId: string; keyId: string; rect: BoxRect }
+export interface FrameBoxSources { previewing: boolean; sources: BoxSource[] }
+
+const BOX_STATES = ["ok", "inherited"]
+
+function isExportable(node: BaseNode): node is ExportableNode {
+  return node.type !== "PAGE" && node.type !== "DOCUMENT" && "exportAsync" in node && "absoluteBoundingBox" in node
+}
+
+// §7.16 step 5 inputs: the visible text under the frame that shows a key of this project (link state ok or
+// inherited; inherited_overridden and copied links show no key), with its absolute bounds. `previewing` is set
+// as soon as one text shows a language preview: the image would show preview text, never the design (D23).
+// A text that fails to read is left out; the frame still exports.
+export async function frameBoxSources(frame: SceneNode, projectId: string | null, caches: NodeCaches): Promise<FrameBoxSources> {
+  const sources: BoxSource[] = []
+  const texts = "findAllWithCriteria" in frame ? (frame as SceneNode & ChildrenMixin).findAllWithCriteria({ types: ["TEXT"] }) : []
+  for (let index = 0; index < texts.length; index++) {
+    if (index > 0 && index % SCAN_YIELD_EVERY_TEXTS === 0) {
+      await yieldToCanvas()
+    }
+    const text = texts[index]
+    try {
+      if (text.removed || isHidden(text, caches)) {
+        continue
+      }
+      if ((await shownPreview(text, caches)) !== null) {
+        return { previewing: true, sources: [] }
+      }
+      if (projectId === null) {
+        continue
+      }
+      const info = readLinkInfo(text, caches)
+      const link = info.link
+      if (link === null || !BOX_STATES.includes(info.state) || link.p !== projectId || !OBJECT_ID_PATTERN.test(link.id)) {
+        continue
+      }
+      const rect = text.absoluteBoundingBox
+      if (rect !== null) {
+        sources.push({ nodeId: text.id, keyId: link.id, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } })
+      }
+    } catch {
+      // The canvas stays editable: a text removed or unreadable meanwhile gets no box.
+    }
+  }
+  return { previewing: false, sources }
+}
+
+// Boxes in image pixels (Appendix A.8) for the exported image; texts clipped away by the frame get none. E19
+// takes at most 500 boxes per image, so the first 500 in layer order are kept.
+export function boxesFor(sources: readonly BoxSource[], frame: BoxRect, scale: number, imgW: number, imgH: number): Box[] {
+  const boxes: Box[] = []
+  for (const source of sources) {
+    const box = boxFor(source.rect, frame, scale, imgW, imgH)
+    if (box !== null) {
+      boxes.push({ nodeId: source.nodeId, keyId: source.keyId, ...box })
+      if (boxes.length >= SCREENSHOT_MAX_BOXES) {
+        break
+      }
+    }
+  }
+  return boxes
+}
+
+// §7.16 steps 1–5 for one frame: look it up, load its page, collect the key texts, export, compute the boxes.
+export async function exportScreenshot(frameId: string, projectId: string | null): Promise<ScreenshotExport> {
+  let node: BaseNode | null
+  try {
+    node = await figma.getNodeByIdAsync(frameId)
+  } catch {
+    return { ok: false, reason: "not_found" }
+  }
+  if (node === null || node.removed || !isExportable(node)) {
+    return { ok: false, reason: "not_found" }
+  }
+  const frame = node
+  const page = pageOf(frame)
+  try {
+    if (page !== null) {
+      await page.loadAsync()
+    }
+  } catch {
+    return { ok: false, reason: "export_failed" }
+  }
+  const bounds = frame.absoluteBoundingBox
+  if (bounds === null || bounds.width <= 0 || bounds.height <= 0) {
+    return { ok: false, reason: "no_bounds" }
+  }
+  let collected: FrameBoxSources
+  try {
+    collected = await frameBoxSources(frame, projectId, createNodeCaches())
+  } catch {
+    // Without its boxes the upload would replace the frame's screenshot with one that shows no keys.
+    return { ok: false, reason: "export_failed" }
+  }
+  if (collected.previewing) {
+    return { ok: false, reason: "preview_active" }
+  }
+  const exported = await exportFrameImage(frame)
+  if (!exported.ok) {
+    return { ok: false, reason: exported.reason }
+  }
+  return {
+    ok: true,
+    image: {
+      frameId: frame.id,
+      frameName: frame.name,
+      pageId: page === null ? "" : page.id,
+      pageName: page === null ? "" : page.name,
+      format: exported.format,
+      bytes: exported.bytes,
+      width: exported.width,
+      height: exported.height,
+      boxes: boxesFor(collected.sources, exported.bounds, exported.scale, exported.width, exported.height),
+    },
+  }
+}
+
+// screenshots-export (§7.16): frames one at a time with a yield between them, one frame-image message per
+// exported frame (peak memory stays at one image), then frame-images-done with the frames that were skipped.
+// Boxes are for keys of the file's project. Reads only.
+export async function exportScreenshots(requestId: RequestId, frameIds: readonly string[], send: (message: MainToUi) => void): Promise<void> {
+  const projectId = readFileSettings().settings?.projectId ?? null
+  const skipped: FrameSkip[] = []
+  let exported = 0
+  for (let index = 0; index < frameIds.length; index++) {
+    if (index > 0) {
+      await yieldToCanvas()
+    }
+    const frameId = frameIds[index]
+    let result: ScreenshotExport
+    try {
+      result = await exportScreenshot(frameId, projectId)
+    } catch {
+      result = { ok: false, reason: "export_failed" }
+    }
+    if (result.ok) {
+      exported++
+      send({ type: "frame-image", requestId, ...result.image })
+    } else {
+      skipped.push({ frameId, reason: result.reason })
+    }
+  }
+  send({ type: "frame-images-done", requestId, exported, skipped })
+}
+
+// The UI sends frame ids as a list of strings; anything else is a programming error answered with handler-error.
+export function frameIdsOf(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+    throw new Error("frameIds must be a list of frame ids")
+  }
+  return value as string[]
 }

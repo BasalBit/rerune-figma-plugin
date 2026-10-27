@@ -63,6 +63,11 @@ export const DIAGNOSTICS_MAX_FRAMES = 100
 
 export const MAX_IMAGE_UPLOAD_BYTES = 2000000
 export const MAX_IMAGE_SIDE = 4096
+export const SCREENSHOT_MAX_BOXES = 500              // E19 accepts at most 500 boxes per image
+export const SCREENSHOT_SIZE_TOLERANCE_PX = 2        // §7.16: rescale boxes when the decoded image differs by more
+export const SCREENSHOT_NAME_MAX_RUNES = 200         // frame and page names are cut to 200 runes on the server (§4.0)
+export const SCREENSHOT_RATE_LIMIT_RETRIES = 2       // 429 waits per frame before the upload queue stops
+export const SCREENSHOT_EXPORT_IDLE_MS = 120000      // one frame export (with re-exports) per request
 
 export const REQUEST_TIMEOUT_MS = 30000
 export const UPLOAD_TIMEOUT_MS = 60000

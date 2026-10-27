@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   ERROR_REASONS,
+  FIGMA_DROPPED_BOX_REASONS,
   FIGMA_LINK_REJECT_REASONS,
   PUSH_ITEM_REASONS,
   type ErrorReason,
+  type FigmaDroppedBoxReason,
   type FigmaFile,
   type FigmaFilesResponse,
   type FigmaLinkRejectReason,
@@ -11,6 +13,9 @@ import {
   type FigmaLinksRequest,
   type FigmaLinksResponse,
   type FigmaRegisterFileRequest,
+  type FigmaScreenshot,
+  type FigmaScreenshotMeta,
+  type FigmaScreenshotUploadResponse,
   type FigmaByNameRequest,
   type FigmaByNameResponse,
   type FigmaCreateSessionResponse,
@@ -33,6 +38,7 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 const errorReasonsComplete: Equal<(typeof ERROR_REASONS)[number], ErrorReason> = true
 const pushReasonsComplete: Equal<(typeof PUSH_ITEM_REASONS)[number], PushItemReason> = true
 const linkRejectReasonsComplete: Equal<(typeof FIGMA_LINK_REJECT_REASONS)[number], FigmaLinkRejectReason> = true
+const droppedBoxReasonsComplete: Equal<(typeof FIGMA_DROPPED_BOX_REASONS)[number], FigmaDroppedBoxReason> = true
 
 const meta: FigmaMetaResponse = {
   api_version: 1,
@@ -237,6 +243,55 @@ const linksList: FigmaLinksListResponse = {
   next_cursor: null,
   has_more: false,
 }
+
+// Phase 2 examples (E19), as written in §4.
+const screenshotMeta: FigmaScreenshotMeta = {
+  file_key: "AbCdEf1234567890XyZ",
+  frame_id: "10:1",
+  frame_name: "Checkout",
+  page_id: "0:1",
+  page_name: "Mobile",
+  width: 1170,
+  height: 2532,
+  boxes: [{ key_id: "6a4800000000000000000001", node_id: "12:345", x: 24, y: 310, w: 200, h: 40 }],
+}
+
+const screenshot: FigmaScreenshot = {
+  id: "6a4900000000000000000a01",
+  file_key: "AbCdEf1234567890XyZ",
+  frame_id: "10:1",
+  frame_name: "Checkout",
+  page_id: "0:1",
+  page_name: "Mobile",
+  content_type: "image/jpeg",
+  width: 1170,
+  height: 2532,
+  size_bytes: 184233,
+  boxes: [{ key_id: "6a4800000000000000000001", node_id: "12:345", x: 24, y: 310, w: 200, h: 40 }],
+  image_url: "https://designs.rerune.io/projects/6a46/screenshots/6a49/6a4a.jpg?token=HS256-x&expires=1761562800",
+  image_url_expires_at: "2026-10-27T11:00:00Z",
+  figma_url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter?node-id=10-1",
+  created_at: "2026-10-27T10:00:00Z",
+  updated_at: "2026-10-27T10:00:00Z",
+}
+
+const screenshotUpload: FigmaScreenshotUploadResponse = {
+  screenshot,
+  unchanged_image: false,
+  dropped_boxes: [{ node_id: "12:346", key_id: "6a4800000000000000000009", reason: "key_not_found" }],
+}
+
+describe("wire types (§4, E19)", () => {
+  it("accept the spec examples", () => {
+    const examples = [screenshotMeta, screenshot, screenshotUpload]
+    expect(JSON.parse(JSON.stringify(examples))).toEqual(examples)
+  })
+
+  it("list every dropped-box reason", () => {
+    expect(droppedBoxReasonsComplete).toBe(true)
+    expect([...FIGMA_DROPPED_BOX_REASONS].sort()).toEqual(["invalid_node_id", "key_not_found", "out_of_bounds"])
+  })
+})
 
 describe("wire types (§4, E14–E18)", () => {
   it("accept the spec examples", () => {

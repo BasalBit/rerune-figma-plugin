@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
-import type { ApiClient, ApiRequestOptions, HttpMethod } from "./client"
-import { createFigmaApi, searchQuery } from "./figma-api"
+import type { FigmaScreenshotMeta } from "../../shared/api-types"
+import { createApiClient, type ApiClient, type ApiRequestOptions, type HttpMethod } from "./client"
+import { createFigmaApi, screenshotForm, searchQuery, type ScreenshotUpload } from "./figma-api"
 
 interface Recorded { method: HttpMethod; path: string; options: ApiRequestOptions }
 
@@ -111,6 +112,15 @@ describe("createFigmaApi", () => {
     ])
   })
 
+  it("uploads a screenshot as multipart (E19) and never retries it in the client", async () => {
+    const { api, calls } = recorder({ screenshot: {}, unchanged_image: false, dropped_boxes: [] })
+    await api.uploadScreenshot(PROJECT, UPLOAD)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ method: "POST", path: "/figma/projects/" + PROJECT + "/screenshots", options: { retry: "none" } })
+    expect(calls[0].options.form).toBeInstanceOf(FormData)
+    expect(calls[0].options.json).toBeUndefined()
+  })
+
   it("encodes path segments", async () => {
     const { api, calls } = recorder()
     await api.project("a/b")
@@ -120,5 +130,56 @@ describe("createFigmaApi", () => {
   it("cuts search queries to 100 runes after trimming", () => {
     expect(searchQuery("  x ")).toBe("x")
     expect(searchQuery("😀".repeat(150))).toBe("😀".repeat(100))
+  })
+})
+
+const META: FigmaScreenshotMeta = {
+  file_key: "AbCdEf1234567890XyZ",
+  frame_id: "I10:1;2:3",
+  frame_name: "Checkout",
+  page_id: "0:1",
+  page_name: "Mobile",
+  width: 2,
+  height: 1,
+  boxes: [{ key_id: "6a4800000000000000000001", node_id: "12:345", x: 0, y: 0, w: 1, h: 1 }],
+}
+
+const UPLOAD: ScreenshotUpload = { image: new Uint8Array([1, 2, 3]), contentType: "image/png", fileName: "I10_1_2_3.png", meta: META }
+
+describe("screenshotForm (E19 parts, §7.16)", () => {
+  it("sends the image under its type and file name and meta as a JSON blob", async () => {
+    const form = screenshotForm(UPLOAD)
+    const image = form.get("image") as File
+    expect(image.name).toBe("I10_1_2_3.png")
+    expect(image.type).toBe("image/png")
+    expect(new Uint8Array(await image.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+    const meta = form.get("meta") as File
+    expect(meta.type).toBe("application/json")
+    expect(JSON.parse(await meta.text())).toEqual(META)
+    expect([...form.keys()]).toEqual(["image", "meta"])
+  })
+
+  it("copies only the bytes of the view", async () => {
+    const buffer = new Uint8Array([9, 9, 1, 2, 9]).buffer
+    const form = screenshotForm({ ...UPLOAD, image: new Uint8Array(buffer, 2, 2) })
+    expect(new Uint8Array(await (form.get("image") as File).arrayBuffer())).toEqual(new Uint8Array([1, 2]))
+  })
+
+  it("goes out with the plugin token and lets fetch set the multipart content type", async () => {
+    const seen: RequestInit[] = []
+    const client = createApiClient({
+      apiBase: "http://localhost:8080",
+      getToken: () => "rrf_" + "a".repeat(64),
+      fetch: async (_url, init) => {
+        seen.push(init)
+        return new Response(JSON.stringify({ screenshot: {}, unchanged_image: true, dropped_boxes: [] }), { status: 200, headers: { "Content-Type": "application/json" } })
+      },
+    })
+    const response = await createFigmaApi(client).uploadScreenshot(PROJECT, UPLOAD)
+    expect(response.unchanged_image).toBe(true)
+    const headers = seen[0].headers as Record<string, string>
+    expect(headers.Authorization).toBe("Bearer rrf_" + "a".repeat(64))
+    expect(headers["Content-Type"]).toBeUndefined()
+    expect(seen[0].body).toBeInstanceOf(FormData)
   })
 })
