@@ -4,7 +4,11 @@ import overrideMain from "../build-figma-plugin.main.js"
 import overrideManifest from "../build-figma-plugin.manifest.js"
 import pkg from "../package.json"
 import readme from "../README.md?raw"
+import fileLinkComponents from "../src/ui/components/file-link.tsx?raw"
 import uiDiagnostics from "../src/ui/diagnostics.ts?raw"
+import layersScreen from "../src/ui/screens/layers.tsx?raw"
+import settingsScreen from "../src/ui/screens/settings.tsx?raw"
+import fileLinkState from "../src/ui/state/file-link.ts?raw"
 import testing from "../TESTING.md?raw"
 
 // README and TESTING.md must match what the build and the plugin actually do (P1.5: "present and accurate").
@@ -70,6 +74,19 @@ describe("TESTING.md", () => {
     expect(labels).toHaveLength(11)
     for (const label of [...labels, "Network check", "Copy report", "ReRune diagnostics"]) {
       expect(testing).toContain(label)
+    }
+  })
+
+  it("names the Phase 2 file-link controls and banners the plugin shows", () => {
+    const ui = [fileLinkComponents, layersScreen, settingsScreen, fileLinkState].join("\n")
+    for (const label of ["Sync links on this page", "This is the same file", "Save link", "Replace link", "Paste link", "Remove all", "Figma file"]) {
+      expect(ui).toContain(label)
+      expect(testing).toContain(label)
+    }
+    for (const name of ["COPY_MESSAGE", "BRANCH_MESSAGE"]) {
+      const match = fileLinkState.match(new RegExp("export const " + name + ' = "([^"]+)"'))
+      expect(match).not.toBeNull()
+      expect(testing).toContain(match?.[1] ?? "")
     }
   })
 

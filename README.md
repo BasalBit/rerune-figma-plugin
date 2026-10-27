@@ -89,13 +89,15 @@ Everything the plugin stores in a file is shared plugin data in the namespace `r
 | text layer | `preview` | the original text and styles while a preview is shown, with the `nid` it was written on |
 | text layer | `diag` | diagnostics marker (development tests only) |
 | frame | `langCopy` | marks a per-language copy of a frame (Phase 3) |
-| document and each page | `file` | the file's settings: ReRune server, project, key template and scan options |
+| document and each page | `file` | the file's settings: ReRune server, project, the pasted Figma file link (file key, canonical URL, file name, branch key), key template and scan options |
 
 `src` is a hash of the normalised text, so the plugin can tell which side changed. `nid` lets it recognise copied layers and layers inside instances. Sign-in, preferences and the Dev Mode codegen cache live in Figma's local plugin storage on your machine, not in the file.
 
+Once the file's Figma link is pasted (Project screen or Settings → Figma file), the plugin also keeps ReRune's list of which layer shows which key up to date, so the dashboard can show where a key is used: after every link, unlink and push, and on **Sync links on this page**. ReRune's link for a layer is removed only when the layer exists and shows no key or another key; links whose layer is not found are listed and removed only on request. Branch files and files that may be copies (their name differs from the one stored with the link) pause this until the link is confirmed, because they share layer IDs with the original file.
+
 ## Privacy
 
-The plugin talks only to the ReRune API, and only when you act: it sends the texts you search for, link or push (with the frame name as the new key's description), and the IDs of the keys it shows. Sign-in pairs the plugin with your ReRune session in the browser; the plugin stores its token only in Figma's local plugin storage on your machine. See the [ReRune privacy policy](https://rerune.io/privacy).
+The plugin talks only to the ReRune API, and only when you act: it sends the texts you search for, link or push (with the frame name as the new key's description), and the IDs of the keys it shows. When you paste the file's Figma link, it also sends the file's key, link and name, and for linked layers their layer IDs and the layer, frame and page names. Sign-in pairs the plugin with your ReRune session in the browser; the plugin stores its token only in Figma's local plugin storage on your machine. See the [ReRune privacy policy](https://rerune.io/privacy).
 
 ## Licence
 
