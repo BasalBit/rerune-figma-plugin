@@ -10,11 +10,12 @@ import { DANGER_TEXT, FileLinkForm } from "../components/file-link"
 import { ErrorNote, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { fileLinkStatus } from "../state/file-link"
 import { exampleKeyName, templateIssues } from "../state/naming"
+import type { ScreenshotSetting } from "../state/screenshots"
 import { applyEdit, CASE_STYLE_LABELS, editOf, sameEdit, settingsOffer, type Prefs, type SettingsEdit, type SettingsOffer, type SettingsStatus } from "../state/settings"
 
 // Settings (§7.8): the Figma file link (Phase 2), key template, case style, ignore _ layers, include locked,
-// Advanced → Diagnostics, version, Sign out. File settings are written to the file (root + page mirror, §7.7);
-// prefs stay on this machine.
+// upload screenshots on push (Phase 2; hidden for sandbox users), Advanced → Diagnostics, version, Sign out. File
+// settings are written to the file (root + page mirror, §7.7); prefs stay on this machine.
 
 export interface SettingsScreenProps {
   settings: FileSettings | null
@@ -34,6 +35,8 @@ export interface SettingsScreenProps {
   linkGate: LinkSyncGate
   onSaveFileLink(link: ParsedFigmaUrl): Promise<string | null>
   onConfirmSameFile(): Promise<string | null>
+  // "Upload screenshots on push" (§7.16): whether the toggle shows and what it says.
+  screenshots: ScreenshotSetting
 }
 
 const EMPTY_EDIT: SettingsEdit = { keyTemplate: "", caseStyle: "auto", ignoreUnderscoreLayers: true, includeLocked: false }
@@ -152,6 +155,12 @@ export function SettingsScreen(props: SettingsScreenProps) {
         <Toggle value={props.prefs.groupIdenticalTexts} onValueChange={(value) => props.onPrefs({ groupIdenticalTexts: value })}>
           <Small>Create one key for layers with identical text</Small>
         </Toggle>
+        {props.screenshots.visible && props.screenshots.toggle && (
+          <Toggle value={props.prefs.uploadScreenshotsOnPush} onValueChange={(value) => props.onPrefs({ uploadScreenshotsOnPush: value })}>
+            <Small>Upload screenshots on push</Small>
+          </Toggle>
+        )}
+        {props.screenshots.visible && props.screenshots.hint !== null && <Small muted>{props.screenshots.hint}</Small>}
 
         <SectionTitle>Advanced</SectionTitle>
         <div>

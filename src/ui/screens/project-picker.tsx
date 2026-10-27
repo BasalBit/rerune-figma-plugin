@@ -1,7 +1,7 @@
 import { Button, SearchTextbox, Textbox } from "@create-figma-plugin/ui"
 import { h } from "preact"
 import { useEffect, useState } from "preact/hooks"
-import type { FigmaProject, FigmaProjectsResponse } from "../../shared/api-types"
+import type { FigmaProject, FigmaProjectsResponse, FigmaUser } from "../../shared/api-types"
 import type { ParsedFigmaUrl } from "../../shared/figma-url"
 import type { StoredAuth } from "../../shared/messages"
 import { userMessage } from "../api/client"
@@ -27,6 +27,8 @@ export interface ProjectScreenProps {
   onPick(project: FigmaProject, link: ParsedFigmaUrl | null): Promise<void>
   onBack(): void
   onSignOut(): void
+  // E8's user (sandbox_expires_at decides whether screenshots can be uploaded, D4).
+  onUser?(user: FigmaUser): void
 }
 
 export function ProjectScreen(props: ProjectScreenProps) {
@@ -40,7 +42,9 @@ export function ProjectScreen(props: ProjectScreenProps) {
   async function load() {
     setError(null)
     try {
-      setData(await props.api.projects())
+      const response = await props.api.projects()
+      setData(response)
+      props.onUser?.(response.user)
     } catch (caught) {
       setError(userMessage(caught))
     }

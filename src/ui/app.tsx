@@ -10,6 +10,7 @@ import { ApiError, createApiClient, userMessage, type FetchLike } from "./api/cl
 import { createFigmaApi, type FigmaApi } from "./api/figma-api"
 import { browserEnvironment, createUiBus, type UiBus } from "./bus"
 import { copyText } from "./clipboard"
+import { measureImage } from "./image"
 import { FileLinkNote } from "./components/file-link"
 import { Nav } from "./components/nav"
 import { ErrorGroups, GlobalStyle, Loading, Note, styles, TextButton } from "./components/ui"
@@ -42,6 +43,16 @@ import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, sing
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
 import { previewStatus, resetOutcome } from "./state/preview"
 import { cacheEntriesFromResolved } from "./state/remote"
+import {
+  createAvailability,
+  emptyScreenshotRun,
+  screenshotDeps,
+  screenshotGate,
+  screenshotSetting,
+  uploadScreenshots,
+  type Availability,
+  type ScreenshotUploader,
+} from "./state/screenshots"
 import { SESSION_ENDED_NOTICE, signOut, usableAuth } from "./state/session"
 import { API_BASE_MISMATCH_HINT, connectProject, parsePrefs, parseSettingsReport, replaceServerQuestion, settingsOffer, type Prefs, type SettingsStatus } from "./state/settings"
 import { useStore } from "./state/use-store"
@@ -138,6 +149,11 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [noticeBusy, setNoticeBusy] = useState(false)
 
   const api = useMemo(() => createApi(init, () => authRef.current?.token ?? null, () => signedOutRef.current()), [])
+  // E1 screenshots_enabled and E8 sandbox_expires_at for screenshots on push (§7.16, D4), once per session.
+  const availabilityLoader = useMemo(() => createAvailability(api), [])
+  const [availability, setAvailability] = useState<Availability>(() => availabilityLoader.current())
+  const prefsRef = useRef(prefs)
+  prefsRef.current = prefs
   const workspace = useMemo(
     () => createWorkspace({ scanner: createScanRunner(bus), api, project: () => projectRef.current }),
     [],
@@ -166,11 +182,17 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setProject(next)
   }
 
+  function forgetAccount() {
+    availabilityLoader.reset()
+    setAvailability(availabilityLoader.current())
+  }
+
   signedOutRef.current = () => {
     if (authRef.current === null) {
       return
     }
     bus.send({ type: "auth-clear", apiBase: init.apiBase })
+    forgetAccount()
     setAuth(null)
     setActiveProject(null)
     setLink(null)
@@ -246,6 +268,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   }, [])
 
   const usable = connectedSettings({ apiBase: init.apiBase, settings })
+  const usableRef = useRef(usable)
+  usableRef.current = usable
   // Link sync (Phase 2, §7.11): on only for a confirmed main file and a user with edit_keys (D43).
   const gate = linkSyncGate(usable, rootName, project?.permissions ?? [])
   const gateRef = useRef(gate)
@@ -259,6 +283,51 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       ensureProject(usable.projectId)
     }
   }, [auth, usable?.projectId, confirming])
+
+  // Whether screenshots can be uploaded (E1, E8) is asked once the workspace opens, so Settings knows whether to
+  // show the toggle (hidden for sandbox users, D4) and the first push needs no extra wait.
+  useEffect(() => {
+    if (auth !== null && project !== null) {
+      void availabilityLoader.load().then(setAvailability)
+    }
+  }, [auth, project?.id])
+
+  // Screenshots on push (§7.13 rule 11, §7.16): the gate is evaluated when a push ends, with the settings, prefs
+  // and permissions of that moment.
+  const screenshotUploader = useMemo<ScreenshotUploader>(
+    () => ({
+      async prepare() {
+        const loaded = await availabilityLoader.load()
+        setAvailability(loaded)
+        const gate = screenshotGate({
+          pref: prefsRef.current.uploadScreenshotsOnPush,
+          availability: loaded,
+          settings: usableRef.current,
+          rootName: rootNameRef.current,
+          permissions: projectRef.current?.permissions ?? [],
+        })
+        return { gate, availability: loaded }
+      },
+      upload(frames, options) {
+        const active = projectRef.current
+        if (active === null) {
+          return Promise.resolve({ ...emptyScreenshotRun(frames.length), stopped: "signed_out" as const, notUploaded: frames.length })
+        }
+        const deps = screenshotDeps({
+          api,
+          bus,
+          projectId: active.id,
+          measure: measureImage,
+          onDisabled: () => {
+            availabilityLoader.disable()
+            setAvailability(availabilityLoader.current())
+          },
+        })
+        return uploadScreenshots(deps, frames, options)
+      },
+    }),
+    [],
+  )
 
   // First look at the workspace: scan the selection (relaunch "open" lands here too, §7.4).
   useEffect(() => {
@@ -412,6 +481,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setNotMeBusy(true)
     await signOut({ logout: (token) => api.logout(token), send: (message) => bus.send(message) }, current)
     setNotMeBusy(false)
+    forgetAccount()
     setAuth(null)
     setActiveProject(null)
     setLink(null)
@@ -517,6 +587,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         onPick={pickProject}
         onBack={() => go({ type: "open", screen: "layers" })}
         onSignOut={() => void signOutNow("signed-out")}
+        onUser={(user) => {
+          availabilityLoader.setUser(user)
+          setAvailability(availabilityLoader.current())
+        }}
       />
     )
   }
@@ -681,6 +755,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             }}
             fileKey={pushFileKey(usable, rootName)}
             syncLinks={(nodeIds) => linkSyncer.syncNodes(nodeIds, knownNodes())}
+            screenshots={screenshotUploader}
           />
         )}
         {screen === "preview" && (
@@ -716,6 +791,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             linkGate={gate}
             onSaveFileLink={saveFileLink}
             onConfirmSameFile={confirmFile}
+            screenshots={screenshotSetting(
+              screenshotGate({ pref: prefs.uploadScreenshotsOnPush, availability, settings: usable, rootName, permissions: project.permissions }),
+              availability,
+            )}
           />
         )}
       </div>

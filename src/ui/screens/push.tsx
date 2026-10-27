@@ -30,11 +30,22 @@ import {
   type PreparedPush,
   type PushRun,
 } from "../state/push"
+import {
+  affectedFrames,
+  emptyScreenshotRun,
+  groupProblems,
+  progressText,
+  screenshotSummary,
+  type ScreenshotFrame,
+  type ScreenshotRun,
+  type ScreenshotUploader,
+} from "../state/screenshots"
 import type { Prefs } from "../state/settings"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // Push (§7.13): the diff with decisions, max_length warnings, the quota line, Push, and the results with the
-// follow-up choices (conflicts, duplicate names, quota).
+// follow-up choices (conflicts, duplicate names, quota). After a push, screenshots of the changed frames are
+// uploaded when that is on and allowed (§7.13 rule 11, §7.16); the push stays locked until they are done or stopped.
 
 export interface PushScreenProps {
   workspace: Workspace
@@ -57,9 +68,12 @@ export interface PushScreenProps {
   // Phase 2: E13 file_key of the confirmed main file (or null) and the after-push link sync (§7.13 rule 11).
   fileKey: string | null
   syncLinks(nodeIds: readonly string[]): Promise<LinkSyncResult | null>
+  // Phase 2 screenshots on push; null leaves them out.
+  screenshots: ScreenshotUploader | null
 }
 
 type Phase = "preparing" | "plan" | "pushing" | "results"
+type ShotsState = { kind: "running"; run: ScreenshotRun } | { kind: "done"; run: ScreenshotRun } | { kind: "unavailable"; message: string }
 type ConflictChoice = "skip" | "overwrite" | "take_rerune"
 
 const NAME_RECHECK_MS = 400
@@ -77,6 +91,9 @@ export function PushScreen(props: PushScreenProps) {
   const [pulling, setPulling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resolved, setResolved] = useState<Record<string, ConflictChoice | "done">>({})
+  const [shots, setShots] = useState<ShotsState | null>(null)
+  const [stopping, setStopping] = useState(false)
+  const stopShots = useRef(false)
   const nameTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const editKeys = props.project.permissions.includes("edit_keys")
 
@@ -147,19 +164,54 @@ export function PushScreen(props: PushScreenProps) {
     if (prepared === null) return
     setPhase("pushing")
     setError(null)
+    setShots(null)
     props.onBusy(true)
+    let pushed: PushRun | null = null
     try {
-      const result = await executePush(pushDeps(), prepared.plan, prepared.context)
-      setRun(result)
-      if (result.availableKeys !== null) props.onAvailableKeys(result.availableKeys)
+      pushed = await executePush(pushDeps(), prepared.plan, prepared.context)
+      setRun(pushed)
+      if (pushed.availableKeys !== null) props.onAvailableKeys(pushed.availableKeys)
       // The rescan drops pending names of layers that are now linked; failed creates keep the chosen name.
       await props.workspace.scan()
     } catch (caught) {
       setError(userMessage(caught))
+    }
+    setPhase("results")
+    try {
+      if (pushed !== null) {
+        await uploadScreenshots(affectedFrames(pushed.affectedNodeIds, prepared.context.nodes))
+      }
     } finally {
       props.onBusy(false)
     }
-    setPhase("results")
+  }
+
+  // §7.13 rule 11: screenshots of the frames the push changed, when the gate allows (§7.16). A gate that is off
+  // stays silent (the Settings screen and the file banner explain why), except when ReRune could not be asked.
+  async function uploadScreenshots(frames: ScreenshotFrame[]) {
+    const uploader = props.screenshots
+    if (uploader === null || frames.length === 0) return
+    try {
+      const { gate, availability } = await uploader.prepare()
+      if (!gate.enabled || gate.fileKey === null) {
+        if (gate.reason === "unavailable" && availability.error !== null) {
+          setShots({ kind: "unavailable", message: availability.error })
+        }
+        return
+      }
+      stopShots.current = false
+      setStopping(false)
+      setShots({ kind: "running", run: emptyScreenshotRun(frames.length) })
+      const result = await uploader.upload(frames, { fileKey: gate.fileKey, stopped: () => stopShots.current, onProgress: (next) => setShots({ kind: "running", run: next }) })
+      setShots({ kind: "done", run: result })
+    } catch (caught) {
+      setShots({ kind: "unavailable", message: userMessage(caught) })
+    }
+  }
+
+  function stopScreenshots() {
+    stopShots.current = true
+    setStopping(true)
   }
 
   function pushDeps() {
@@ -238,9 +290,12 @@ export function PushScreen(props: PushScreenProps) {
         <div style={{ ...styles.body, ...styles.stack }}>
           <ErrorNote message={error} />
           {run !== null && <Results run={run} props={props} resolved={resolved} onResolve={resolveConflict} nodesOf={nodesOf} />}
+          {shots !== null && <ScreenshotStatus state={shots} stopping={stopping} onStop={stopScreenshots} onSelect={props.onSelect} />}
         </div>
         <div style={{ ...styles.footer, justifyContent: "flex-end" }}>
-          <Button onClick={() => void review()}>Review again</Button>
+          <Button disabled={shots?.kind === "running"} onClick={() => void review()}>
+            Review again
+          </Button>
         </div>
       </div>
     )
@@ -450,6 +505,48 @@ export function PushScreen(props: PushScreenProps) {
           {counts === null ? "Push" : "Push " + plural(counts.creates + counts.updates + counts.links + counts.keepCopied + counts.takeReRune + counts.unlinks, "change", "changes")}
         </Button>
       </div>
+    </div>
+  )
+}
+
+// Screenshot upload after a push: progress with Stop, then the summary and the frames that weren't uploaded.
+function ScreenshotStatus(props: { state: ShotsState; stopping: boolean; onStop(): void; onSelect(nodeIds: string[]): void }) {
+  const { state } = props
+  if (state.kind === "unavailable") {
+    return <Note tone="warning">Screenshots weren't uploaded: {state.message}</Note>
+  }
+  if (state.kind === "running") {
+    return (
+      <Note
+        tone="info"
+        actions={
+          <TextButton disabled={props.stopping} onClick={props.onStop}>
+            {props.stopping ? "Stopping…" : "Stop"}
+          </TextButton>
+        }
+      >
+        {progressText(state.run)}
+      </Note>
+    )
+  }
+  const summary = screenshotSummary(state.run)
+  const groups = groupProblems(state.run.problems)
+  if (summary === null && groups.length === 0) {
+    return null
+  }
+  return (
+    <div style={styles.stack}>
+      {summary !== null && <Note tone={summary.tone}>{summary.message}</Note>}
+      {groups.length > 0 && <SectionTitle>Screenshots not uploaded ({state.run.problems.length})</SectionTitle>}
+      {groups.map((group) => (
+        <div key={group.message} style={styles.card}>
+          <div style={styles.wrapRow}>
+            <Small style={styles.grow}>{group.message}</Small>
+            <TextButton onClick={() => props.onSelect(group.frameIds)}>{plural(group.frameIds.length, "frame", "frames")}</TextButton>
+          </div>
+          <Small muted>{group.frameNames.join(", ")}</Small>
+        </div>
+      ))}
     </div>
   )
 }
