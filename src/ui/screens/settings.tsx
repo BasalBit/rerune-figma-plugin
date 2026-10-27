@@ -5,7 +5,7 @@ import { CASE_STYLES } from "../../shared/constants"
 import type { CaseStyle, FileSettings, StoredAuth } from "../../shared/messages"
 import { ErrorNote, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { exampleKeyName, templateIssues } from "../state/naming"
-import { applyEdit, CASE_STYLE_LABELS, editOf, sameEdit, type Prefs, type SettingsEdit, type SettingsStatus } from "../state/settings"
+import { applyEdit, CASE_STYLE_LABELS, editOf, sameEdit, settingsOffer, type Prefs, type SettingsEdit, type SettingsOffer, type SettingsStatus } from "../state/settings"
 
 // Settings (§7.8): key template, case style, ignore _ layers, include locked, Advanced → Diagnostics, version,
 // Sign out. File settings are written to the file (root + page mirror, §7.7); prefs stay on this machine.
@@ -26,6 +26,25 @@ export interface SettingsScreenProps {
 }
 
 const EMPTY_EDIT: SettingsEdit = { keyTemplate: "", caseStyle: "auto", ignoreUnderscoreLayers: true, includeLocked: false }
+
+// Repair / page-mirror offer (§7.7), shown on the Settings screen and above the other workspace screens.
+export function SettingsOfferNote(props: { offer: SettingsOffer; disabled: boolean; onApply(): void; onDismiss?: () => void }) {
+  return (
+    <Note
+      tone={props.offer.kind === "repair" ? "warning" : "info"}
+      actions={
+        <div style={styles.row}>
+          <TextButton disabled={props.disabled} onClick={props.onApply}>
+            {props.offer.action}
+          </TextButton>
+          {props.onDismiss !== undefined && <TextButton onClick={props.onDismiss}>Not now</TextButton>}
+        </div>
+      }
+    >
+      {props.offer.message}
+    </Note>
+  )
+}
 
 export function SettingsScreen(props: SettingsScreenProps) {
   const saved = props.settings === null ? EMPTY_EDIT : editOf(props.settings)
@@ -57,7 +76,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
   }
 
   const example = props.settings === null ? null : exampleKeyName({ caseStyle: edit.caseStyle, keyTemplate: edit.keyTemplate.trim() === "" ? null : edit.keyTemplate.trim() }, props.sample)
-  const status = props.status
+  const offer = settingsOffer(props.status)
 
   return (
     <div style={styles.page}>
@@ -76,30 +95,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
             This file isn't connected to a ReRune project yet.
           </Note>
         )}
-        {status !== null && status.settings !== null && status.differ && (
-          <Note
-            tone="warning"
-            actions={
-              <TextButton disabled={props.readOnly || saving !== null} onClick={() => void save(status.settings as FileSettings, "repair")}>
-                Repair settings
-              </TextButton>
-            }
-          >
-            The file and this page store different ReRune settings (for example after a branch merge). The newer ones are in use.
-          </Note>
-        )}
-        {status !== null && status.settings !== null && !status.differ && status.offerMirror && (
-          <Note
-            tone="info"
-            actions={
-              <TextButton disabled={props.readOnly || saving !== null} onClick={() => void save(status.settings as FileSettings, "mirror")}>
-                Use this file's ReRune settings on this page
-              </TextButton>
-            }
-          >
-            This page has no copy of the file's ReRune settings. A copy keeps them safe when branches are merged.
-          </Note>
-        )}
+        {offer !== null && <SettingsOfferNote offer={offer} disabled={props.readOnly || saving !== null} onApply={() => void save(offer.settings, offer.kind)} />}
 
         <SectionTitle>Key names</SectionTitle>
         <Small muted>Template</Small>

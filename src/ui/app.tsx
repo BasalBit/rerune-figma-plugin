@@ -19,7 +19,7 @@ import { PairingScreen } from "./screens/pairing"
 import { ProjectScreen } from "./screens/project-picker"
 import { PreviewScreen } from "./screens/preview"
 import { PushScreen } from "./screens/push"
-import { SettingsScreen } from "./screens/settings"
+import { SettingsOfferNote, SettingsScreen } from "./screens/settings"
 import { SignInScreen } from "./screens/sign-in"
 import { SignedInScreen } from "./screens/signed-in"
 import {
@@ -38,7 +38,7 @@ import { createPairingFlow, type PairingFlow, type PairingState } from "./state/
 import { previewStatus, resetOutcome } from "./state/preview"
 import { cacheEntriesFromResolved } from "./state/remote"
 import { SESSION_ENDED_NOTICE, signOut, usableAuth } from "./state/session"
-import { API_BASE_MISMATCH, connectProject, parsePrefs, parseSettingsReport, type Prefs, type SettingsStatus } from "./state/settings"
+import { API_BASE_MISMATCH, connectProject, parsePrefs, parseSettingsReport, settingsOffer, type Prefs, type SettingsStatus } from "./state/settings"
 import { useStore } from "./state/use-store"
 import { createWorkspace } from "./state/workspace"
 
@@ -120,6 +120,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [notMeBusy, setNotMeBusy] = useState(false)
   const [editedPrompt, setEditedPrompt] = useState<{ scope: Scope; nodeIds: string[] } | null>(null)
   const [resetting, setResetting] = useState(false)
+  const [offerDismissedOn, setOfferDismissedOn] = useState<string | null>(null)
+  const [offerSaving, setOfferSaving] = useState(false)
   const [applyingPreview, setApplyingPreview] = useState(false)
   const [banner, setBanner] = useState<Banner | null>(null)
   const signedOutRef = useRef<() => void>(() => {})
@@ -470,6 +472,21 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   }
 
   const previewing = previewStatus(space.result?.nodes ?? [])
+  // §7.7 Repair / page-mirror offer when the plugin opens on a page that needs it (Settings shows its own copy).
+  const offer = screen !== "settings" && offerDismissedOn !== pageRef.current ? settingsOffer(status) : null
+
+  async function applyOffer(): Promise<void> {
+    if (offer === null) return
+    setOfferSaving(true)
+    try {
+      await saveSettings(offer.settings)
+    } catch (caught) {
+      setBanner({ tone: "warning", message: caught instanceof Error ? caught.message : "The settings couldn't be saved.", errors: [] })
+    } finally {
+      setOfferSaving(false)
+    }
+  }
+
   return (
     <div style={styles.page}>
       <Nav
@@ -482,6 +499,11 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         resetDisabled={resetting || applyingPreview}
         onResetPreview={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}
       />
+      {offer !== null && (
+        <div style={{ padding: "8px 12px 0" }}>
+          <SettingsOfferNote offer={offer} disabled={readOnly || offerSaving} onApply={() => void applyOffer()} onDismiss={() => setOfferDismissedOn(pageRef.current)} />
+        </div>
+      )}
       {editedPrompt !== null && (
         <div style={{ padding: "8px 12px 0" }}>
           <Note

@@ -143,4 +143,24 @@ export function parseSettingsReport(report: unknown): SettingsStatus | null {
   return { settings, source, differ: value.differ === true, offerMirror: value.offerMirror === true }
 }
 
+export type SettingsOffer = { kind: "repair" | "mirror"; settings: FileSettings; message: string; action: string }
+
+export const REPAIR_MESSAGE = "The file and this page store different ReRune settings (for example after a branch merge). The newer ones are in use."
+export const MIRROR_MESSAGE = "This page has no copy of the file's ReRune settings. A copy keeps them safe when branches are merged."
+
+// §7.7: "Repair settings" when root and page differ; the page-mirror offer when the plugin opens on a page without
+// a valid or current mirror. Both are explicit one-click writes of the winning settings (no silent write).
+export function settingsOffer(status: SettingsStatus | null): SettingsOffer | null {
+  if (status === null || status.settings === null) {
+    return null
+  }
+  if (status.differ) {
+    return { kind: "repair", settings: status.settings, message: REPAIR_MESSAGE, action: "Repair settings" }
+  }
+  if (status.offerMirror) {
+    return { kind: "mirror", settings: status.settings, message: MIRROR_MESSAGE, action: "Use this file's ReRune settings on this page" }
+  }
+  return null
+}
+
 export const API_BASE_MISMATCH = "This file is connected to a different ReRune server."

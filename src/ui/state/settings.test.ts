@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { PROJECT_ID } from "../../../test/fixtures"
 import type { FileSettings } from "../../shared/messages"
 import { newFileSettings } from "../../shared/plugin-data"
-import { applyEdit, connectProject, DEFAULT_PREFS, editOf, parsePrefs, parseSettingsReport, sameEdit } from "./settings"
+import { applyEdit, connectProject, DEFAULT_PREFS, editOf, MIRROR_MESSAGE, parsePrefs, parseSettingsReport, REPAIR_MESSAGE, sameEdit, settingsOffer } from "./settings"
 
 const API = "http://localhost:8080"
 
@@ -58,5 +58,18 @@ describe("file settings", () => {
     expect(parseSettingsReport({ current: { source: "page", settings: { v: 2 } } })?.settings).toBeNull()
     expect(parseSettingsReport(null)).toBeNull()
     expect(parseSettingsReport({})).toBeNull()
+  })
+
+  it("offers Repair when root and page differ, else the page mirror when it is missing or older (§7.7)", () => {
+    expect(settingsOffer({ settings: current, source: "root", differ: true, offerMirror: true })).toEqual({ kind: "repair", settings: current, message: REPAIR_MESSAGE, action: "Repair settings" })
+    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: true })).toEqual({
+      kind: "mirror",
+      settings: current,
+      message: MIRROR_MESSAGE,
+      action: "Use this file's ReRune settings on this page",
+    })
+    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: false })).toBeNull()
+    expect(settingsOffer({ settings: null, source: "none", differ: true, offerMirror: true })).toBeNull()
+    expect(settingsOffer(null)).toBeNull()
   })
 })
