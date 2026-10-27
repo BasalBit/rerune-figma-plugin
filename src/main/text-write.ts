@@ -1,5 +1,6 @@
 import {
   DATA_KEYS,
+  DATA_TOMBSTONE,
   PLUGIN_DATA_MAX_BYTES,
   PLUGIN_DATA_NAMESPACE,
   PREVIEW_SEGMENTS_MAX_JSON_CHARS,
@@ -9,7 +10,7 @@ import {
 import { src } from "../shared/hash"
 import type { NodeError, PreviewInfo, Scope, TextApplyItem } from "../shared/messages"
 import { nodeError, type NodeErrorCode } from "../shared/node-errors"
-import { createLink, mainsFirst, parseLink, parsePreviewRecord, recordOwnership, serializePreviewRecord, type PreviewRecord } from "../shared/plugin-data"
+import { createLink, mainsFirst, parseLink, parsePreviewRecord, serializePreviewRecord, type PreviewRecord } from "../shared/plugin-data"
 import { utf8Length } from "../shared/text"
 import { loadNodeFonts } from "./fonts"
 import { clearPluginData, getTextNode, readLinkInfo, writeLink, writeTargetFor, type OpOutcome } from "./links"
@@ -23,7 +24,7 @@ import {
   yieldToCanvas,
   type NodeCaches,
 } from "./node-utils"
-import { shownPreview, type ShownPreview } from "./shown-preview"
+import { isInheritedRecord, shownPreview, type ShownPreview } from "./shown-preview"
 
 // Preview, reset and pull writes (§7.14).
 
@@ -352,8 +353,9 @@ async function resetTargets(scope: Scope, nodeIds: readonly string[] | undefined
 // record of its own (or only an inherited one): the main's node is reset instead, which also ends the preview on
 // every other instance of it, and nothing is written on the sublayer (D44). Explicit node ids whose preview lives
 // in a library file report remote_component; scope resets keep the sublayer too, so a copied record on it is
-// still cleared. Nodes that own a record come first, so a main's record no longer shows through on its instances
-// when they are reached (it would otherwise look copied there and be cleared with a write on the sublayer).
+// still cleared. Nodes that own a record come first, so a main's record usually no longer shows through on its
+// instances when they are reached; when the main's reset is held back (edited, missing font), resetNode still
+// recognises its record on the instance as inherited through the backing chain and leaves it alone.
 async function withPreviewOwners(nodes: readonly TextNode[], explicit: boolean, caches: NodeCaches, errors: NodeError[]): Promise<TextNode[]> {
   const owners: TextNode[] = []
   const others: TextNode[] = []
@@ -396,6 +398,21 @@ async function withPreviewOwners(nodes: readonly TextNode[], explicit: boolean, 
     }
   }
   return owners.concat(others)
+}
+
+// Clears a copied record (§7.14 reset step 1) without touching the text: "" first; a record that still shows
+// through afterwards is kept when it is the main component's (inherited), anything else gets the tombstone.
+async function clearCopiedRecord(node: TextNode): Promise<void> {
+  node.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview, "")
+  const raw = readPreviewRaw(node)
+  if (raw === "") {
+    return
+  }
+  const visible = parsePreviewRecord(raw)
+  if (visible !== null && (await isInheritedRecord(node, visible, createNodeCaches()))) {
+    return
+  }
+  node.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview, DATA_TOMBSTONE)
 }
 
 // preview-reset (§7.14 reset). Runs with skipInvisibleInstanceChildren off so hidden previewed instance
@@ -441,15 +458,12 @@ async function resetNode(node: TextNode, caches: NodeCaches, explicit: boolean, 
     return explicit ? "not_previewing" : "skipped"
   }
   if (record.nid !== node.id) {
-    const flags = overrideFlags(node, caches)
-    if (recordOwnership(node.id, record.nid, flags.ownPluginDataOverride) === "inherited") {
-      // Disappears with the main component's own record; writing here would create an override (D44).
+    if (await isInheritedRecord(node, record, caches)) {
+      // Disappears with the main component's own record (also when that reset was held back, e.g. edited during
+      // the preview); writing here would create an override (D44).
       return "skipped"
     }
-    clearPluginData(node, DATA_KEYS.preview, (raw) => {
-      const visible = parsePreviewRecord(raw)
-      return visible !== null && visible.nid !== node.id && recordOwnership(node.id, visible.nid, overrideFlags(node, createNodeCaches()).ownPluginDataOverride) === "inherited"
-    })
+    await clearCopiedRecord(node)
     return "cleared"
   }
   if (src(node.characters) !== record.previewSrc) {

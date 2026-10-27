@@ -382,6 +382,47 @@ describe("preview-reset (§7.14 reset)", () => {
     expect(sublayer.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE)).toEqual([DATA_KEYS.link])
   })
 
+  it("leaves the main's record alone on an instance with its own link when the main's reset is held back (D44)", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
+    sublayer.inheritFrom = mainText
+    sublayer.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink({ ...link("I12:34;5:67", "Pay now"), id: keyId(2) }))
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [{ id: "I12:34;5:67", overriddenFields: ["pluginData"] }] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [instance, fakeComponent("5:1", "Button", [mainText])])
+    await previewed(mainText)
+    mainText.characters = "Jetzt sofort zahlen"
+
+    const outcome = await resetPreview("page", undefined, undefined)
+    expect(outcome.done).toBe(0)
+    expect(outcome.errors.map((error) => [error.nodeId, error.code])).toEqual([["5:67", "edited_during_preview"]])
+    expect(sublayer.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE)).toEqual([DATA_KEYS.link])
+    expect(record(mainText)?.nid).toBe("5:67")
+
+    expect(await resetPreview("page", ["5:67"], "restore")).toEqual({ done: 1, errors: [] })
+    expect(sublayer.characters).toBe("Pay now")
+    expect(sublayer.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE)).toEqual([DATA_KEYS.link])
+  })
+
+  it("still clears a copied record on a duplicated instance, keeping the main's record that shows through", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    const sublayer = fakeText("I99:1;5:67", "Jetzt zahlen")
+    sublayer.inheritFrom = mainText
+    sublayer.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview, serializePreviewRecord({
+      v: 1, nid: "I12:34;5:67", previewSrc: src("Jetzt zahlen"), characters: "Pay now", autoRename: true, textOverridden: false,
+      segments: null, richLost: false, lang: "de", source: "draft", variationOptionId: null, appliedAt: 1,
+    }))
+    const instance = fakeInstance("99:1", "Button", [sublayer], { overrides: [{ id: "I99:1;5:67", overriddenFields: ["characters", "pluginData"] }] })
+    onPage(figmaMock, [instance, fakeComponent("5:1", "Button", [mainText])])
+    await previewed(mainText)
+    mainText.characters = "Edited"
+    const outcome = await resetPreview("page", undefined, undefined)
+    expect(outcome.errors.map((error) => [error.nodeId, error.code])).toEqual([["5:67", "edited_during_preview"]])
+    expect(outcome.done).toBe(1)
+    expect(sublayer.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE)).toEqual([])
+    expect(sublayer.characters).toBe("Jetzt zahlen")
+  })
+
   it("resets the main component, also on another page, when an instance that shows its preview is reset", async () => {
     const mainText = fakeText("5:67", "Pay now")
     const components = fakePage("0:2", "Components", [fakeComponent("5:1", "Button", [mainText])])

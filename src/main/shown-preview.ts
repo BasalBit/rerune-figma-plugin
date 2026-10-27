@@ -51,6 +51,32 @@ async function ownerOf(record: PreviewRecord, caches: NodeCaches): Promise<TextN
   return own !== null && own.nid === node.id ? node : null
 }
 
+// Whether `record`, visible on `node` with another node's nid, is inherited rather than copied (§7.14 reset step 1,
+// D44). The D44 rule (no own pluginData override) is not enough on its own: that flag covers the whole node, so an
+// instance sublayer with a link of its own would read a main component's record as copied. A record that a node
+// up the instance's backing chain (the main component, or a nested instance inside it) also shows came from there.
+export async function isInheritedRecord(node: BaseNode, record: PreviewRecord, caches: NodeCaches): Promise<boolean> {
+  if (record.nid === node.id) {
+    return false
+  }
+  if (recordOwnership(node.id, record.nid, overrideFlags(node, caches).ownPluginDataOverride) === "inherited") {
+    return true
+  }
+  let id = backingNodeId(node.id)
+  for (let depth = 0; id !== null && depth < MAX_CHAIN; depth++) {
+    const backing = await lookupText(id, caches)
+    if (backing === null) {
+      return false
+    }
+    const shown = readRecord(backing)
+    if (shown !== null && shown.nid === record.nid) {
+      return true
+    }
+    id = backingNodeId(backing.id)
+  }
+  return false
+}
+
 export function ownRecordOf(node: BaseNode): PreviewRecord | null {
   const record = readRecord(node)
   return record !== null && record.nid === node.id ? record : null
