@@ -81,6 +81,45 @@ describe("main bus guard (§7.5 impact map)", () => {
   })
 })
 
+describe("undo steps", () => {
+  it.each(Object.keys(MESSAGE_IMPACT) as UiToMainType[])("commits %s to undo history only when it may change the document", async (type) => {
+    figmaMock.commitUndo.mockClear()
+    const instance = bus("figma", "development")
+    instance.on(type, vi.fn())
+    await instance.dispatch({ type, ...SAMPLE_MESSAGES[type] })
+    const impact = MESSAGE_IMPACT[type]
+    const writes = impact === "metadata" || impact === "canvas"
+    expect(figmaMock.commitUndo).toHaveBeenCalledTimes(writes ? 1 : 0)
+  })
+
+  it("commits after the handler's writes, also when it fails, and survives a failing commit", async () => {
+    const order: string[] = []
+    figmaMock.commitUndo.mockImplementation(() => order.push("commit"))
+    const instance = bus("figma")
+    instance.on("text-apply", async () => {
+      order.push("write")
+      throw new Error("write refused")
+    })
+    await instance.dispatch({ type: "text-apply", requestId: "c1", items: [] })
+    expect(order).toEqual(["write", "commit"])
+    expect(sent).toEqual([{ type: "handler-error", forType: "text-apply", requestId: "c1", message: "write refused" }])
+
+    figmaMock.commitUndo.mockImplementation(() => {
+      throw new Error("no undo here")
+    })
+    instance.on("link-remove", () => {})
+    await expect(instance.dispatch({ type: "link-remove", requestId: "c2", nodeIds: [] })).resolves.toBeUndefined()
+  })
+
+  it("does not commit refused writes", async () => {
+    figmaMock.commitUndo.mockClear()
+    const instance = bus("dev")
+    instance.on("preview-apply", vi.fn())
+    await instance.dispatch({ type: "preview-apply", requestId: "c1", info: {}, items: [] })
+    expect(figmaMock.commitUndo).not.toHaveBeenCalled()
+  })
+})
+
 describe("main bus error boundary", () => {
   it("turns a thrown error into a notify (≤ 100 chars) and a handler-error", async () => {
     const instance = bus("figma")

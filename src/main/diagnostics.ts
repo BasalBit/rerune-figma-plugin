@@ -205,6 +205,8 @@ async function t2Clear(now: number): Promise<Report> {
   target.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, "")
   const afterClear = target.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link)
   const overridesAfterClear = overridesFor(target)
+  // Two undo steps (TESTING.md T2: "then undo twice"): the clear, then the own-link write (the bus commits it).
+  figma.commitUndo()
   let writeError: string | null = null
   if (inherited !== null) {
     try {

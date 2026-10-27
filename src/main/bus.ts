@@ -35,6 +35,17 @@ export function errorText(error: unknown): string {
   return "Unexpected error"
 }
 
+// Each document-changing message becomes its own undo step. Figma keeps every plugin write uncommitted until
+// commitUndo, so without it one Cmd+Z would revert everything the plugin wrote since it opened (links written
+// after a push included). A failing commit never fails the message.
+function commitUndoStep(): void {
+  try {
+    figma.commitUndo()
+  } catch {
+    // Undo grouping is a convenience.
+  }
+}
+
 function requestIdOf(message: Record<string, unknown>): RequestId | undefined {
   return typeof message.requestId === "string" ? message.requestId : undefined
 }
@@ -88,6 +99,10 @@ export function createMainBus(editorType: PluginEditorType, env: BuildEnv, post:
       } catch (error) {
         const text = errorText(error)
         fail(type, requestId, text, "ReRune: " + text)
+      } finally {
+        if (impact === "metadata" || impact === "canvas") {
+          commitUndoStep()
+        }
       }
     },
   }

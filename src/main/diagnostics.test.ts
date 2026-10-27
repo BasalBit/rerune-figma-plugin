@@ -141,7 +141,15 @@ describe("T2 (instances)", () => {
       get: () => (sub.getSharedPluginDataKeys(PLUGIN_DATA_NAMESPACE).length > 0 ? [{ id: "I12:34;5:67", overriddenFields: ["pluginData"] }] : []),
       configurable: true,
     })
+    const steps: string[] = []
+    const write = sub.setSharedPluginData
+    sub.setSharedPluginData = (namespace: string, key: string, value: string) => {
+      steps.push(value === "" ? "clear" : "write")
+      write(namespace, key, value)
+    }
+    figmaMock.commitUndo.mockImplementation(() => steps.push("commit"))
     const report = (await runWriteDiagnostic("T2-clear", 50)) as Report
+    expect(steps).toEqual(["clear", "commit", "write"])
     expect(report).toMatchObject({
       test: "T2-clear",
       nodeId: "I12:34;5:67",

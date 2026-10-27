@@ -483,6 +483,7 @@ export interface FigmaMock {
   variablesById: Map<string, { id: string; name: string }>
   listeners: Map<string, (() => void)[]>
   notify: MockFn
+  commitUndo: MockFn
   openExternal: MockFn
   showUI: MockFn
   loadFontAsync: MockFn
@@ -529,6 +530,7 @@ export function installFigma(overrides: Record<string, unknown> = {}): FigmaMock
     variablesById: new Map(),
     listeners: new Map(),
     notify: vi.fn(),
+    commitUndo: vi.fn(),
     openExternal: vi.fn(),
     showUI: vi.fn(),
     loadFontAsync: vi.fn(async (font: FakeFont) => {
