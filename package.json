@@ -1,0 +1,54 @@
+{
+  "name": "rerune-figma-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "build": "build-figma-plugin --minify",
+    "build:dev": "RERUNE_ENV=development build-figma-plugin",
+    "watch": "RERUNE_ENV=development build-figma-plugin --watch",
+    "typecheck": "tsc -p src/main && tsc -p src/ui && tsc -p .",
+    "lint": "eslint src test",
+    "test": "vitest run",
+    "zip": "npm run build && zip -r rerune-figma-plugin.zip manifest.json build"
+  },
+  "dependencies": {
+    "@create-figma-plugin/ui": "4.0.3",
+    "@create-figma-plugin/utilities": "4.0.3",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "@create-figma-plugin/build": "4.0.3",
+    "@eslint/js": "10.0.1",
+    "@figma/eslint-plugin-figma-plugins": "1.0.0",
+    "@figma/plugin-typings": "1.142.0",
+    "eslint": "10.13.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  },
+  "figma-plugin": {
+    "id": "0000000000000000000",
+    "name": "ReRune",
+    "editorType": ["figma", "dev"],
+    "capabilities": ["inspect", "codegen", "vscode"],
+    "documentAccess": "dynamic-page",
+    "main": "src/main/index.ts",
+    "ui": "src/ui/index.tsx",
+    "codegenLanguages": [
+      { "label": "React (i18next)", "value": "react-i18next" },
+      { "label": "Flutter", "value": "flutter" },
+      { "label": "Android", "value": "android" },
+      { "label": "iOS", "value": "ios" },
+      { "label": "Angular", "value": "angular" }
+    ],
+    "networkAccess": {
+      "allowedDomains": ["https://rerune.io/api/"],
+      "devAllowedDomains": ["http://localhost:8080"],
+      "reasoning": "The plugin talks only to the ReRune API to sign in, search and resolve translation keys, push draft text and upload frame screenshots."
+    }
+  }
+}
