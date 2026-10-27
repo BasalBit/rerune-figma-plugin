@@ -93,3 +93,22 @@ export type UiToMainOf<T extends UiToMainType> = Extract<UiToMain, { type: T }>
 export type MainToUiOf<T extends MainToUiType> = Extract<MainToUi, { type: T }>
 export type LinkApplyItem = UiToMainOf<"link-apply">["items"][number]
 export type TextApplyItem = UiToMainOf<"text-apply">["items"][number]
+
+// Every MainToUi type exactly once: a type missing here, or one that is not in the union, does not compile.
+// The UI bus listens to all of them for request ids (the UiToMain list is MESSAGE_IMPACT in message-policy.ts).
+const MAIN_TO_UI_TYPE_SET: Record<MainToUiType, true> = {
+  "init": true,
+  "selection-changed": true,
+  "scan-progress": true,
+  "scan-batch": true,
+  "scan-done": true,
+  "op-result": true,
+  "frame-image": true,
+  "frame-images-done": true,
+  "inspect-selection": true,
+  "overflow-result": true,
+  "diagnostics-result": true,
+  "handler-error": true,
+}
+
+export const MAIN_TO_UI_TYPES = Object.keys(MAIN_TO_UI_TYPE_SET) as MainToUiType[]

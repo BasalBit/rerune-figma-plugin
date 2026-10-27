@@ -1,5 +1,5 @@
 import { REQUEST_IDLE_TIMEOUT_MS, UI_READY_RETRY_MS } from "../shared/constants"
-import type { MainToUi, MainToUiOf, MainToUiType, RequestId, UiToMain } from "../shared/messages"
+import { MAIN_TO_UI_TYPES, type MainToUi, type MainToUiOf, type MainToUiType, type RequestId, type UiToMain } from "../shared/messages"
 
 // UI side of the main ↔ UI bridge (§7.5): JSON-cloned sends (except messages carrying Uint8Array), listeners
 // per message type, the ui-ready handshake retried every 400 ms until init, and a per-request idle watchdog.
@@ -97,11 +97,7 @@ export function createUiBus(environment: UiBusEnvironment): UiBus {
   }
 
   function onAny(listener: (message: MainToUi) => void): () => void {
-    const types: MainToUiType[] = [
-      "init", "selection-changed", "scan-progress", "scan-batch", "scan-done", "op-result", "frame-image",
-      "frame-images-done", "inspect-selection", "overflow-result", "diagnostics-result", "handler-error",
-    ]
-    const offs = types.map((type) => on(type, listener))
+    const offs = MAIN_TO_UI_TYPES.map((type) => on(type, listener))
     return () => offs.forEach((off) => off())
   }
 
