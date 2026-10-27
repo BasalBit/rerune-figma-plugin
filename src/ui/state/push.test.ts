@@ -7,6 +7,7 @@ import type { ScannedNode } from "../../shared/messages"
 import { applyDecision, type RemoteWithMaxLength } from "../../shared/push-plan"
 import { ApiError } from "../api/client"
 import {
+  canPull,
   canSubmit,
   emptyRun,
   executePulls,
@@ -294,6 +295,25 @@ describe("after-push choices and pulls", () => {
     expect(main.writes[0]).toMatchObject({ type: "text-apply", items: [{ nodeId: "1:1", text: "New" }, { nodeId: "1:2", text: "New" }, { nodeId: "1:3", text: "Newer" }] })
     expect(main.writes[1]).toEqual({ type: "link-apply", requestId: expect.any(String), items: [{ nodeId: "1:1", keyId: keyId(1), keyName: "new_name", projectId: PROJECT_ID, src: src("New") }] })
     expect(outcome.errors.map((error) => error.code)).toEqual(["preview_active"])
+  })
+
+  it("pulls nothing while a layer in scope previews", async () => {
+    const nodes = [
+      linkedNode("1:1", "Old", { keyId: keyId(1), keyName: "old_name", syncedText: "Old" }),
+      linkedNode(
+        "I7:1;1:5",
+        "Alt",
+        { keyId: keyId(1), keyName: "old_name", syncedText: "Old", nid: "1:5", state: "inherited" },
+        { originalCharacters: "Old", preview: { lang: "de", source: "draft", variationOptionId: null, appliedAt: 1 } },
+      ),
+    ]
+    const ready = await preparePush({ keysByName: byName({}, []) }, input(nodes, { remote: new Map([[keyId(1), remote("old_name", "New")]]) }))
+    expect(ready.plan.pulls).toHaveLength(1)
+    expect(ready.plan.blockedByPreview).toEqual(["I7:1;1:5"])
+    expect(canPull(ready.plan)).toBe(false)
+    const main = fakeMain()
+    expect(await executePulls({ api: { push: vi.fn() }, bus: main.bus }, ready.plan, ready.context)).toEqual({ done: 0, errors: [] })
+    expect(main.writes).toEqual([])
   })
 
   it("counts what a push will do", async () => {

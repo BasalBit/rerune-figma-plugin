@@ -422,9 +422,18 @@ export async function applyTakeReRune(deps: PushDeps, conflict: PushFollowUp["co
   return textApply(deps, takeReRuneItems(conflict, nodes))
 }
 
+// Pulls wait for previews to be reset, like the push (§7.13 rules 1 and 5, §7.14 pull): a layer that previews
+// shows another language, and a pull into its main component would leave the layer's stored original stale.
+export function canPull(plan: PushPlan): boolean {
+  return plan.pulls.length > 0 && canPush(plan)
+}
+
 // "Update layers from ReRune" (§7.13 rule 5): text-apply, then refresh the cached key name where it changed
 // (text-apply keeps `k`). Layers whose write failed keep their link untouched.
 export async function executePulls(deps: PushDeps, plan: PushPlan, context: PlanContext): Promise<BatchOutcome> {
+  if (!canPull(plan)) {
+    return { done: 0, errors: [] }
+  }
   const written = await textApply(deps, planPullApplies(plan))
   const failed = new Set(written.errors.filter((error) => !isWarning(error)).map((error) => error.nodeId))
   const refresh: LinkApplyItem[] = []

@@ -495,6 +495,13 @@ export async function applyTexts(items: readonly TextApplyItem[], now: number): 
       continue
     }
     try {
+      // The layer itself is checked before an inherited write is redirected: an instance sublayer previewed on
+      // its own shows its own record, and writing its main instead would leave the sublayer's stored original
+      // stale, so reset would bring back the old text as an override (§7.14 pull, D23).
+      if ((await shownPreview(node, caches)) !== null) {
+        errors.push(nodeError(item.nodeId, "preview_active"))
+        continue
+      }
       const target = await writeTargetFor(node, readLinkInfo(node, caches), null)
       if ("error" in target) {
         errors.push(nodeError(item.nodeId, target.error))
@@ -520,7 +527,7 @@ export async function applyTexts(items: readonly TextApplyItem[], now: number): 
 }
 
 async function pullNode(node: TextNode, item: TextApplyItem, now: number, caches: NodeCaches): Promise<"written" | NodeErrorCode> {
-  // Also refused when the text follows a previewed main component: the layer shows preview text right now.
+  // A redirect target (the local main component) can be previewing too.
   if ((await shownPreview(node, caches)) !== null) {
     return "preview_active"
   }

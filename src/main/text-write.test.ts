@@ -585,6 +585,34 @@ describe("text-apply (§7.14 pull)", () => {
     expect(instance.overrides).toEqual([{ id: "I12:34;5:67", overriddenFields: ["pluginData"] }])
   })
 
+  it("refuses inherited instance text that shows its own preview instead of writing the main component", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    mainText.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink(link("5:67", "Pay now")))
+    const components = fakePage("0:2", "Components", [fakeComponent("5:1", "Button", [mainText])])
+    figmaMock.root.appendChild(components)
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
+    sublayer.inheritFrom = mainText
+    const instance = fakeInstance("12:34", "Button", [sublayer], { overrides: [] })
+    followText(sublayer, mainText, instance)
+    onPage(figmaMock, [fakeFrame("10:1", "Checkout", [instance])])
+    expect(await applyPreview(DE, [{ nodeId: "I12:34;5:67", text: "Jetzt zahlen" }], 1)).toEqual({ done: 1, errors: [] })
+    expect(record(sublayer)?.nid).toBe("I12:34;5:67")
+
+    const outcome = await applyTexts([{ nodeId: "I12:34;5:67", text: "Pay securely", src: src("Pay securely") }], 2)
+    expect(outcome.done).toBe(0)
+    expect(outcome.errors.map((error) => [error.nodeId, error.code])).toEqual([["I12:34;5:67", "preview_active"]])
+    expect(mainText.characters).toBe("Pay now")
+    expect(linkOf(mainText)?.src).toBe(src("Pay now"))
+    expect(sublayer.characters).toBe("Jetzt zahlen")
+
+    // Reset brings back the text the main still has (the mock keeps the characters override, as Figma may).
+    const reset = await resetPreview("page", undefined, undefined)
+    expect(reset.done).toBe(1)
+    expect(reset.errors.map((error) => error.code)).toEqual(["override_kept"])
+    expect(sublayer.characters).toBe("Pay now")
+    expect(mainText.characters).toBe("Pay now")
+  })
+
   it("writes the local main component once for inherited instance text", async () => {
     const mainText = fakeText("5:67", "Pay now")
     mainText.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink(link("5:67", "Pay now")))

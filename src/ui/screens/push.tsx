@@ -12,6 +12,7 @@ import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural
 import { groupErrors, type BatchOutcome } from "../state/ops"
 import {
   applyTakeReRune,
+  canPull,
   canSubmit,
   executePulls,
   executePush,
@@ -403,13 +404,14 @@ export function PushScreen(props: PushScreenProps) {
                 <Note
                   tone="info"
                   actions={
-                    <Button secondary disabled={pulling || props.readOnly || pulled !== null} loading={pulling} onClick={() => void pull()}>
+                    <Button secondary disabled={pulling || props.readOnly || pulled !== null || !canPull(plan)} loading={pulling} onClick={() => void pull()}>
                       Update layers from ReRune
                     </Button>
                   }
                 >
                   {plural(plan.pulls.length, "key has", "keys have")} newer text in ReRune: {plan.pulls.slice(0, 3).map((entry) => entry.keyName).join(", ")}
                   {plan.pulls.length > 3 ? "…" : ""}
+                  {!canPull(plan) && " Reset previews first."}
                 </Note>
                 {pulled !== null && (
                   <div style={{ marginTop: "6px" }}>
