@@ -18,6 +18,7 @@ export interface NavProps {
   projectName: string
   selectionCount: number
   previewStatus: PreviewStatus | null
+  resetDisabled?: boolean
   onOpen(screen: WorkspaceScreen): void
   onChangeProject(): void
   onResetPreview(): void
@@ -66,7 +67,9 @@ export function Nav(props: NavProps) {
               ? "Previewing several languages on " + props.previewStatus.count + " layers"
               : "Previewing " + props.previewStatus.lang + " (" + sourceLabel(props.previewStatus.source) + ") on " + props.previewStatus.count + " layers"}
           </span>
-          <TextButton onClick={props.onResetPreview}>Reset</TextButton>
+          <TextButton disabled={props.resetDisabled === true} onClick={props.onResetPreview}>
+            Reset
+          </TextButton>
         </div>
       )}
     </div>

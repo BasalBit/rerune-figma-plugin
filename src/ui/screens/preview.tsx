@@ -34,6 +34,8 @@ export interface PreviewScreenProps {
   onPrefs(patch: Partial<Prefs>): void
   onSelect(nodeIds: string[]): void
   onReset(scope: Scope, nodeIds?: string[]): Promise<void>
+  resetting: boolean                      // a reset started elsewhere (Nav, Push) is running
+  onApplying(applying: boolean): void     // lets the app hold other resets while previews are written
 }
 
 const SCOPE_OPTIONS = [
@@ -65,8 +67,9 @@ export function PreviewScreen(props: PreviewScreenProps) {
   const [showInherited, setShowInherited] = useState(false)
 
   async function apply() {
-    if (lang === null) return
+    if (lang === null || props.resetting) return
     setBusy("apply")
+    props.onApplying(true)
     setError(null)
     setApplied(null)
     try {
@@ -91,6 +94,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
       setError(userMessage(caught))
     } finally {
       setBusy(null)
+      props.onApplying(false)
     }
   }
 
@@ -109,7 +113,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
 
   const languageOptions = project.languages.map((language) => ({ value: language.code, text: languageLabel(language) }))
   const variationOptions = [{ value: NO_VARIATION, text: "No variation" }, ...project.variation_options.map((option) => ({ value: option.id, text: option.value }))]
-  const disabled = props.readOnly || busy !== null
+  const disabled = props.readOnly || busy !== null || props.resetting
 
   return (
     <div style={styles.page}>

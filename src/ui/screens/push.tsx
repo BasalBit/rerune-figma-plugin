@@ -43,6 +43,7 @@ export interface PushScreenProps {
   onOpenLink(nodes: ScannedNode[], key: FigmaKeyRef | null): void
   onSelect(nodeIds: string[]): void
   onOpenExternal(url: string): void
+  resetting: boolean
   onResetPreviews(scope: Scope, nodeIds: string[]): Promise<void>
   onAvailableKeys(availableKeys: number): void
 }
@@ -247,6 +248,7 @@ export function PushScreen(props: PushScreenProps) {
                 tone="warning"
                 actions={
                   <TextButton
+                    disabled={props.resetting}
                     onClick={() =>
                       void props
                         .onResetPreviews(props.state.scope, plan.blockedByPreview)

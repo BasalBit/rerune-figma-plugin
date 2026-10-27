@@ -107,6 +107,32 @@ export function runOp(bus: Pick<UiBus, "request">, build: (requestId: RequestId)
   })
 }
 
+export interface SingleFlight<A extends unknown[]> {
+  run(...args: A): Promise<void>
+  busy(): boolean
+}
+
+// One run at a time (preview resets, §7.14): a request while one is running gets the running one's promise
+// instead of starting an overlapping canvas write. `onBusy` reports the start and the end of each run.
+export function singleFlight<A extends unknown[]>(work: (...args: A) => Promise<void>, onBusy: (busy: boolean) => void = () => {}): SingleFlight<A> {
+  let current: Promise<void> | null = null
+  return {
+    run(...args) {
+      if (current !== null) {
+        return current
+      }
+      onBusy(true)
+      const started = (async () => work(...args))()
+      current = started.finally(() => {
+        current = null
+        onBusy(false)
+      })
+      return current
+    },
+    busy: () => current !== null,
+  }
+}
+
 export function chunk<T>(items: readonly T[], size: number): T[][] {
   const chunks: T[][] = []
   for (let start = 0; start < items.length; start += size) {

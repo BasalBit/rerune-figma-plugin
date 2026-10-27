@@ -23,7 +23,7 @@ import { SettingsScreen } from "./screens/settings"
 import { SignInScreen } from "./screens/sign-in"
 import { SignedInScreen } from "./screens/signed-in"
 import { connectedSettings, initialView, isWorkspaceScreen, navigate, type AppView, type NavContext, type NavEvent, type Screen } from "./state/navigation"
-import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, type ErrorGroup } from "./state/ops"
+import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, singleFlight, type ErrorGroup } from "./state/ops"
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
 import { previewStatus, resetOutcome } from "./state/preview"
 import { cacheEntriesFromResolved } from "./state/remote"
@@ -109,6 +109,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [pairing, setPairing] = useState<{ flow: PairingFlow; state: PairingState } | null>(null)
   const [notMeBusy, setNotMeBusy] = useState(false)
   const [editedPrompt, setEditedPrompt] = useState<{ scope: Scope; nodeIds: string[] } | null>(null)
+  const [resetting, setResetting] = useState(false)
+  const [applyingPreview, setApplyingPreview] = useState(false)
   const [banner, setBanner] = useState<Banner | null>(null)
   const signedOutRef = useRef<() => void>(() => {})
 
@@ -308,8 +310,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     go(event === "not-me" ? { type: "not-me" } : { type: "signed-out", notice: null })
   }
 
-  // Preview reset (§7.14): edited layers get the Keep/Restore question; override_kept is reported.
-  async function resetPreviews(scope: Scope, nodeIds?: string[], edited?: "keep" | "restore"): Promise<void> {
+  // Preview reset (§7.14): edited layers get the Keep/Restore question; override_kept is reported. One reset at a
+  // time: Nav, Push and the edited prompt share it, so a double click never starts overlapping resets.
+  async function runResetPreviews(scope: Scope, nodeIds?: string[], edited?: "keep" | "restore"): Promise<void> {
     const result = await runOp(bus, (requestId) => ({ type: "preview-reset", requestId, scope, nodeIds, edited }), LONG_OP_IDLE_MS)
     const outcome = resetOutcome(result.done, result.errors)
     if (outcome.edited.length > 0 && edited === undefined) {
@@ -323,6 +326,14 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     }
     setBanner({ tone: outcome.otherErrors.length > 0 || outcome.overrideKept > 0 ? "warning" : "good", message: parts.join(" "), errors: groupErrors(outcome.otherErrors) })
     await workspace.scan()
+  }
+
+  const resetWork = useRef(runResetPreviews)
+  resetWork.current = runResetPreviews
+  const resetFlight = useMemo(() => singleFlight((scope: Scope, nodeIds?: string[], edited?: "keep" | "restore") => resetWork.current(scope, nodeIds, edited), setResetting), [])
+
+  function resetPreviews(scope: Scope, nodeIds?: string[], edited?: "keep" | "restore"): Promise<void> {
+    return resetFlight.run(scope, nodeIds, edited)
   }
 
   function selectNodes(nodeIds: string[]) {
@@ -455,6 +466,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         previewStatus={previewing}
         onOpen={(next) => go({ type: "open", screen: next })}
         onChangeProject={() => go({ type: "change-project" })}
+        resetDisabled={resetting || applyingPreview}
         onResetPreview={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}
       />
       {editedPrompt !== null && (
@@ -463,8 +475,12 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             tone="warning"
             actions={
               <div style={styles.row}>
-                <TextButton onClick={() => void resetPreviews(editedPrompt.scope, editedPrompt.nodeIds, "keep")}>Keep current text</TextButton>
-                <TextButton onClick={() => void resetPreviews(editedPrompt.scope, editedPrompt.nodeIds, "restore")}>Restore original</TextButton>
+                <TextButton disabled={resetting} onClick={() => void resetPreviews(editedPrompt.scope, editedPrompt.nodeIds, "keep")}>
+                  Keep current text
+                </TextButton>
+                <TextButton disabled={resetting} onClick={() => void resetPreviews(editedPrompt.scope, editedPrompt.nodeIds, "restore")}>
+                  Restore original
+                </TextButton>
               </div>
             }
           >
@@ -507,6 +523,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onOpenLink={(nodes, key) => setLink({ nodes, key })}
             onSelect={selectNodes}
             onOpenExternal={openExternal}
+            resetting={resetting}
             onResetPreviews={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
             onAvailableKeys={(availableKeys) => setActiveProject({ ...project, available_keys: availableKeys })}
           />
@@ -522,6 +539,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             bus={bus}
             onPrefs={updatePrefs}
             onSelect={selectNodes}
+            resetting={resetting}
+            onApplying={setApplyingPreview}
             onReset={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
           />
         )}

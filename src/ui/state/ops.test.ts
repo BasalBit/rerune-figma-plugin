@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { scannedNode } from "../../../test/fixtures"
 import { createUiBus, HandlerError, RequestTimeoutError } from "../bus"
-import { chunk, createScanRunner, groupErrors, layerCount, mainsFirst, runBatched, runOp, ScanCancelledError } from "./ops"
+import { chunk, createScanRunner, groupErrors, layerCount, mainsFirst, runBatched, runOp, ScanCancelledError, singleFlight } from "./ops"
 import { fakeBusEnvironment } from "./test-fakes"
 
 const SKIPPED = { hidden: 0, locked: 0, empty: 0, numeric: 0, underscore: 0, languageCopy: 0, unavailable: 0 }
@@ -108,6 +108,36 @@ describe("runOp and runBatched", () => {
     const fake = fakeBusEnvironment()
     await expect(runBatched(createUiBus(fake.environment), [], (requestId, batch) => ({ type: "link-remove", requestId, nodeIds: batch }))).resolves.toEqual({ done: 0, errors: [] })
     expect(fake.posted).toEqual([])
+  })
+})
+
+describe("singleFlight", () => {
+  it("never overlaps runs: a second request while one runs gets the running promise", async () => {
+    let release: () => void = () => {}
+    const work = vi.fn<(scope: string) => Promise<void>>(() => new Promise<void>((resolve) => (release = resolve)))
+    const busy: boolean[] = []
+    const flight = singleFlight(work, (value) => busy.push(value))
+    const first = flight.run("page")
+    const second = flight.run("selection")
+    expect(second).toBe(first)
+    expect(work).toHaveBeenCalledTimes(1)
+    expect(flight.busy()).toBe(true)
+    release()
+    await first
+    expect(flight.busy()).toBe(false)
+    expect(busy).toEqual([true, false])
+    const third = flight.run("selection")
+    expect(work).toHaveBeenLastCalledWith("selection")
+    release()
+    await third
+  })
+
+  it("ends the run when the work fails", async () => {
+    const flight = singleFlight(async () => {
+      throw new Error("refused")
+    })
+    await expect(flight.run()).rejects.toThrow("refused")
+    expect(flight.busy()).toBe(false)
   })
 })
 
