@@ -240,8 +240,19 @@ describe("T7 / T8 / T10 / T9", () => {
         { pageId: "0:1", current: true, present: true, valid: true, updatedAt: 100, equalToRoot: false },
         { pageId: "5:0", current: false, present: false, valid: false, equalToRoot: false },
       ],
-      current: { pageId: "0:1", source: "root", differ: true, offerMirror: true },
+      current: { pageId: "0:1", source: "root", differ: true, offerMirror: true, syncPause: { paused: true, reason: "no_file" } },
     })
+  })
+
+  it("T7 reports when link sync is paused for a branch or a suspected copy", async () => {
+    const linked = { ...newFileSettings({ apiBase: "http://localhost:8080", projectId: PROJECT_ID, projectName: "Chapter", now: 100 }), fileKey: "AbCdEf1234567890XyZ", fileName: "File" }
+    figmaMock.root.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.file, serializeFileSettings(linked))
+    figmaMock.currentPage.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.file, serializeFileSettings(linked))
+    expect(((await runReadDiagnostic("T7-settings", CONTEXT)) as Report).current).toMatchObject({ syncPause: { paused: false, reason: null } })
+    figmaMock.root.name = "File (Copy)"
+    expect(((await runReadDiagnostic("T7-settings", CONTEXT)) as Report).current).toMatchObject({ syncPause: { paused: true, reason: "possible_copy" } })
+    figmaMock.currentPage.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.file, serializeFileSettings({ ...linked, branchKey: "BrAnCh1234567890", updatedAt: 200 }))
+    expect(((await runReadDiagnostic("T7-settings", CONTEXT)) as Report).current).toMatchObject({ syncPause: { paused: true, reason: "branch" } })
   })
 
   it("T8 sets relaunch data on the selection", async () => {
