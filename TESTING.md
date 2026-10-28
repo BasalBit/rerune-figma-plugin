@@ -1,6 +1,6 @@
 # Manual testing
 
-Figma has no emulator, so everything that depends on real Figma behaviour is tested by hand: in the **Figma desktop app** on macOS and Windows, in **browser Figma** and in **Figma for VS Code** (Dev Mode). Unit tests (`npm test`) cover the logic around it.
+Figma has no emulator, so everything that depends on real Figma behaviour is tested by hand: in the **Figma desktop app** on macOS and Windows, in **browser Figma** and in **Figma for VS Code** (Dev Mode, which needs a paid Figma plan). Unit tests (`npm test`) cover the logic around it.
 
 How to use this file:
 
@@ -9,9 +9,11 @@ How to use this file:
 - Add one row to the [results log](#results-log) per run, and paste diagnostics reports under [Spike reports](#spike-reports).
 - Diagnostics write tests (T1-mark, T2-clear, T5, T8) change the document. Run them in a scratch copy of the fixture file and undo afterwards.
 
-**Phase 1 is done when** §0–4 pass on Figma desktop, every spike question S1–S14 has an answer and a chosen branch, the full round trip works on the Chapter design (88 keys, 7 languages, plus `de-AT` added for the test), and a page with more than 500 text layers scans without freezing Figma.
+**Figma plan.** Checks marked **needs a paid Figma plan** use Dev Mode (the inspect panel, the Code section, Figma for VS Code) or a team library, which the free Starter plan does not have: §5.5, §5.6, Figma for VS Code in §7, the library-component fixture (§0.6) and the checks that use it, the Dev Mode diagnostics (T6, T9 and the Dev Mode parts of T8 and T10) and the spike questions S9, S10, S11 and S14. **On the free plan:** skip them, write "not tested (free plan)" in their Answer column, and ship the design-only build (`npm run zip:design-only`, README → Build and release). Publish the full build (`npm run zip`) only after these checks pass on a paid plan with a Dev or Full seat. Everything else, including the §6 QA checks, works on the free plan.
 
-**Phase 2 is done when** §5 passes on Figma desktop against the Phase 2 server and dashboard (with design storage on), the dashboard checks (§1.1, §5.4) pass in English, German and Italian, and the Dev Mode checks (§5.5, §5.6) pass in desktop and browser Figma and in Figma for VS Code (§7).
+**Phase 1 is done when** §0–4 pass on Figma desktop, every spike question S1–S14 has an answer and a chosen branch (on the free plan the questions that need a paid Figma plan stay open, and the release is the design-only build), the full round trip works on the Chapter design (88 keys, 7 languages, plus `de-AT` added for the test), and a page with more than 500 text layers scans without freezing Figma.
+
+**Phase 2 is done when** §5 passes on Figma desktop against the Phase 2 server and dashboard (with design storage on), the dashboard checks (§1.1, §5.4) pass in English, German and Italian, and the Dev Mode checks (§5.5, §5.6) pass in desktop and browser Figma and in Figma for VS Code (§7). The Dev Mode checks need a paid Figma plan; on the free plan skip them and ship the design-only build.
 
 **The Phase 3 QA features are done when** §6 passes on Figma desktop on Chapter: the overflow report in `de` and `it` (with pseudo-localization), language copies, sample values and the plural selector, and the max length warnings. These checks need no Dev Mode, so a free Figma plan is enough.
 
@@ -34,6 +36,7 @@ npm run build:dev    # or: npm run watch (rebuilds on change)
 
 - [ ] `manifest.json` exists in the repo root and its `codegenLanguages` end with **ReRune diagnostics** (development builds only).
 - [ ] Figma desktop → **Plugins → Development → Import plugin from manifest…** → pick `manifest.json` in this repo. **ReRune** now shows under Plugins → Development.
+- [ ] Design-only build (the release on the free plan): `RERUNE_ENV=development RERUNE_DEV_MODE=off npx build-figma-plugin` writes a `manifest.json` with `"editorType": ["figma"]` and no `capabilities` or `codegenLanguages`. Run ReRune again: it works in Figma Design as before (on a paid plan, Dev Mode no longer lists it; import the manifest again if it still does). Run `npm run build:dev` afterwards to get the full development build back.
 
 The development build calls the API at `http://localhost:8080` and opens the dashboard at `http://localhost:3000` (`devAllowedDomains` allows the local API for imported plugins only). `npm run build` writes a production `manifest.json` over it (API `https://rerune.io/api`), so run `npm run build:dev` again before going back to local testing. After a rebuild, re-run the plugin (⌥⌘P on macOS, Ctrl+Alt+P on Windows) or turn on **Plugins → Development → Hot reload plugin**.
 
@@ -76,7 +79,7 @@ No Chapter Figma file exists in the repos; build or supply one (a public example
 
 - [ ] The Chapter screens as top-level frames, one of them inside a **section**.
 - [ ] A **component** with a text layer, used in at least three **instances**; a **nested instance** (an instance of a component that contains that instance); a component with a **variant** or boolean property that hides a text layer.
-- [ ] An instance of a **library component** (publish a second file as a library, use its component here).
+- [ ] An instance of a **library component** (publish a second file as a library, use its component here). **Needs a paid Figma plan** (team libraries): on the free plan leave it out and skip the library parts of §3, §4, T2 and S3.
 - [ ] Text with a **text style**, text with a **colour style**, text with a **hyperlink**, text bound to a **string variable**, and text bound to a **component property**.
 - [ ] A text layer whose font is **missing** on the test machine.
 - [ ] Hidden, locked, numeric-only (`42`, `1.5`) and `_`-prefixed text layers.
@@ -150,7 +153,7 @@ The dashboard side of sign-in, including the behaviours added in its review roun
 - [ ] **Duplicate a linked layer** (⌘D/Ctrl+D): the copy shows **Copied** (filter "Needs attention"). **Keep copied links** / **Keep all copied links** keeps the link on the copy; on the Push tab "Copied layers" offers **Keep link** / **New key**.
 - [ ] **Copied + divergent:** change the copy's text and keep its link → Push shows "Different texts on one key" with **Push this text** / **New key** / **Leave** per text.
 - [ ] **Component text:** link the text in the main component → every instance lists the key with an **Instance** badge (Link dialog: "From main component"), including the nested instance. Override the text in one instance → that row is **Not linked** (Link dialog: "Text overridden") and Push offers to create or link a key for it.
-- [ ] **Pull on inherited text:** change the component's key in ReRune → **Update layers from ReRune** updates the main component's text once; the instances follow and get no text override. For an instance of a library component the layer reports "Update this text in the library file".
+- [ ] **Pull on inherited text:** change the component's key in ReRune → **Update layers from ReRune** updates the main component's text once; the instances follow and get no text override. For an instance of a library component (needs a paid Figma plan) the layer reports "Update this text in the library file".
 - [ ] **Cross-file paste:** paste a linked frame into the second file, connect it to the same project, select the frame, Push (scope Selection). If the paste kept the links, the layers are listed under "Copied layers" (**Keep link**); if it dropped them, texts that exist in ReRune default to **Link to {key}** ("The same text exists in ReRune."). Either way, after pushing the dashboard's key count is unchanged (no duplicates).
 - [ ] **Name taken:** create a key with a name that already exists → "Link to existing key {name}" is offered. On the Push tab it opens the Link dialog with that key: same text links directly; a different text asks **Use ReRune text** / **Keep layer text** (Keep → the row reads **Changed in Figma**, never **Changed in ReRune**).
 - [ ] **Unlink:** select linked rows → **Unlink** → Not linked. Unlinking an instance sublayer that shows the component's key leaves the other instances linked.
@@ -189,7 +192,7 @@ Preview tab: **Language** (with its inheritance chain), **Source** Draft / Publi
 - [ ] **Reset selection** and **Reset page** reset only their scope; the header's **Reset** resets the page.
 - [ ] **Instances:** preview the main component and its instances, then Reset: both are restored. If an instance keeps Figma's override flag, the plugin says "N instances keep a text override after reset."
 - [ ] **Instances of a main previewed elsewhere:** preview the Components page, then open a page that holds only instances of those components (also: select only instances on a page that holds the main). The instances show the preview, count in the header, show the Preview badge, and Push says "Reset previews before pushing…". **Reset previews** (or the header's **Reset**) resets the main on the Components page and the instances follow; nothing German reaches ReRune.
-- [ ] **Re-preview an instance:** select only an instance of a local or library component (its main not previewed), preview `de`, then `fr`: the instance switches to French, stays linked in Layers (not "Not linked", not "Copied", also for the library component) and Reset brings back the original.
+- [ ] **Re-preview an instance:** select only an instance of a local or library component (its main not previewed), preview `de`, then `fr`: the instance switches to French, stays linked in Layers (not "Not linked", not "Copied", also for the library component, which needs a paid Figma plan) and Reset brings back the original.
 - [ ] **Main edited during preview, instance with its own link:** link one instance's text to another key (explicit link), preview the main component (Page), edit the main's text, then Reset page → "1 layer was edited during preview." and nothing else is reported as reset; Diagnostics → T2 Instances shows no `preview` change on the instance. **Restore original** restores the main and the instance follows.
 - [ ] **Double-click Reset** (header and Push): one reset runs; afterwards Diagnostics → T10 still reports `skipInvisibleInstanceChildrenNow: true`.
 - [ ] **RTL** (optional): the plugin writes RTL text as is and Figma handles the direction; note how it renders.
@@ -239,7 +242,7 @@ Needs the Phase 2 server (files, links, screenshots, key design, URL keys) and d
 - [ ] **Design tab:** open the translations page, select a linked key → the details tabs read Translations, Placeholders, Metadata, **Design**, Publication. **Design** shows each screenshot with the key's layers boxed, the lines "Frame: …", "Page: …" and "Updated …", and **Open in Figma** (a new browser tab on that frame); "Linked layers" below lists the layers no screenshot shows. A key without links says "This key isn't linked to any Figma layer yet." / "Link layers to this key with the ReRune plugin in Figma."; a linked key without screenshot says "No screenshot yet. Push from Figma to add one." and lists its layers; with the server's storage off: "Screenshots aren't available on this server." and the layer list.
 - [ ] **Design tab loading:** the design loads only while the **Design** tab is shown (browser DevTools → Network: no `/design` request while another tab is open). Switch quickly between two linked keys (A → B → A): A's design shows, never a spinner that stays or B's screenshots. Signed image links expire after `DESIGN_STORAGE_SIGNED_URL_TTL_SECONDS` (3600 by default; set 60 on the local server to test): leave the Design tab open past that, switch to another tab and back → the images load again. Delete an image from the storage zone by hand → the Design tab tries once more, then shows "Couldn't load this screenshot." instead of a broken image.
 - [ ] **Key list:** linked keys show a layer chip with the count (hover: "Used in N Figma layers"; "Used in 1 Figma layer" for one). Filters → **Design** → "In a design" / "Not in any design" split the keys, their counts follow the other filters, and **Clear all** resets them. Translate a linked key's variation with DeepL or OpenRouter: the chip stays.
-- [ ] **`?key=` links:** open `/translator/translations/<project>?key=<key>` (or **Open in ReRune** in the Dev Mode inspect panel) on a large project → the key opens in the details panel once the keys are loaded and the `?key=` stays in the URL. Click another key while the list is still loading → your choice stays. An unsaved edit on the key you were on is saved first, as when you click another key.
+- [ ] **`?key=` links:** open `/translator/translations/<project>?key=<key>` (or **Open in ReRune** in the Dev Mode inspect panel, which needs a paid Figma plan) on a large project → the key opens in the details panel once the keys are loaded and the `?key=` stays in the URL. Click another key while the list is still loading → your choice stays. An unsaved edit on the key you were on is saved first, as when you click another key.
 - [ ] **Project Figma tab** (the project's **Settings** → **Figma**, the last tab, without a Save button): each connected file with its name (links to the file in Figma), "Linked layers", "Screenshots" and "Last push" ("{date} by {name}"; the date alone after that user deleted their account; "Never" before the first push), and **Open in Figma**.
 - [ ] **Disconnect** (project managers only): **Disconnect** → "Disconnect this file?" → confirm → "File disconnected"; the file, its links and screenshots are gone, and the key chips, the Design filter counts and the Design tab follow without a page reload. Layers in Figma keep their links: the next link sync or push from the plugin registers the file again. Disconnecting a file that another tab already disconnected also says "File disconnected". A member without project settings permission sees no **Disconnect**.
 - [ ] **No files yet:** a project without files says "No Figma files connected yet." with the four steps of "Connect a Figma file"; the "Figma plugin" card says "Coming soon to Figma Community." with "View source on GitHub" (until the Community link is set at launch).
@@ -247,7 +250,7 @@ Needs the Phase 2 server (files, links, screenshots, key design, URL keys) and d
 
 ### 5.5 Dev Mode inspect panel
 
-Dev Mode needs a paid Figma plan and a seat with Dev Mode. On a Professional plan Figma may list only Community plugins in Dev Mode, so an imported development build might not show up there: record the plan you tested on in the results log and answer S14 (§8.2) first.
+**Needs a paid Figma plan:** Dev Mode needs a Dev or Full seat on a paid Figma plan. On the free Starter plan skip §5.5 and §5.6, leave S9, S10, S11 and S14 open, and ship the design-only build (`npm run zip:design-only`). On a Professional plan Figma may list only Community plugins in Dev Mode, so an imported development build might not show up there: record the plan you tested on in the results log and answer S14 (§8.2) first.
 
 - [ ] **Dev Mode sign-in:** Dev Mode (Shift+D) → inspect panel → plugins → **ReRune** on a machine (or in browser Figma) where the plugin isn't signed in → "See the ReRune keys of the selected layers, their values in every language and code snippets." → **Sign in with ReRune** → the browser opens the connect page; after approving, "Signed in as" with your email → **Continue** (only now the project loads; **Not me** signs out). Diagnostics shows only in development builds.
 - [ ] **Not connected:** in Dev Mode on a file nobody connected → "This file isn't connected to ReRune yet. A designer connects it from Figma Design." Connect it from Figma Design (another tab or person), then **Check again** → the keys appear. A file connected with the other build's server says "This file is connected to a different ReRune server…".
@@ -260,6 +263,8 @@ Dev Mode needs a paid Figma plan and a seat with Dev Mode. On a Professional pla
 - [ ] **Read-only:** using the inspect panel and the Code section never changes the file (no undo step appears; T9/S10 covers whether Figma would even allow a write).
 
 ### 5.6 Codegen (Dev Mode → Code)
+
+**Needs a paid Figma plan** (Dev Mode, see §5.5). On the free plan skip it: the design-only build has no codegen languages.
 
 - [ ] **Codegen:** Dev Mode → Code → each of React (i18next), Flutter, Android, iOS, Angular shows the snippets of the selected keys (React `t('…')`, Flutter `AppLocalizations.of(context)!.…`, Android `stringResource(R.string.…)` with a `// Views:` line, iOS `Text(NSLocalizedString("…", comment: ""))` with a `// UIKit:` line, Angular `{{ '…' | translate }}` with a `<!-- Transloco: … -->` line), each after a comment with the key's source text once the inspect panel (or a Figma Design session) has loaded the key. A key with a dot (`checkout.title`) maps to `R.string.checkout_title` on Android and shows "is not a valid Dart identifier; rename the key for Flutter" in Flutter. Before the inspect panel has loaded a key, the code ends with "Open ReRune in the Dev Mode inspect panel to load placeholders and texts." Rename a key in ReRune, open the inspect panel on it, then reselect the layer in the Code section → the new name shows. A frame with many keys stops at 50 with "More keys not shown"; unlinked → "No ReRune key is linked to this layer."
 - [ ] **No network in codegen:** click through linked layers in the Code section and watch the server log: no request arrives (codegen reads only the file and the cache the inspect panel saved).
@@ -303,7 +308,7 @@ QA tab: **Apply to** selection / page, **Languages** (one checkbox per project l
   - Selecting only a language copy: "Select one or more frames with text first." (its layers are not scanned). A duplicated copy (Cmd+D) is a normal frame again: its layers are scanned and it can be copied.
   - Cmd+Z removes the copies of the last frame; once more, those of the frame before.
 - [ ] **Sample values:** a key with `{{name}}` previews as `[name]`. Preview → **Sample values and plural forms** → **Edit** lists the placeholders of the linked layers in scope; type `Ada` for `name`, **Apply** → the layer shows "Ada". Close and reopen the plugin: the sample is still there (it is kept per project; another project starts empty). **Clear samples** brings back `[name]`.
-- [ ] **ICU plural selector:** with the plural key, **Automatic** shows the `other` form (`en`: "0 items"). The dropdown next to `count` lists only the previewed language's categories with the count each shows (`en`: one (1), other (0); `pl`: one (1), few (2), many (0), other (0,5)). Picking **few** in `pl` shows the `few` form with 2. A typed number picks its category (`pl` 22 → few) and `#` is formatted for the language (1000 → "1,000 items" in `en`, "1.000" in `de`). `de-AT` offers the categories of `de`. A category the next language does not have (few, then `en`) falls back to **Automatic**. The Dev Mode inspect panel shows the same `other` form for plural values.
+- [ ] **ICU plural selector:** with the plural key, **Automatic** shows the `other` form (`en`: "0 items"). The dropdown next to `count` lists only the previewed language's categories with the count each shows (`en`: one (1), other (0); `pl`: one (1), few (2), many (0), other (0,5)). Picking **few** in `pl` shows the `few` form with 2. A typed number picks its category (`pl` 22 → few) and `#` is formatted for the language (1000 → "1,000 items" in `en`, "1.000" in `de`). `de-AT` offers the categories of `de`. A category the next language does not have (few, then `en`) falls back to **Automatic**. The Dev Mode inspect panel shows the same `other` form for plural values (needs a paid Figma plan).
 - [ ] **max_length:** in the dashboard set **Max length** 10 on a linked key, then make the layer's text longer in Figma:
   - Layers shows "Over max length (n/10)" on the layer, and the **Too long** filter lists it.
   - Push lists the change with "Longer than the key's max length (n/10). Shorten the text before pushing." and the warning "1 change is longer than the key's max length and won't be pushed…" (**Select on canvas**); the other changes still push and this one is not sent.
@@ -314,11 +319,11 @@ QA tab: **Apply to** selection / page, **Languages** (one checkbox per project l
 
 ## 7. Browser Figma and Figma for VS Code
 
-Run Design-mode checks in browser Figma and Dev Mode checks in Figma for VS Code. Record how the build was loaded (imported development build, or a published build after §9).
+Run Design-mode checks in browser Figma and Dev Mode checks in Figma for VS Code. Record how the build was loaded (imported development build, or a published build after §9). Figma for VS Code is a Dev Mode surface and needs a paid Figma plan; on the free plan run only the browser Figma checks.
 
-- [ ] **Open external:** Sign in with ReRune, Open browser again, Create an account and Open ReRune (quota) open the system browser; in Dev Mode (also in VS Code) Sign in with ReRune and **Open in ReRune** do too.
-- [ ] **Clipboard:** Copy and **Copy code** in the inspect panel and Copy report in Diagnostics put the text on the clipboard.
-- [ ] VS Code: the inspect panel works at its narrow width (Draft/Published, the platform dropdown and the key cards fit without horizontal scrolling); T10 shows `"vscode": true`.
+- [ ] **Open external:** Sign in with ReRune, Open browser again, Create an account and Open ReRune (quota) open the system browser; in Dev Mode (also in VS Code; needs a paid Figma plan) Sign in with ReRune and **Open in ReRune** do too.
+- [ ] **Clipboard:** Copy and **Copy code** in the inspect panel (needs a paid Figma plan) and Copy report in Diagnostics put the text on the clipboard.
+- [ ] **Needs a paid Figma plan.** VS Code: the inspect panel works at its narrow width (Draft/Published, the platform dropdown and the key cards fit without horizontal scrolling); T10 shows `"vscode": true`.
 - [ ] Browser Figma has its own plugin storage: sign in once there.
 
 ---
@@ -328,23 +333,23 @@ Run Design-mode checks in browser Figma and Dev Mode checks in Figma for VS Code
 ### 8.1 Running diagnostics
 
 - **Design mode:** Settings → Advanced → **Diagnostics** (also on the Sign in screen, so it works without signing in). All builds.
-- **Dev Mode (development builds):** the inspect panel shows a **Diagnostics** button (read tests, T9 and the Network check).
-- **Codegen (development builds):** Dev Mode → Code → language **ReRune diagnostics** (T6).
+- **Dev Mode (development builds):** the inspect panel shows a **Diagnostics** button (read tests, T9 and the Network check). **Needs a paid Figma plan.**
+- **Codegen (development builds):** Dev Mode → Code → language **ReRune diagnostics** (T6). **Needs a paid Figma plan.**
 - Each report has **Copy report**; paste it under [Spike reports](#spike-reports).
 
 | Test | How to run it | Look at |
 |---|---|---|
 | T1 Mark / T1 Check markers | Select a few text layers (one inside an instance) → **T1 Mark**. Then, in turn: duplicate a marked layer; copy/paste it within the file; paste it into another file; detach the instance; create a branch, mark text there and merge it. After each step run **T1 Check markers** on that page (in the other file too). | per node `sameId`, `instancePattern`, `matchedByCriteria`; `found` vs the layers you expect |
-| T2 Instances | Link the component's text (§3), then select a direct instance, the nested instance and the library instance → **T2 Instances** | per sublayer `hasLinkData`, `matchedByCriteria`, `classification`, `ownPluginDataOverride`, `idPatternInherited`; `textCount` vs `criteriaCount`; the `overrides` dump |
+| T2 Instances | Link the component's text (§3), then select a direct instance, the nested instance and the library instance (needs a paid Figma plan) → **T2 Instances** | per sublayer `hasLinkData`, `matchedByCriteria`, `classification`, `ownPluginDataOverride`, `idPatternInherited`; `textCount` vs `criteriaCount`; the `overrides` dump |
 | T2 Clear inherited | Select an instance whose main text is linked → **T2 Clear inherited**, then undo twice | `clearWithEmptyString.cleared`, `ownLinkWrite.listedAsPluginDataOverride`, `ownLinkWrite.stateAfter` |
 | T3 Export frame | Select an opaque frame, then a frame without fill, then a frame with a drop shadow → **T3 Export frame** | `matches` per export, `absoluteBoundingBox` vs `absoluteRenderBounds`, `opaqueBackground`, `jpgCornerPixel` of the transparent frame |
 | T4 Export page | On a page with up to 100 top-level frames → **T4 Export page** | `totalMs`, `averageBytes`, `maxBytes`, `p95Bytes`, `reexported` |
 | T5 Fonts and restore | Select a style-bound, a colour-style, a hyperlinked, a variable-bound and a component-property-bound text → **T5 Fonts and restore**, then check the canvas | per node `exact` (every field true?), `restoreFailures`, `boundToVariable`, `textOverriddenBefore` vs `textOverriddenAfter` |
-| T6 codegen | Dev Mode → Code → **ReRune diagnostics** with a linked layer selected; then rename a layer to `sleep:2`, `sleep:5`, `sleep:14` and `sleep:16` and select each in turn | `figma.command`, `figma.mode`, `cache read ms`, `snippet build ms`; which sleep still renders (3 s vs 15 s timeout) |
+| T6 codegen | **Needs a paid Figma plan.** Dev Mode → Code → **ReRune diagnostics** with a linked layer selected; then rename a layer to `sleep:2`, `sleep:5`, `sleep:14` and `sleep:16` and select each in turn | `figma.command`, `figma.mode`, `cache read ms`, `snippet build ms`; which sleep still renders (3 s vs 15 s timeout) |
 | T7 File settings | After connecting a file, and again after a branch merge → **T7 File settings** | `root` and every loaded page: `present`, `valid`, `updatedAt`, `equalToRoot`; `current.source`, `current.differ`, `current.syncPause` (link sync paused: no file link, branch or suspected copy) |
-| T8 Relaunch button | Select layers → **T8 Relaunch button**, then look at the right sidebar in Design and in Dev Mode | is **Open ReRune** shown in each? |
-| T9 Dev Mode write | Dev Mode, development build: select a layer → inspect **Diagnostics** → **T9 Dev Mode write** | `allowed`, `error`, `cleanupError` |
-| T10 Environment | In Design and in the Dev Mode inspect panel (desktop, browser, VS Code) | `editorType`, `mode`, `command`, `vscode`, `apiVersion`, `skipInvisibleInstanceChildrenDefault`, `userAgent` |
+| T8 Relaunch button | Select layers → **T8 Relaunch button**, then look at the right sidebar in Design and in Dev Mode (needs a paid Figma plan) | is **Open ReRune** shown in each? |
+| T9 Dev Mode write | **Needs a paid Figma plan.** Dev Mode, development build: select a layer → inspect **Diagnostics** → **T9 Dev Mode write** | `allowed`, `error`, `cleanupError` |
+| T10 Environment | In Design and in the Dev Mode inspect panel (desktop, browser, VS Code; Dev Mode needs a paid Figma plan) | `editorType`, `mode`, `command`, `vscode`, `apiVersion`, `skipInvisibleInstanceChildrenDefault`, `userAgent` |
 | Network check | Any Diagnostics screen | `status`, `cors`, `latencyMs` |
 
 ### 8.2 Answers
@@ -355,20 +360,20 @@ Record the answer and the branch chosen; link the report under [Spike reports](#
 |---|---|---|---|---|---|---|
 | S1 | Does `link` survive duplicate within a file? | T1 | `copied` flow handles it | copies arrive unlinked; nothing to do | | |
 | S2 | Survives copy/paste within file / into another file? | T1 | same | same | | |
-| S3 | Do instance sublayers (direct, nested, library) inherit main-component data; does the criteria filter match them; is a sublayer `setSharedPluginData` listed as a `pluginData` override? | T2 Instances, T2 Clear inherited | `inherited` state stands; overrides rule is primary | instances need their own links; document. If writes are not listed, rely on the id-pattern fallback for duplicated instances (record the choice) | | |
+| S3 | Do instance sublayers (direct, nested, library; library needs a paid Figma plan) inherit main-component data; does the criteria filter match them; is a sublayer `setSharedPluginData` listed as a `pluginData` override? | T2 Instances, T2 Clear inherited | `inherited` state stands; overrides rule is primary | instances need their own links; document. If writes are not listed, rely on the id-pattern fallback for duplicated instances (record the choice) | | |
 | S4 | Does writing `""` clear inherited data? | T2 Clear inherited | no tombstone needed | tombstone path (already implemented) | | |
 | S5 | Does root `file` survive branch merge? Page mirror? | T7 | — | rely on page mirror (implemented) | | |
 | S6 | Does `useAbsoluteBounds: true` image size equal `absoluteBoundingBox × scale`? | T3 | boxes exact | UI rescale path (implemented); file an issue if origins shift | | |
 | S7 | JPG of a transparent frame: background colour? | T3 | — | PNG path (implemented) | | |
 | S8 | 100-frame export time and sizes | T4 | — | lower default scale if p95 > 2 MB | | |
-| S9 | Codegen timeout 3 s or 15 s; `figma.command`/`mode` in inspect and codegen | T6, T10 (inspect) | — | — | | |
-| S10 | `setSharedPluginData` in Dev Mode | T9 | stays unused | stays unused | | |
-| S11 | Relaunch buttons in Dev Mode | T8 | — | — | | |
+| S9 | **Needs a paid Figma plan.** Codegen timeout 3 s or 15 s; `figma.command`/`mode` in inspect and codegen | T6, T10 (inspect) | — | — | | |
+| S10 | **Needs a paid Figma plan.** `setSharedPluginData` in Dev Mode | T9 | stays unused | stays unused | | |
+| S11 | **Needs a paid Figma plan.** Relaunch buttons in Dev Mode | T8 | — | — | | |
 | S12 | Component-property-bound text: direct write OK? Style/variable bindings restored exactly? Override flag cleared after restore? | T5 | — | use `instance.setProperties` (follow-up); keep `override_kept` reporting | | |
 | S13 | Figma agent with ReRune MCP as a custom connector (header auth) can link a frame's text to keys | manual | document in `/docs/figma` "AI agents" | omit | | |
-| S14 | Does the imported plugin (`editorType ["figma","dev"]`, `inspect` + `codegen`) appear in (a) the Design plugins menu, (b) the Dev Mode inspect panel plugin list, (c) the Dev Mode Code section language dropdown — on desktop, browser and VS Code? | manual | keep the manifest | if (c) fails: drop `codegen` and `codegenLanguages` (snippets stay in the inspect panel). **Do not submit to Community until S14 is answered.** | | |
+| S14 | **Needs a paid Figma plan.** Only (a) can be checked on the free plan. Does the imported plugin (`editorType ["figma","dev"]`, `inspect` + `codegen`) appear in (a) the Design plugins menu, (b) the Dev Mode inspect panel plugin list, (c) the Dev Mode Code section language dropdown — on desktop, browser and VS Code? | manual | keep the manifest | if (c) fails: drop `codegen` and `codegenLanguages` (snippets stay in the inspect panel). **Do not submit the full build to Community until S14 is answered.** On the free plan S14 stays open and the release is the design-only build, which has no Dev Mode parts. | | |
 
-S14 checklist:
+S14 checklist (columns (b) and (c) need a paid Figma plan; (a) can be checked on the free plan):
 
 | Surface | (a) Design plugins menu | (b) Dev Mode inspect plugins | (c) Dev Mode Code language dropdown |
 |---|---|---|---|
@@ -384,7 +389,7 @@ S14 checklist:
 After the server and dashboard PRs are merged and deployed (server first, with `FIGMA_CONNECT_URL` and `DESIGN_STORAGE_*`; then the dashboard), and before the Community submission.
 
 - [ ] 1. Server deployed with `FIGMA_CONNECT_URL=https://rerune.io/figma/connect` and `DESIGN_STORAGE_*`; dashboard deployed after it.
-- [ ] 2. `npm run build` (API `https://rerune.io/api`), imported in Figma desktop and in browser Figma.
+- [ ] 2. The build you will publish: `npm run build:design-only` for the design-only release, or `npm run build` for the full release (only after §5.5, §5.6 and S14 passed on a paid Figma plan). Both call the API at `https://rerune.io/api`. Import it in Figma desktop and in browser Figma.
 - [ ] 3. Diagnostics → **Network check**: `"status": 200`, `"cors": "ok"` through nginx. Forced 429: run the command below and check that a `429` response carries `Retry-After` and `Access-Control-Expose-Headers: Retry-After`:
 
   ```bash
@@ -393,7 +398,7 @@ After the server and dashboard PRs are merged and deployed (server first, with `
 
 - [ ] 4. Pairing against production on the same network, and once from a phone on mobile data (typed-code mode); the connection email arrives and **Review connected apps** opens Profile.
 - [ ] 5. Push a draft, preview a language, upload a screenshot, open it in the dashboard's Design tab (the signed URL loads), replace it, and check that the old object is deleted from the Storage zone within an hour (write-ahead row) or at once (replacement row).
-- [ ] 6. Results recorded below. Only then submit to Figma Community.
+- [ ] 6. Results recorded below. Only then submit to Figma Community (`COMMUNITY_LISTING.md` → Before you submit).
 
 | Date | Step | Result | Notes |
 |---|---|---|---|
@@ -403,9 +408,9 @@ After the server and dashboard PRs are merged and deployed (server first, with `
 
 ## Results log
 
-| Date | Tester | OS | Figma (desktop/browser/VS Code + version) | Plugin commit and build | Server / dashboard commit | Sections passed | Issues |
-|---|---|---|---|---|---|---|---|
-| | | | | | | | |
+| Date | Tester | OS | Figma (desktop/browser/VS Code + version) | Figma plan and seat | Plugin commit and build (full or design-only) | Server / dashboard commit | Sections passed | Issues |
+|---|---|---|---|---|---|---|---|---|
+| | | | | | | | | |
 
 ## Spike reports
 

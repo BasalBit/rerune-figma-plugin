@@ -110,7 +110,94 @@ describe("README", () => {
   })
 })
 
+// The text between a heading and the next heading of the same or a higher level.
+function section(text: string, heading: string): string {
+  const start = text.indexOf(heading + "\n")
+  expect(start, heading).toBeGreaterThanOrEqual(0)
+  const level = heading.match(/^#+/)?.[0] ?? "##"
+  const rest = text.slice(start + heading.length + 1)
+  const next = rest.search(new RegExp("^#{1," + level.length + "} ", "m"))
+  return next === -1 ? rest : rest.slice(0, next)
+}
+
+const PAID = /needs a paid Figma plan/i
+
+describe("README: Figma plans and release builds", () => {
+  it("says which features need a paid Figma plan and what to do on the free plan", () => {
+    const requirements = section(readme, "## Requirements")
+    expect(requirements).toContain("Starter plan")
+    expect(requirements).toContain("paid Figma plan with a Dev or Full seat")
+    expect(requirements).toContain('"needs a paid Figma plan"')
+    for (const check of ["§5.5", "§5.6", "Figma for VS Code", "library-component fixture", "S14"]) {
+      expect(requirements).toContain(check)
+    }
+    expect(requirements).toContain("ship the design-only build (`npm run zip:design-only`)")
+  })
+
+  it("documents the RERUNE_DEV_MODE switch and the design-only manifest", () => {
+    expect(readme).toContain("`RERUNE_DEV_MODE` picks the variant: `on` (the default) keeps Dev Mode; `off` writes a design-only manifest")
+    expect(readme).toContain("`editorType` `[\"figma\"]` and no `capabilities` or `codegenLanguages`")
+    expect(readme).toContain("RERUNE_ENV=development RERUNE_DEV_MODE=off npx build-figma-plugin")
+    expect(readme).toContain("only development builds open `http://localhost` / `http://127.0.0.1` links")
+  })
+
+  it("says when to ship which release build", () => {
+    const release = section(readme, "## Build and release")
+    for (const command of ["`npm run zip:design-only`", "`npm run zip`", "`node scripts/check-build.mjs full`", "`design-only`"]) {
+      expect(release).toContain(command)
+    }
+    expect(release).toContain("**Which one to ship:** the design-only build, unless Dev Mode has been tested on a paid Figma plan")
+    expect(release).toMatch(/§5\.5 \(inspect panel\) and §5\.6 \(codegen\) passed, and spike S14/)
+    expect(release).toContain("`" + pkg["figma-plugin"].id + "`")
+    expect(release).toContain("COMMUNITY_LISTING.md")
+    expect(release).toContain("CHANGELOG.md")
+  })
+})
+
 describe("TESTING.md", () => {
+  it("marks every check that needs a paid Figma plan and says what to do on the free plan", () => {
+    const intro = testing.slice(0, testing.indexOf("## 0. Setup"))
+    expect(intro).toContain("**On the free plan:** skip them")
+    expect(intro).toContain("ship the design-only build (`npm run zip:design-only`")
+    for (const [heading, marker] of [
+      ["### 5.5 Dev Mode inspect panel", "**Needs a paid Figma plan:**"],
+      ["### 5.6 Codegen (Dev Mode → Code)", "**Needs a paid Figma plan**"],
+    ]) {
+      const body = section(testing, heading)
+      expect(body.trimStart().startsWith(marker), heading).toBe(true)
+      expect(body).toMatch(/On the free (Starter )?plan skip/)
+    }
+    expect(section(testing, "### 5.5 Dev Mode inspect panel")).toContain("ship the design-only build (`npm run zip:design-only`)")
+    const vsCode = section(testing, "## 7. Browser Figma and Figma for VS Code")
+    expect(vsCode).toMatch(/^- \[ \] \*\*Needs a paid Figma plan\.\*\* VS Code:/m)
+    expect(vsCode).toContain("Figma for VS Code is a Dev Mode surface and needs a paid Figma plan")
+    expect(testing).toMatch(/^- \[ \] An instance of a \*\*library component\*\*.*\*\*Needs a paid Figma plan\*\* \(team libraries\)/m)
+    for (const row of ["S9", "S10", "S11", "S14"]) {
+      expect(testing).toMatch(new RegExp("^\\| " + row + " \\| \\*\\*Needs a paid Figma plan\\.\\*\\*", "m"))
+    }
+    expect(testing).toMatch(/^\| S3 \| .*library needs a paid Figma plan/m)
+    for (const test of ["T6 codegen", "T9 Dev Mode write"]) {
+      expect(testing).toMatch(new RegExp("^\\| " + test + " \\| \\*\\*Needs a paid Figma plan\\.\\*\\*", "m"))
+    }
+    // Every line about Dev Mode surfaces or library components outside §5.5/§5.6 (marked as a whole) names the plan.
+    const outside = testing.replace(section(testing, "### 5.5 Dev Mode inspect panel"), "").replace(section(testing, "### 5.6 Codegen (Dev Mode → Code)"), "")
+    const checks = outside.split("\n").filter((line) => /^(- \[ \] |- \*\*|\| [TS]\d+ )/.test(line))
+    const devModeChecks = checks.filter((line) => /library (instance|component)|Dev Mode inspect panel|VS Code|Dev Mode → Code|in Dev Mode/.test(line))
+    expect(devModeChecks.length).toBeGreaterThanOrEqual(12)
+    for (const line of devModeChecks) {
+      expect(line).toMatch(PAID)
+    }
+    expect(testing.split("\n")[2]).toMatch(PAID)
+    expect(testing).toContain("**Do not submit the full build to Community until S14 is answered.**")
+  })
+
+  it("builds the variant that will be published for the production acceptance", () => {
+    const production = section(testing, "## 9. Production acceptance")
+    expect(production).toContain("`npm run build:design-only` for the design-only release, or `npm run build` for the full release")
+    expect(testing).toContain("| Figma plan and seat |")
+    expect(testing).toContain("RERUNE_ENV=development RERUNE_DEV_MODE=off npx build-figma-plugin")
+  })
+
   it("has every section of §7.23 plus production acceptance", () => {
     for (const section of ["0. Setup", "1. Sign-in", "2. Scan", "3. Link, create and push", "4. Preview", "5. Phase 2", "6. Phase 3", "7. Browser Figma and Figma for VS Code", "8. Spike questions", "9. Production acceptance"]) {
       expect(testing).toContain("## " + section)

@@ -5,15 +5,15 @@ Link Figma text layers to [ReRune](https://rerune.io) translation keys, push cop
 - **Designers** link text layers to existing keys or create new keys from Figma. Edits arrive in ReRune as drafts of the main language. Nothing is ever published from Figma.
 - **Preview** any project language (draft or published, with inheritance and variations) directly on the canvas, then reset to the original text.
 - **Context:** once the file's Figma link is saved, ReRune knows which layers show each key, and pushes can upload a screenshot of each changed frame. Translators see where a key is used in the dashboard's Design tab, and AI agents can ask ReRune's MCP server for the keys of a Figma frame.
-- **Developers** see the linked keys of a selection in Dev Mode, with their values in every language, and copy snippets for React (i18next), Flutter, Android, iOS and Angular from the inspect panel or Dev Mode's Code section.
+- **Developers** see the linked keys of a selection in Dev Mode, with their values in every language, and copy snippets for React (i18next), Flutter, Android, iOS and Angular from the inspect panel or Dev Mode's Code section. Dev Mode needs a paid Figma plan, and the design-only build leaves it out (see [Build and release](#build-and-release)).
 
 No AI features run inside the plugin. Keys created from Figma count toward the ReRune plan's key limit.
 
 ## Requirements
 
 - A ReRune account. Designers join free on every ReRune plan.
-- Figma Design: a Full seat, or a Starter plan with edit access to the file.
-- Dev Mode features need a paid Figma plan.
+- Figma Design: a Full seat, or a Starter plan with edit access to the file. Everything except Dev Mode works on the free Starter plan.
+- Dev Mode features (the inspect panel, the Code section and Figma for VS Code) need a paid Figma plan with a Dev or Full seat. Testing them needs one too: the checks in [`TESTING.md`](TESTING.md) marked "needs a paid Figma plan" (§5.5 inspect panel, §5.6 codegen, Figma for VS Code in §7, the library-component fixture and spike S14). On the free plan, skip those checks and ship the design-only build (`npm run zip:design-only`).
 
 ## Install
 
@@ -67,7 +67,7 @@ npm run watch        # the same, rebuilding on every change
 ### Import the development build into Figma
 
 1. Figma desktop → **Plugins → Development → Import plugin from manifest…** → pick `manifest.json` in this folder.
-2. Run it from **Plugins → Development → ReRune** in Figma Design. In Dev Mode it is in the inspect panel's plugins, and its languages are in the Code section's language dropdown.
+2. Run it from **Plugins → Development → ReRune** in Figma Design. In Dev Mode (paid Figma plan) it is in the inspect panel's plugins, and its languages are in the Code section's language dropdown.
 3. After a rebuild, run it again (⌥⌘P on macOS, Ctrl+Alt+P on Windows) or turn on **Plugins → Development → Hot reload plugin**.
 
 Figma keys the plugin's local storage (sign-in, preferences) by the plugin ID in `package.json` → `figma-plugin.id`. The ID `1697181748239106841` was issued by Figma when the plugin was created; never change it, or every user is signed out and loses their preferences.
@@ -102,6 +102,8 @@ Unit tests sit next to the code (`*.test.ts`). A few tests check the repository 
 - `test/message-contract.test.ts`: every message type is sent by one side and handled by the other, each UI handles what main posts in its mode, and every request main receives gets exactly one answer.
 - `test/dev-mode-policy.test.ts` and `src/ui/dev-mode-ui.test.ts`: Dev Mode refuses every write, the messages it accepts leave a file unchanged, codegen never writes or calls the network, and the Dev Mode UI never builds a message Dev Mode refuses.
 - `test/docs.test.ts` and `src/ui/api/readme.test.ts`: this README and `TESTING.md` match the build, the screens and the endpoints the plugin calls.
+- `test/build-hooks.test.ts` and `test/release.test.ts`: both manifest variants, the npm scripts, the CI workflow and the release check in `scripts/check-build.mjs`.
+- `test/listing.test.ts`: `COMMUNITY_LISTING.md` matches the manifest and the code, and the images in `listing/` have Figma's sizes.
 
 Some of these read the sources through `import.meta.glob`. Vitest caches module graphs in `node_modules/.vitest-cache`; after adding or removing source files, run `rm -rf node_modules/.vitest-cache` (or `npm ci`) if a contract test reports a file list that looks stale.
 
@@ -109,7 +111,20 @@ Everything that depends on real Figma behaviour (sign-in, scans of large files, 
 
 ## Build and release
 
-`npm run zip` produces the release archive. Publishing happens manually in the Figma desktop app (2FA required) under the BasalBit/ReRune profile.
+There are two release builds. Both use the plugin ID `1697181748239106841`, the same network access and the same code, so a later release can switch from one to the other as an update of the same Community plugin.
+
+| Release | Command | Archive | Manifest |
+|---|---|---|---|
+| Design-only | `npm run zip:design-only` | `rerune-figma-plugin-design-only.zip` | `editorType ["figma"]`; no `capabilities`, no `codegenLanguages` |
+| Full (with Dev Mode) | `npm run zip` | `rerune-figma-plugin.zip` | `editorType ["figma","dev"]`; `capabilities ["inspect","codegen","vscode"]`; 5 codegen languages |
+
+**Which one to ship:** the design-only build, unless Dev Mode has been tested on a paid Figma plan: `TESTING.md` §5.5 (inspect panel) and §5.6 (codegen) passed, and spike S14 shows the plugin in Dev Mode's inspect panel and Code section. Without that test the full build would ship Dev Mode features nobody has seen working. Designers on the free Figma plan get the whole design-side plugin either way; Dev Mode features need a paid Figma plan with a Dev or Full seat.
+
+**Release steps:**
+
+1. CI (`.github/workflows/ci.yml`, Node 24) runs typecheck, lint and tests on every push to `main` and every pull request, builds both archives, checks each with `node scripts/check-build.mjs full` / `design-only` (production hosts only, no `localhost` in the bundles, the manifest of that variant) and uploads them as the artifacts `rerune-figma-plugin` and `rerune-figma-plugin-design-only`. Locally, the same zip command followed by the same check does the same.
+2. Put the chosen build where Figma desktop imported the plugin from: run its build command (`npm run build:design-only` or `npm run build`) in this folder, or unzip the CI archive here over `manifest.json` and `build/`, and check it with `node scripts/check-build.mjs design-only` (or `full`). Then publish from the Figma desktop app (2FA required) under the BasalBit/ReRune profile. Figma publishes the files the imported `manifest.json` points at, so don't rebuild (for example `npm run build:dev`) until the publish is done.
+3. The listing text, assets, data security answers and reviewer notes are in [`COMMUNITY_LISTING.md`](COMMUNITY_LISTING.md); changes go in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Architecture
 
