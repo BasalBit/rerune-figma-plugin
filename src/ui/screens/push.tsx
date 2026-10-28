@@ -15,17 +15,15 @@ import {
   applyTakeReRune,
   canPull,
   canSubmit,
+  executeOverwrite,
   executePulls,
   executePush,
   lookUpNames,
-  overwriteChunk,
   preparePush,
-  pushChunks,
   pushCounts,
   pushSummary,
   remoteLoadError,
   resolveConflictInRun,
-  sendCache,
   withCheckedNames,
   type PreparedPush,
   type PushRun,
@@ -259,13 +257,15 @@ export function PushScreen(props: PushScreenProps) {
     await exclusive(async () => {
       try {
         if (choice === "overwrite") {
-          const next = await pushChunks({ api: props.api, bus: props.bus, fileKey: props.fileKey }, [overwriteChunk(conflict)], prepared.context)
-          sendCache({ bus: props.bus }, props.project.id, next.cacheEntries)
-          merge({ updated: next.updated, conflicts: next.conflicts, failures: next.failures, writeErrors: next.writeErrors })
-        } else {
-          const written = await applyTakeReRune({ api: props.api, bus: props.bus }, conflict, prepared.context.nodes)
-          merge({ writeErrors: written.errors })
+          // Overwrite is a push: its layers are link-synced and their frames get screenshots (§7.13 rule 11).
+          const next = await executeOverwrite(pushDeps(), conflict, prepared.context)
+          merge({ updated: next.updated, conflicts: next.conflicts, failures: next.failures, writeErrors: next.writeErrors, linkSync: next.linkSync })
+          setResolved((current) => ({ ...current, [conflict.ref]: "done" }))
+          await uploadScreenshots(affectedFrames(next.affectedNodeIds, prepared.context.nodes))
+          return
         }
+        const written = await applyTakeReRune({ api: props.api, bus: props.bus }, conflict, prepared.context.nodes)
+        merge({ writeErrors: written.errors })
         setResolved((current) => ({ ...current, [conflict.ref]: "done" }))
       } catch (caught) {
         setError(userMessage(caught))

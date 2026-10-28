@@ -10,8 +10,10 @@ import {
   canPull,
   canSubmit,
   emptyRun,
+  executeOverwrite,
   executePulls,
   executePush,
+  mergeLinkSync,
   overwriteChunk,
   preparePush,
   pushChunks,
@@ -343,6 +345,44 @@ describe("after-push choices and pulls", () => {
     const chunk = overwriteChunk(conflict)
     expect(chunk.items).toEqual([{ client_ref: "u1", op: "update", key_id: keyId(1), text: "Checkout now", expected_text: "Checkout!" }])
     expect(chunk.nodeIdsByRef.get("u1")).toEqual(conflict.nodeIds)
+  })
+
+  it("Overwrite is a push: follow-up links, codegen cache, file key and link sync of every affected layer (§7.13 rule 11)", async () => {
+    const nodes = new Map([
+      ["1:3", linkedNode("1:3", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout" })],
+      ["I7:1;1:5", linkedNode("I7:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
+      ["I8:1;1:5", linkedNode("I8:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
+    ])
+    const context = { projectId: PROJECT_ID, nodes, remote: new Map(), style: "snake" as const, isTaken: () => false, suggestName: () => "x" }
+    const main = fakeMain()
+    const push = vi.fn(async () => response([result("u1", "updated", { key_id: keyId(1), key: "checkout_title" })]))
+    const syncLinks = vi.fn(async (nodeIds: readonly string[]) => ({ upserted: nodeIds.length, removed: 0, rejected: [], error: null }))
+    const run = await executeOverwrite({ api: { push }, bus: main.bus, fileKey: "AbCdEf1234567890XyZ", syncLinks }, conflict, context)
+    expect(push).toHaveBeenCalledWith(PROJECT_ID, { file_key: "AbCdEf1234567890XyZ", items: overwriteChunk(conflict).items })
+    expect(run.updated).toBe(1)
+    expect((main.writes[0] as { items: { nodeId: string }[] }).items.map((item) => item.nodeId)).toEqual(["1:3", "I7:1;1:5"])
+    expect(main.posted.find((message) => message.type === "cache-save")).toMatchObject({ entries: [{ keyId: keyId(1), k: "checkout_title" }] })
+    expect([...syncLinks.mock.calls[0][0]].sort()).toEqual(["1:3", "1:5", "I7:1;1:5", "I8:1;1:5"])
+    expect(run.affectedNodeIds).toEqual(["1:3", "I7:1;1:5", "I8:1;1:5", "1:5"])
+    expect(run.linkSync).toEqual({ upserted: 4, removed: 0, rejected: [], error: null })
+
+    const again = vi.fn(async () => response([result("u1", "conflict", { key_id: keyId(1), key: "checkout_title", reason: "source_changed", current_text: "Checkout!!" })]))
+    const syncAgain = vi.fn()
+    const conflicted = await executeOverwrite({ api: { push: again }, bus: fakeMain().bus, syncLinks: syncAgain }, conflict, context)
+    expect(conflicted.conflicts).toHaveLength(1)
+    expect(conflicted.affectedNodeIds).toEqual([])
+    expect(syncAgain).not.toHaveBeenCalled()
+  })
+
+  it("adds an Overwrite's link sync to the run's", () => {
+    const rejected = { node_id: "1:3", reason: "key_not_found" as const }
+    const start = { ...emptyRun(), conflicts: [conflict], linkSync: { upserted: 2, removed: 1, rejected: [], error: null } }
+    const merged = resolveConflictInRun(start, "u1", { updated: 1, linkSync: { upserted: 3, removed: 0, rejected: [rejected], error: null } })
+    expect(merged.linkSync).toEqual({ upserted: 5, removed: 1, rejected: [rejected], error: null })
+    expect(resolveConflictInRun({ ...emptyRun(), conflicts: [conflict] }, "u1", { linkSync: { upserted: 0, removed: 0, rejected: [], error: "offline" } }).linkSync?.error).toBe("offline")
+    expect(resolveConflictInRun(start, "u1", { writeErrors: [] }).linkSync).toEqual(start.linkSync)
+    expect(mergeLinkSync(null, null)).toBeNull()
+    expect(mergeLinkSync({ upserted: 1, removed: 0, rejected: [], error: "first" }, { upserted: 1, removed: 0, rejected: [], error: null })?.error).toBe("first")
   })
 
   it("Take ReRune text writes one representative per inherited main", () => {

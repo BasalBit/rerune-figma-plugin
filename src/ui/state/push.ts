@@ -287,10 +287,11 @@ export interface ConflictResolution {
   conflicts?: PushFollowUp["conflicts"]
   failures?: PushFollowUp["failures"]
   writeErrors?: NodeError[]
+  linkSync?: LinkSyncResult | null
 }
 
-// Merges one resolved post-push conflict into the latest run (functional update): several conflicts can be
-// resolved at once, and each result must land on the run as it is now, not on the run its click started from.
+// Merges one resolved post-push conflict into the latest run (functional update): each result must land on the
+// run as it is now, not on the run its click started from.
 export function resolveConflictInRun(run: PushRun, ref: string, result: ConflictResolution): PushRun {
   return {
     ...run,
@@ -298,6 +299,20 @@ export function resolveConflictInRun(run: PushRun, ref: string, result: Conflict
     conflicts: run.conflicts.filter((entry) => entry.ref !== ref).concat(result.conflicts ?? []),
     failures: run.failures.concat(result.failures ?? []),
     writeErrors: run.writeErrors.concat(result.writeErrors ?? []),
+    linkSync: mergeLinkSync(run.linkSync, result.linkSync ?? null),
+  }
+}
+
+// Two link syncs of one push screen (the push, then an Overwrite) as one result for the results' warning.
+export function mergeLinkSync(first: LinkSyncResult | null, second: LinkSyncResult | null): LinkSyncResult | null {
+  if (first === null || second === null) {
+    return first ?? second
+  }
+  return {
+    upserted: first.upserted + second.upserted,
+    removed: first.removed + second.removed,
+    rejected: first.rejected.concat(second.rejected),
+    error: second.error ?? first.error,
   }
 }
 
@@ -471,6 +486,13 @@ export function overwriteChunk(conflict: PushFollowUp["conflicts"][number]): Pus
     items: [{ client_ref: conflict.ref, op: "update", key_id: conflict.keyId, text: conflict.text, expected_text: conflict.currentText }],
     nodeIdsByRef: new Map([[conflict.ref, conflict.nodeIds.slice()]]),
   }
+}
+
+// Overwrite is a push of its own: the update with its follow-up links, the codegen cache and the link sync of the
+// affected layers (§7.13 rules 10 and 11). The caller uploads the screenshots of `affectedNodeIds`.
+export async function executeOverwrite(deps: PushDeps, conflict: PushFollowUp["conflicts"][number], context: PlanContext): Promise<PushRun> {
+  const run = await pushChunks(deps, [overwriteChunk(conflict)], context)
+  return finishPush(deps, run, context)
 }
 
 export function takeReRuneItems(conflict: PushFollowUp["conflicts"][number], nodes: Map<string, ScannedNode>): TextApplyItem[] {
