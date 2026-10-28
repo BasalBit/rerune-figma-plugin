@@ -256,7 +256,7 @@ export interface PushDeps {
   bus: Pick<UiBus, "request" | "send">
   // E13 file_key (Phase 2): the confirmed main file's key records the file's last push; null otherwise.
   fileKey?: string | null
-  // Link sync for the layers whose links the push wrote or removed (§7.13 rule 11); null when it is off.
+  // Link sync for every layer the push affected (§7.13 rule 11); null when it is off.
   syncLinks?: (nodeIds: readonly string[]) => Promise<LinkSyncResult | null>
 }
 
@@ -274,10 +274,11 @@ export interface PushRun {
   writeErrors: NodeError[]
   requestError: string | null
   cacheEntries: CodegenCacheEntry[]
-  linkedNodeIds: string[]          // layers whose links the push wrote or removed (link sync input)
+  linkedNodeIds: string[]          // layers whose links the push wrote or removed (main component nodes included)
   linkSync: LinkSyncResult | null
   // Layers the push changed in ReRune or in Figma: pushed (created, updated or unchanged), linked, unlinked or given
-  // ReRune's text. Their top frames get screenshots (§7.13 rule 11).
+  // ReRune's text, plus every layer in linkedNodeIds. All of them are link-synced, and their top frames get
+  // screenshots (§7.13 rule 11).
   affectedNodeIds: string[]
 }
 
@@ -363,7 +364,7 @@ export async function pushChunks(deps: PushDeps, chunks: readonly PushRequestChu
     const followUpLinks = [...followUp.linkApplies, ...followUp.mainComponentLinkApplies]
     const writes = await linkApply(deps, followUpLinks)
     run.writeErrors.push(...writes.errors)
-    run.linkedNodeIds.push(...followUpLinks.map((item) => item.nodeId))
+    run.linkedNodeIds.push(...followUpLinks.map((item) => item.nodeId), ...mainNodeIds(followUp.mainComponentLinkApplies, context.nodes))
     run.created += response.summary.created
     run.updated += response.summary.updated
     run.unchanged += response.summary.unchanged
@@ -415,14 +416,34 @@ export async function executePush(deps: PushDeps, plan: PushPlan, context: PlanC
   run.writeErrors.push(...texts.errors)
   run.affectedNodeIds.push(...run.linkedNodeIds, ...takeReRuneNodeIds(plan))
   await pushChunks(deps, planToRequests(plan), context, run)
+  return finishPush(deps, run, context)
+}
+
+// The end of every push (§7.13 rules 10 and 11): the codegen cache, then link sync for every affected layer.
+// `affectedNodeIds` gains the layers whose links were written (main component nodes included), so the sync covers
+// the pushed layers that show a key without a write of their own (instance text that inherits it) too.
+async function finishPush(deps: PushDeps, run: PushRun, context: Pick<PlanContext, "projectId">): Promise<PushRun> {
   sendCache(deps, context.projectId, run.cacheEntries)
-  run.linkSync = await syncPushedLinks(deps, run.linkedNodeIds)
   run.affectedNodeIds = [...new Set([...run.affectedNodeIds, ...run.linkedNodeIds])]
+  run.linkSync = await syncPushedLinks(deps, run.affectedNodeIds)
   return run
 }
 
 function takeReRuneNodeIds(plan: PushPlan): string[] {
   return plan.conflicts.filter((conflict) => conflict.decision === "take_rerune").flatMap((conflict) => conflict.nodeIds)
+}
+
+// A refresh of an inherited instance layer is written on its local main component's node (§7.6, D44): that node's
+// link changes, and every instance layer that inherits from it follows (the link sync finds them by the main's id).
+function mainNodeIds(items: readonly LinkApplyItem[], nodes: Map<string, ScannedNode>): string[] {
+  const ids: string[] = []
+  for (const item of items) {
+    const link = nodes.get(item.nodeId)?.link
+    if (link !== null && link !== undefined && link.nid !== item.nodeId) {
+      ids.push(link.nid)
+    }
+  }
+  return ids
 }
 
 // Phase 2 after-push link sync (§7.13 rule 11). Each layer is checked once; a failure is reported on the run and

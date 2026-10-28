@@ -201,8 +201,9 @@ describe("executePush", () => {
       response(request.items.map((item) => (item.op === "create" ? result(item.client_ref, "created", { key_id: keyId(10), key: item.key }) : result(item.client_ref, "unchanged", { key_id: item.key_id, key: "checkout_title" })))),
     )
     const run = await executePush({ api: { push }, bus: fakeMain().bus }, plan, context)
-    // Linked to an exact match (1:2), given ReRune's text (1:4), created (1:1), and every layer of the pushed key.
-    expect(run.affectedNodeIds).toEqual(["1:2", "1:4", "1:1", "1:3", "I7:1;1:5"])
+    // Linked to an exact match (1:2), given ReRune's text (1:4), created (1:1), every layer of the pushed key, and the
+    // main component node (1:5) the inherited layer's refresh was written on.
+    expect(run.affectedNodeIds).toEqual(["1:2", "1:4", "1:1", "1:3", "I7:1;1:5", "1:5"])
     const failing = vi.fn(async () =>
       response([result("c0", "failed", { reason: "quota_exceeded" }), result("u" + keyId(1), "conflict", { key_id: keyId(1), reason: "source_changed", current_text: "x" })]),
     )
@@ -251,7 +252,7 @@ describe("executePush", () => {
     expect(canSubmit(ready.plan, true)).toBe(false)
   })
 
-  it("sends the file key and syncs the links of every layer the push linked or unlinked (Phase 2)", async () => {
+  it("sends the file key and syncs the links of every layer the push affected (Phase 2)", async () => {
     const { plan, context } = await prepared()
     const main = fakeMain()
     const push = vi.fn(async (_projectId: string, request: FigmaPushRequest) =>
@@ -260,10 +261,27 @@ describe("executePush", () => {
     const syncLinks = vi.fn(async (nodeIds: readonly string[]) => ({ upserted: nodeIds.length, removed: 0, rejected: [], error: null }))
     const run = await executePush({ api: { push }, bus: main.bus, fileKey: "AbCdEf1234567890XyZ", syncLinks }, plan, context)
     expect(push.mock.calls[0][1].file_key).toBe("AbCdEf1234567890XyZ")
-    // The link decision (1:2), the created key's layer (1:1) and the refreshed layers (1:3, the inherited sublayer).
+    // Every affected layer: the link decision (1:2), ReRune's text (1:4), the created key's layer (1:1), the pushed
+    // key's layers (1:3, the inherited sublayer) and the main component node its refresh was written on (1:5).
     expect(syncLinks).toHaveBeenCalledTimes(1)
-    expect([...syncLinks.mock.calls[0][0]].sort()).toEqual(["1:1", "1:2", "1:3", "I7:1;1:5"])
-    expect(run.linkSync).toEqual({ upserted: 4, removed: 0, rejected: [], error: null })
+    expect([...syncLinks.mock.calls[0][0]].sort()).toEqual(["1:1", "1:2", "1:3", "1:4", "1:5", "I7:1;1:5"])
+    expect(run.linkSync).toEqual({ upserted: 6, removed: 0, rejected: [], error: null })
+  })
+
+  it("syncs every inherited instance layer of a pushed key and the main component node (§7.13 rule 11)", async () => {
+    const keysByName = byName({}, [])
+    const inherited = (nodeId: string) => linkedNode(nodeId, "Pay now", { keyId: keyId(3), keyName: "pay", syncedText: "Pay", nid: "5:67", state: "inherited" })
+    const nodes = [inherited("I1:2;5:67"), inherited("I3:4;5:67"), inherited("I8:9;5:67")]
+    const ready = await preparePush({ keysByName }, input(nodes, { remote: new Map([[keyId(3), remote("pay", "Pay")]]) }))
+    expect(ready.plan.updates.map((update) => update.nodeIds)).toEqual([["I1:2;5:67", "I3:4;5:67", "I8:9;5:67"]])
+    const main = fakeMain()
+    const push = vi.fn(async (_projectId: string, request: FigmaPushRequest) => response(request.items.map((item) => result(item.client_ref, "updated", { key_id: keyId(3), key: "pay" }))))
+    const syncLinks = vi.fn(async (nodeIds: readonly string[]) => ({ upserted: nodeIds.length, removed: 0, rejected: [], error: null }))
+    const run = await executePush({ api: { push }, bus: main.bus, fileKey: "AbCdEf1234567890XyZ", syncLinks }, ready.plan, ready.context)
+    // One representative is written (main redirects it to 5:67); every layer that shows the key is synced.
+    expect((main.writes[0] as { items: { nodeId: string }[] }).items.map((item) => item.nodeId)).toEqual(["I1:2;5:67"])
+    expect([...syncLinks.mock.calls[0][0]].sort()).toEqual(["5:67", "I1:2;5:67", "I3:4;5:67", "I8:9;5:67"])
+    expect(run.affectedNodeIds).toContain("I8:9;5:67")
   })
 
   it("includes unlinked layers in the link sync, and a failing sync never fails the push", async () => {
