@@ -107,7 +107,28 @@ describe("COMMUNITY_LISTING.md", () => {
     expect(settingsScreen).toContain("Upload screenshots on push")
     expect(answers).toContain('"Upload screenshots on push" on (the default)')
     expect(answers).toContain("Sandbox accounts never upload images.")
-    expect(answers).toContain("HMAC-SHA256")
+    // The server keeps a keyed hash and the last four characters (app_tokens.token_hint, shown under Connected apps).
+    expect(answers).toContain("HMAC-SHA256 hash of it and its last four characters")
+    expect(answers).not.toMatch(/stores only a keyed HMAC-SHA256 hash of it\./)
+  })
+
+  it("says where screenshots and their records live, as the server stores them and the dashboard's legal pages say", () => {
+    const answers = section(listing, "## Data security disclosure")
+    // Only the dev Storage zone's city is confirmed; the dashboard says "Germany" until ops confirm production.
+    expect(answers).not.toContain("Falkenstein")
+    expect(answers).toContain("bunny.net Storage zone in Germany (EU), without replication")
+    const bullets = answers.split("\n").filter((line) => line.startsWith("   - "))
+    const database = bullets.find((line) => line.includes("In ReRune's database")) ?? ""
+    const storage = bullets.find((line) => line.includes("In the bunny.net Storage zone")) ?? ""
+    // design_screenshots (Mongo) keeps the boxes, frame and page names, size and sha256; Bunny gets only the bytes
+    // at projects/<project>/screenshots/<screenshot>/<upload>.<jpg|png>.
+    expect(database).toContain("the positions of its linked layers")
+    expect(database).toMatch(/For each uploaded screenshot: its frame and page \(IDs and names\)/)
+    expect(database).toContain("SHA-256")
+    expect(storage).toContain("only the image file")
+    expect(storage).toContain("stored under the project and screenshot IDs")
+    expect(storage).not.toMatch(/positions|names/)
+    expect(section(listing, "## Before you submit")).toContain("production bunny.net Storage zone is in Germany with no replication regions")
   })
 
   it("tells reviewers about AI, MCP and writes, with the plugin's real labels", () => {
