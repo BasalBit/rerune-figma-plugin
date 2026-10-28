@@ -140,7 +140,7 @@ Main and UI talk only through typed messages (`src/shared/messages.ts`). Every U
 | `diagnostics-write` | `canvas` | no | `diagnostics-result` |
 | `diagnostics-devmode-probe` | `devprobe` | development builds only | `diagnostics-result` |
 
-Main also sends `selection-changed` (Design mode) and `inspect-selection` (Dev Mode) when the selection or page changes, and `handler-error` for a refused or failed message. `link-check` / `link-check-result` (link sync reads layers with hidden instance children included), the frame skip reason `preview_active` and `inspect-selection`'s `truncated` (a selected frame has more than 50 linked layers; the panel lists each key's first layer first and says that more are not shown) are additions to the spec's message list.
+Main also sends `selection-changed` (Design mode) and `inspect-selection` (Dev Mode) when the selection or page changes, and `handler-error` for a refused or failed message. `link-check` / `link-check-result` (link sync reads layers with hidden instance children included; with `inheritors`, as after a link, unlink or push, main also answers for the current page's instance sublayers that inherit from a checked text inside a component), the frame skip reason `preview_active` and `inspect-selection`'s `truncated` (a selected frame has more than 50 linked layers; the panel lists each key's first layer first and says that more are not shown) are additions to the spec's message list.
 
 ### Data in the file
 

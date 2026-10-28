@@ -175,7 +175,7 @@ export function registerHandlers(bus: MainBus, context: MainContext): void {
     sendOutcome(bus, message.requestId, await removeLinks(message.nodeIds))
   })
   bus.on("link-check", async (message) => {
-    const nodes = await checkLinks(nodeIdsOf(message.nodeIds))
+    const nodes = await checkLinks(nodeIdsOf(message.nodeIds), message.inheritors === true)
     bus.send({ type: "link-check-result", requestId: message.requestId, nodes })
   })
   bus.on("screenshots-export", async (message) => {

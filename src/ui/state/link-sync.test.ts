@@ -250,8 +250,8 @@ describe("linkRequests", () => {
   })
 })
 
-// A main thread that answers link-check from a table (unknown ids → not_found).
-function checkingBus(table: Record<string, LinkCheck>) {
+// A main thread that answers link-check from a table (unknown ids → not_found), plus `inheritors` when asked.
+function checkingBus(table: Record<string, LinkCheck>, inheritors: LinkCheck[] = []) {
   const posted: UiToMain[] = []
   const fake = fakeBusEnvironment((message, deliver) => {
     posted.push(message)
@@ -259,7 +259,7 @@ function checkingBus(table: Record<string, LinkCheck>) {
       deliver({
         type: "link-check-result",
         requestId: message.requestId,
-        nodes: message.nodeIds.map((nodeId) => table[nodeId] ?? check(nodeId, { status: "not_found", linkState: "none", link: null })),
+        nodes: message.nodeIds.map((nodeId) => table[nodeId] ?? check(nodeId, { status: "not_found", linkState: "none", link: null })).concat(message.inheritors === true ? inheritors : []),
       })
     }
   })
@@ -342,6 +342,21 @@ describe("createLinkSyncer", () => {
     }
   })
 
+  it("syncs the page's instances of a linked main component text that the last scan did not include (§7.11, §7.15)", async () => {
+    const api = linksApi()
+    // Selection scope: only the main component was scanned; main reports its instances on the page.
+    const { bus, posted } = checkingBus({ "5:67": linkedCheck("5:67", "ok") }, [linkedCheck("I12:34;5:67", "inherited"), linkedCheck("I12:40;3:2;5:67", "inherited"), check("I12:50;5:67", { linkState: "inherited_overridden" })])
+    const syncer = createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => ON })
+    const result = await syncer.syncNodes(["5:67"], [scannedNode("5:67", "Pay now")])
+    expect(posted).toEqual([expect.objectContaining({ type: "link-check", nodeIds: ["5:67"], inheritors: true })])
+    expect(api.upsertLinks).toHaveBeenCalledWith(PROJECT_ID, {
+      file_key: FILE_KEY,
+      upserts: [upsertFor("5:67"), upsertFor("I12:34;5:67"), upsertFor("I12:40;3:2;5:67")],
+      removed_node_ids: ["I12:50;5:67"],
+    })
+    expect(result).toEqual({ upserted: 3, removed: 1, rejected: [], error: null })
+  })
+
   it("syncs the written layers and the instances that inherit from them after a link or unlink", async () => {
     const api = linksApi()
     const { bus, posted } = checkingBus({
@@ -351,7 +366,7 @@ describe("createLinkSyncer", () => {
     })
     const syncer = createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => ON })
     const result = await syncer.syncNodes(["5:67", "1:2", "1:9"], [scannedNode("I12:34;5:67", "Pay now"), scannedNode("I77:1;8:8", "Other")])
-    expect(posted[0]).toMatchObject({ type: "link-check", nodeIds: ["5:67", "1:2", "1:9", "I12:34;5:67"] })
+    expect(posted[0]).toMatchObject({ type: "link-check", nodeIds: ["5:67", "1:2", "1:9", "I12:34;5:67"], inheritors: true })
     expect(api.upsertLinks).toHaveBeenCalledWith(PROJECT_ID, {
       file_key: FILE_KEY,
       upserts: [upsertFor("5:67"), upsertFor("I12:34;5:67")],
@@ -404,6 +419,7 @@ describe("createLinkSyncer", () => {
     const syncer = createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => ON })
     const result = await syncer.syncPage("0:1", scanned)
     expect(posted).toEqual([expect.objectContaining({ type: "link-check", nodeIds: ["12:900", "12:901", "12:902"] })])
+    expect(posted[0]).not.toHaveProperty("inheritors")
     expect(api.upsertLinks).toHaveBeenCalledWith(PROJECT_ID, {
       file_key: FILE_KEY,
       upserts: [upsertFor("12:346", K2)],

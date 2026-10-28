@@ -72,7 +72,8 @@ export type UiToMain =
   | { type: "scan-cancel"; requestId: RequestId }
   | { type: "link-apply"; requestId: RequestId; items: { nodeId: string; keyId: string; keyName: string; projectId: string; src: string }[] }
   | { type: "link-remove"; requestId: RequestId; nodeIds: string[] }
-  | { type: "link-check"; requestId: RequestId; nodeIds: string[] }                       // Phase 2 addition (link sync)
+  | { type: "link-check"; requestId: RequestId; nodeIds: string[]                         // Phase 2 addition (link sync)
+      inheritors?: boolean }                                                              // also the page's instance sublayers inheriting from them
   | { type: "text-apply"; requestId: RequestId; items: { nodeId: string; text: string; src: string }[] }
   | { type: "preview-apply"; requestId: RequestId; info: Omit<PreviewInfo, "appliedAt">; items: { nodeId: string; text: string }[] }
   | { type: "preview-reset"; requestId: RequestId; scope: Scope; nodeIds?: string[]; edited?: "restore" | "keep" }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { fakeComponent, fakeFrame, fakeInstance, fakePage, fakeSection, fakeText, installFigma, onPage, uninstallFigma, type FakeNode, type FigmaMock } from "../../test/figma-mock"
 import { keyId, OTHER_PROJECT_ID, PROJECT_ID } from "../../test/fixtures"
 import { DATA_KEYS, PLUGIN_DATA_NAMESPACE } from "../shared/constants"
@@ -141,6 +141,54 @@ describe("checkLinks (link sync, D43)", () => {
     expect(figmaMock.skipInvisibleInstanceChildren).toBe(true)
   })
 
+  it("adds the current page's instance sublayers of a checked component text on request (§7.11, §7.15)", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    setLink(mainText, link("5:67"))
+    const component = fakeComponent("5:1", "Button", [mainText])
+    const plain = fakeInstance("12:34", "Button", [Object.assign(fakeText("I12:34;5:67", "Pay now"), { inheritFrom: mainText })], { overrides: [], mainComponent: component })
+    const hidden = fakeText("I12:35;5:67", "Pay now")
+    hidden.inheritFrom = mainText
+    hidden.visible = false
+    const hiddenInstance = fakeInstance("12:35", "Button", [hidden], { overrides: [], mainComponent: component })
+    // A Button instance nested in a Card instance.
+    const nested = fakeText("I12:40;3:2;5:67", "Pay now")
+    nested.inheritFrom = mainText
+    const card = fakeInstance("12:40", "Card", [fakeInstance("I12:40;3:2", "Button", [nested], { overrides: [], mainComponent: component })], { overrides: [] })
+    const overridden = fakeText("I12:50;5:67", "Buy")
+    overridden.inheritFrom = mainText
+    const overriddenInstance = fakeInstance("12:50", "Button", [overridden], { overrides: [{ id: "I12:50;5:67", overriddenFields: ["characters"] }], mainComponent: component })
+    const other = fakeText("I12:60;9:99", "Other")
+    onPage(figmaMock, [component, fakeFrame("10:1", "Checkout", [plain, hiddenInstance, card, overriddenInstance, fakeInstance("12:60", "Badge", [other])])])
+    const elsewhere = fakeText("I30:1;5:67", "Pay now")
+    elsewhere.inheritFrom = mainText
+    figmaMock.root.appendChild(fakePage("0:2", "Desktop", [fakeInstance("30:1", "Button", [elsewhere], { overrides: [], mainComponent: component })]))
+    figmaMock.skipInvisibleInstanceChildren = true
+
+    const checks = await checkLinks(["5:67"], true)
+    expect(checks.map((entry) => [entry.nodeId, entry.linkState])).toEqual([
+      ["5:67", "ok"],
+      ["I12:34;5:67", "inherited"],
+      ["I12:35;5:67", "inherited"],
+      ["I12:40;3:2;5:67", "inherited"],
+      ["I12:50;5:67", "inherited_overridden"],
+    ])
+    expect(checks.every((entry) => entry.status === "found" && entry.frameId !== null)).toBe(true)
+    expect(figmaMock.skipInvisibleInstanceChildren).toBe(true)
+    // Without the flag (page link sync) only the requested layers are answered.
+    expect((await checkLinks(["5:67"])).map((entry) => entry.nodeId)).toEqual(["5:67"])
+    // An instance sublayer already requested is answered once.
+    expect((await checkLinks(["5:67", "I12:34;5:67"], true)).map((entry) => entry.nodeId)).toEqual(["5:67", "I12:34;5:67", "I12:35;5:67", "I12:40;3:2;5:67", "I12:50;5:67"])
+  })
+
+  it("does not walk the page for text outside a component", async () => {
+    const own = fakeText("12:345", "Pay now")
+    setLink(own, link("12:345"))
+    onPage(figmaMock, [fakeFrame("10:1", "Checkout", [own])])
+    const walk = vi.spyOn(figmaMock.currentPage, "findAllWithCriteria")
+    expect((await checkLinks(["12:345", "99:1"], true)).map((entry) => entry.nodeId)).toEqual(["12:345", "99:1"])
+    expect(walk).not.toHaveBeenCalled()
+  })
+
   it("validates the id list of the message", () => {
     expect(nodeIdsOf(["1:1"])).toEqual(["1:1"])
     expect(() => nodeIdsOf(undefined)).toThrow("nodeIds must be a list of node ids")
@@ -161,6 +209,20 @@ describe("link-check handler", () => {
       expect(sent).toEqual([{ type: "link-check-result", requestId: "c1-1", nodes: [expect.objectContaining({ nodeId: "12:345", status: "found", linkState: "ok" })] }])
     }
     expect(figmaMock.commitUndo).not.toHaveBeenCalled()
+  })
+
+  it("answers for the page's inheriting instance sublayers when asked", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    setLink(mainText, link("5:67"))
+    const component = fakeComponent("5:1", "Button", [mainText])
+    const sublayer = fakeText("I12:34;5:67", "Pay now")
+    sublayer.inheritFrom = mainText
+    onPage(figmaMock, [component, fakeFrame("10:1", "Checkout", [fakeInstance("12:34", "Button", [sublayer], { overrides: [], mainComponent: component })])])
+    const sent: MainToUi[] = []
+    const bus = createMainBus("figma", "development", (message) => sent.push(message))
+    registerHandlers(bus, context("figma"))
+    await bus.dispatch({ type: "link-check", requestId: "c1-3", nodeIds: ["5:67"], inheritors: true })
+    expect(sent).toEqual([{ type: "link-check-result", requestId: "c1-3", nodes: [expect.objectContaining({ nodeId: "5:67" }), expect.objectContaining({ nodeId: "I12:34;5:67", linkState: "inherited" })] }])
   })
 
   it("answers a malformed request with a handler-error", async () => {

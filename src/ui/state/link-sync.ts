@@ -116,7 +116,8 @@ export function sameUpsert(server: Pick<FigmaLink, keyof FigmaLinkUpsert>, upser
 
 // The layers a link or unlink changes in ReRune's eyes: the layers written, plus the instance sublayers of the
 // scan that inherit from one of them (same id suffix, D44 fallback rule, or the link's nid), since linking or
-// unlinking a main component's text changes what its instances show.
+// unlinking a main component's text changes what its instances show. Instances on the page that the scan did not
+// include (a Selection scan of the main component) are added by main (link-check `inheritors`).
 export function affectedNodeIds(acted: readonly string[], known: readonly Pick<ScannedNode, "nodeId" | "link">[] = []): string[] {
   const result = new Set(acted)
   const sources = new Set(acted.map((id) => id.replace(/^I/, "")))
@@ -231,11 +232,12 @@ export function linkRequests(fileKey: string, plan: LinkSyncPlan): FigmaLinksReq
   return requests
 }
 
-// link-check in batches of 500 ids (each answered well within the bus watchdog).
-export async function checkLinks(bus: Pick<UiBus, "request">, nodeIds: readonly string[]): Promise<Map<string, LinkCheck>> {
+// link-check in batches of 500 ids (each answered well within the bus watchdog). With `inheritors`, main also
+// answers for the current page's instance sublayers that inherit from a checked text inside a component.
+export async function checkLinks(bus: Pick<UiBus, "request">, nodeIds: readonly string[], inheritors = false): Promise<Map<string, LinkCheck>> {
   const checks = new Map<string, LinkCheck>()
   for (const batch of chunk([...new Set(nodeIds)], LINK_CHECK_BATCH_SIZE)) {
-    const nodes = await bus.request((requestId: RequestId) => ({ type: "link-check", requestId, nodeIds: batch }), {
+    const nodes = await bus.request((requestId: RequestId) => (inheritors ? { type: "link-check", requestId, nodeIds: batch, inheritors } : { type: "link-check", requestId, nodeIds: batch }), {
       done: (message) => (message.type === "link-check-result" ? message.nodes : undefined),
     })
     for (const node of nodes) {
@@ -315,7 +317,7 @@ export function createLinkSyncer(deps: LinkSyncDeps): LinkSyncer {
       }
       let checks: Map<string, LinkCheck>
       try {
-        checks = await checkLinks(deps.bus, ids)
+        checks = await checkLinks(deps.bus, ids, true)
       } catch (error) {
         return errorResult(error)
       }
