@@ -25,7 +25,7 @@ export function readFileLinkInput(text: string): FileLinkInput {
 export const COPY_MESSAGE = "This may be a copy of another file. Paste this file's link, or confirm it is the same file."
 export const BRANCH_MESSAGE = "Links and screenshots sync after this branch is merged."
 export const NO_FILE_MESSAGE = "Paste this file's Figma link (Share → Copy link) so ReRune can show where each key is used. Until then, links stay in this file."
-export const NO_PERMISSION_MESSAGE = "Links aren't shared with ReRune because you can't edit keys in this project. Ask a project admin for the Edit keys permission."
+export const NO_PERMISSION_MESSAGE = "Links aren't shared with ReRune because you can't edit keys in this project. Ask an organisation administrator for the Edit keys permission."
 export const SYNC_ON_MESSAGE = "Layer links are shared with ReRune, so it shows where each key is used."
 
 export type FileLinkAction = "same-file" | "paste-link"

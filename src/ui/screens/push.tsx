@@ -341,7 +341,7 @@ export function PushScreen(props: PushScreenProps) {
       <div style={styles.body}>
         <ErrorNote message={error} onRetry={() => void review()} />
         {props.readOnly && <Note tone="warning">This file is connected to a different ReRune server, so nothing can be pushed from here.</Note>}
-        {!editKeys && <Note tone="warning">You can view this project but not edit its keys, so you can't push. Ask a project admin for the Edit keys permission.</Note>}
+        {!editKeys && <Note tone="warning">You can view this project but not edit its keys, so you can't push. Ask an organisation administrator for the Edit keys permission.</Note>}
         {plan !== null && counts !== null && (
           <div style={styles.stack}>
             {plan.blockedByPreview.length > 0 && (
