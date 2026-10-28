@@ -13,6 +13,8 @@ How to use this file:
 
 **Phase 2 is done when** §5 passes on Figma desktop against the Phase 2 server and dashboard (with design storage on), the dashboard checks (§1.1, §5.4) pass in English, German and Italian, and the Dev Mode checks (§5.5, §5.6) pass in desktop and browser Figma and in Figma for VS Code (§7).
 
+**The Phase 3 QA features are done when** §6 passes on Figma desktop on Chapter: the overflow report in `de` and `it` (with pseudo-localization), language copies, sample values and the plural selector, and the max length warnings. These checks need no Dev Mode, so a free Figma plan is enough.
+
 ---
 
 ## 0. Setup
@@ -275,11 +277,31 @@ Connect an MCP client to the local server (`http://localhost:8080/mcp`, Streamab
 
 ## 6. Phase 3: QA
 
-QA tab: **Pseudo-localization** with **Apply to** selection / page, **Pseudo-localize selection** / **Pseudo-localize page** and **Reset**. Preview tab: **Sample values and plural forms** (**Edit** / **Hide**). For the plural checks add a key in ReRune whose `en` value is `{count, plural, one {# item} other {# items}}` and whose `pl` value has `one`, `few`, `many` and `other` forms (for example by importing Flutter ARB files), and link a layer to it.
+QA tab: **Apply to** selection / page, **Languages** (one checkbox per project language), **Source** Draft / Published and **Variation** for the overflow report and language copies; **Overflow report** (**Include pseudo-localization**, **Run overflow report**, **Stop**, **Copy CSV**); **Language copies** (**Make language copies**); **Pseudo-localization** with **Pseudo-localize selection** / **Pseudo-localize page** and **Reset**. Preview tab: **Sample values and plural forms** (**Edit** / **Hide**). For the plural checks add a key in ReRune whose `en` value is `{count, plural, one {# item} other {# items}}` and whose `pl` value has `one`, `few`, `many` and `other` forms (for example by importing Flutter ARB files), and link a layer to it.
 
-- [ ] **Overflow report** in `de` and `it` on Chapter lists clipped, truncated and parent-overflowing layers with Select/Zoom; the canvas is reset afterwards.
+- [ ] **Overflow report** on Chapter (fixture: a fixed-size text box, a text with an ending ellipsis or **Max lines** 1, an auto-width label in a fixed-width button, an auto-height paragraph in a fixed-height card, one text with a drop shadow, and a key with **Max length** in the dashboard):
+  - QA → **Apply to** Page, **Languages** German (de) and Italian (it), **Run overflow report**: "Checking German (de) (1 of 2)…", then "N issues found." and one table per language with "N issues · M layers checked". Rows: **Clipped** "… px past its box" (fixed box), **Truncated** "… px cut off" (ellipsis / max lines), **Outside its frame** "… px outside its frame" (button label, card paragraph), **Over max length** "N characters too long". The text with a drop shadow is not listed as **Clipped** unless its text really runs past the box.
+  - **Select** selects and zooms to the layer; **Select all (n)** selects every listed layer of that language.
+  - When the report ends the canvas shows the original text again (banner "Reset N layers.", no preview status in the header); Cmd+Z history has no leftover clone layers.
+  - Linked layers without a value: "N layers have no value in this language and kept the source text." They are not measured. A layer with a missing font is listed with "A font in this layer is missing…" and **Select on canvas**.
+  - **Include pseudo-localization** adds a "Pseudo-localization" table (every text layer, linked or not).
+  - **Copy CSV**, paste into a spreadsheet: columns Language, Issue, Amount, Unit, Layer, Frame, Key, Node ID; a layer named `=1+1` arrives as text.
+  - **Stop** during the first language: the report ends after it ("Stopped before the last language.") and the canvas is still reset.
+  - While the report runs the tabs and **Change** are locked and Nav **Reset** is disabled.
+  - **Apply to** Selection, change the selection while the report runs: the layers it previewed are reset all the same, nothing else.
+  - Values are rendered with the samples and plural form from Preview → **Sample values and plural forms**.
+  - An empty selection: "No text layers to check. Select layers, or choose Page." Run the same report in browser Figma.
 - [ ] **Pseudo-localization:** QA → **Pseudo-localize page**: every text layer in scope, linked or not, shows accented, longer text inside ⟦ ⟧ ("Pay now" → "⟦Þáý ñóŵ···⟧"); `{{name}}` stays as it is. The header says "Previewing pseudo-localization on N layers · Reset" and the layers carry the Preview badge. Variable-bound text keeps its text and is counted ("N layers use a Figma variable and kept its text."). Push says "Reset previews before pushing…". **Reset page** restores text and styles exactly. Pseudo-localizing a layer that previews `de` starts from the original English text.
-- [ ] **Language copies:** duplicate a frame per language → copies sit next to the original (inside the same section), named "<frame> · <lang>", excluded from scans and pushes; a component set is refused with "Language copies work on frames…"; refused while previews are active.
+- [ ] **Language copies:** select two top-level frames (one inside a section, one an instance of a component), **Languages** German (de) and Italian (it), **Make language copies**:
+  - Each frame gets "<frame> · de" and "<frame> · it" to its right (100 px gap, same y), in the same parent (the section frame stays inside its section), in the layers order frame, de, it. "Made 4 copies of 2 frames (N layers translated)."
+  - Linked text shows the value of that language (Draft or Published as chosen, with the variation); layers without a value keep the source text and are listed: "German (de): N layers have no value and kept the source text (key_a, key_b, …)." with **Select originals**. Variable-bound text keeps its text.
+  - Selecting only one text layer of a frame still copies and translates the whole frame.
+  - A frame containing a main component whose variant hides a text layer: in the copy (now an instance) the hidden layer is translated too; show it to check.
+  - A component or a component set selected: "Language copies work on frames; place an instance in a frame first." A text directly on the page: "Select one or more frames with text first."
+  - A preview active in one of the frames (also a hidden instance child whose main component is previewed): "Layers in these frames show a preview. Reset previews first." with **Select on canvas**; nothing is copied.
+  - Layers scans skip the copies ("Skipped N in language copies"); a push never lists them; **Sync links on this page** and the link sync after a push do not send their layers to ReRune.
+  - Selecting only a language copy: "Select one or more frames with text first." (its layers are not scanned). A duplicated copy (Cmd+D) is a normal frame again: its layers are scanned and it can be copied.
+  - Cmd+Z removes the copies of the last frame; once more, those of the frame before.
 - [ ] **Sample values:** a key with `{{name}}` previews as `[name]`. Preview → **Sample values and plural forms** → **Edit** lists the placeholders of the linked layers in scope; type `Ada` for `name`, **Apply** → the layer shows "Ada". Close and reopen the plugin: the sample is still there (it is kept per project; another project starts empty). **Clear samples** brings back `[name]`.
 - [ ] **ICU plural selector:** with the plural key, **Automatic** shows the `other` form (`en`: "0 items"). The dropdown next to `count` lists only the previewed language's categories with the count each shows (`en`: one (1), other (0); `pl`: one (1), few (2), many (0), other (0,5)). Picking **few** in `pl` shows the `few` form with 2. A typed number picks its category (`pl` 22 → few) and `#` is formatted for the language (1000 → "1,000 items" in `en`, "1.000" in `de`). `de-AT` offers the categories of `de`. A category the next language does not have (few, then `en`) falls back to **Automatic**. The Dev Mode inspect panel shows the same `other` form for plural values.
 - [ ] **max_length:** in the dashboard set **Max length** 10 on a linked key, then make the layer's text longer in Figma:

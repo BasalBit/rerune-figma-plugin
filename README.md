@@ -27,8 +27,12 @@ No AI features run inside the plugin. Keys created from Figma count toward the R
 3. **Layers:** scan the selection or the page, link layers to existing keys (search, or **Link exact matches** for texts that already exist in ReRune), or mark them to create new keys with a suggested name. Linked layers whose text is longer than the key's max length are marked **Over max length** (filter **Too long**).
 4. **Push** sends new and changed texts to ReRune as drafts after a review of every change and conflict, and can update layers whose key changed in ReRune. A change longer than the key's max length is held back until it fits.
 5. **Preview** shows a language on the canvas; **Reset** restores the original text and styles. Under **Sample values and plural forms** you give placeholders sample values (kept per project on your machine) and pick the plural form to show, from the categories of the language you preview. Values longer than their key's max length are listed after the preview.
-6. **QA:** **Pseudo-localize** replaces the letters of every text layer in scope with accented look-alikes and makes it about 30–40% longer, to find text that clips before translations exist; Reset restores it like any preview.
+6. **QA:** **Run overflow report** previews each language you pick (plus pseudo text with **Include pseudo-localization**) on the layers in scope, lists the layers whose text is clipped, truncated or runs outside its frame and the values longer than their key's max length, and resets the canvas when it ends; **Copy CSV** copies the table. **Make language copies** duplicates each frame of the selection once per language, to the right of the original, with the text in that language. **Pseudo-localize** replaces the letters of every text layer in scope with accented look-alikes and makes it about 30–40% longer, to find text that clips before translations exist; Reset restores it like any preview.
 7. **Settings:** key-name template and case style, scan options, "Upload screenshots on push", the file's Figma link, and Diagnostics (Advanced).
+
+The overflow report measures the layers in Figma, one language at a time; ReRune's server only adds the max length check. A text box of fixed size whose rendered text is more than 1.5 px taller or wider than the box (after what drop shadows, blurs and strokes can add) is **Clipped**. Text with an ending ellipsis or a line limit is measured on a temporary copy without truncation, which is removed at once (**Truncated**). Text that sizes itself and reaches more than 1.5 px past its parent frame's inner box (the frame minus its auto-layout padding) on a side the frame cannot grow is **Outside its frame**. Linked layers without a value in a language keep their source text and are not measured. The report resets exactly the layers it previewed, also when it stops early.
+
+Language copies work on top-level frames and instances (a component or component set is refused, because copying it would create new components) and are refused while a layer in those frames shows a preview. Each copy is named "<frame> · <lang>", sits in the same parent as the original (also inside a section), is marked as a language copy and is left out of scans, pushes and link sync. Text without a value in that language and variable-bound text keep the source text. Undo removes the copies of one frame at a time.
 
 Plural and ICU values are rendered with the sample values: without a sample a placeholder shows as `[name]`, and a plural message shows the form you picked or, by default, its `other` form, with `#` as a count of that form (formatted for the language). Plural categories follow the CLDR rules of the language as the browser knows them; a regional language such as `de-AT` uses the rules of `de`, as ReRune does.
 
@@ -138,8 +142,8 @@ Main and UI talk only through typed messages (`src/shared/messages.ts`). Every U
 | `text-apply` | `canvas` | no | `op-result` |
 | `preview-apply` | `canvas` | no | `op-result` |
 | `preview-reset` | `canvas` | no | `op-result` |
-| `overflow-check` | `canvas` | no | `overflow-result` (Phase 3) |
-| `language-copies` | `canvas` | no | `op-result` (Phase 3) |
+| `overflow-check` | `canvas` | no | `overflow-result` |
+| `language-copies` | `canvas` | no | `op-result` |
 | `diagnostics-write` | `canvas` | no | `diagnostics-result` |
 | `diagnostics-devmode-probe` | `devprobe` | development builds only | `diagnostics-result` |
 
@@ -154,10 +158,10 @@ Everything the plugin stores in a file is shared plugin data in the namespace `r
 | text layer | `link` | `{"v":1,"id":"<keyId>","k":"<keyName>","p":"<projectId>","src":"<hash>","nid":"<node id at link time>","t":1761550000000}`, or the tombstone `{"v":1,"none":true}` after an unlink that could not clear inherited data |
 | text layer | `preview` | the original text and styles while a preview is shown, with the `nid` it was written on |
 | text layer | `diag` | diagnostics marker (development tests only) |
-| frame | `langCopy` | marks a per-language copy of a frame (Phase 3) |
+| frame | `langCopy` | marks a language copy of a frame: `{"v":1,"nid":"<the copy's id>","lang":"de","source":"draft","variationOptionId":null,"sourceFrameId":"<original frame id>","createdAt":…}`; a marker whose `nid` is another frame's (a duplicated copy) does not count |
 | document and each page | `file` | the file's settings: ReRune server, project, the pasted Figma file link (file key, canonical URL, file name, branch key), key template and scan options |
 
-`src` is a hash of the normalised text, so the plugin can tell which side changed. `nid` lets it recognise copied layers and layers inside instances. Linked layers also get Figma's relaunch button **Open ReRune** (relaunch data), which opens the plugin on them. The plugin writes plugin data only when you act (link, unlink, push, pull, preview, reset, saving settings, write diagnostics), never during a scan and never in Dev Mode.
+`src` is a hash of the normalised text, so the plugin can tell which side changed. `nid` lets it recognise copied layers and layers inside instances. Linked layers also get Figma's relaunch button **Open ReRune** (relaunch data), which opens the plugin on them. The plugin writes plugin data only when you act (link, unlink, push, pull, preview, reset, overflow report, language copies, saving settings, write diagnostics), never during a scan and never in Dev Mode.
 
 ### Data on your machine
 

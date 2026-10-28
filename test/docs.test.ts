@@ -6,6 +6,7 @@ import pkg from "../package.json"
 import { CODEGEN_CACHE_MAX_ENTRIES, CODEGEN_CACHE_MAX_PROJECTS, CODEGEN_SOURCE_TEXT_MAX_CHARS, DATA_KEYS, STORAGE_KEYS } from "../src/shared/constants"
 import { isAllowed, MESSAGE_IMPACT } from "../src/shared/message-policy"
 import { MAIN_TO_UI_TYPES, type UiToMainType } from "../src/shared/messages"
+import { LANGUAGE_COPY_MESSAGES } from "../src/shared/node-errors"
 import readme from "../README.md?raw"
 import snippets from "../src/codegen/snippets.ts?raw"
 import fileLinkComponents from "../src/ui/components/file-link.tsx?raw"
@@ -21,6 +22,7 @@ import screenshotState from "../src/ui/state/screenshots.ts?raw"
 import pushScreen from "../src/ui/screens/push.tsx?raw"
 import previewScreen from "../src/ui/screens/preview.tsx?raw"
 import qaScreen from "../src/ui/screens/qa.tsx?raw"
+import qaState from "../src/ui/state/qa.ts?raw"
 import samplesComponent from "../src/ui/components/samples.tsx?raw"
 import samplesState from "../src/ui/state/samples.ts?raw"
 import layersState from "../src/ui/state/layers.ts?raw"
@@ -210,6 +212,46 @@ describe("TESTING.md", () => {
       expect(testing).toContain(label)
     }
     for (const label of ["Pseudo-localize", "Sample values and plural forms", "Over max length", "Too long"]) {
+      expect(readme).toContain(label)
+    }
+  })
+
+  it("names the overflow report and language copies controls and messages the plugin shows (P3.3, P3.4)", () => {
+    const ui = [qaScreen, qaState].join("\n")
+    // UI modules need DOM types, which this tsconfig has not: their texts are read from the source.
+    const constant = (name: string) => {
+      const match = qaState.match(new RegExp("export const " + name + " = \"([^\"]+)\""))
+      expect(match, name).not.toBeNull()
+      return match?.[1] ?? ""
+    }
+    const header = qaState.match(/export const CSV_HEADER = \[([^\]]+)\]/)?.[1].split(",").map((cell) => cell.trim().replace(/^"|"$/g, "")) ?? []
+    expect(header).toHaveLength(8)
+    for (const label of [
+      "Run overflow report",
+      "Include pseudo-localization",
+      "Copy CSV",
+      "Make language copies",
+      "Select originals",
+      "Clipped",
+      "Truncated",
+      "Outside its frame",
+      "past its box",
+      "cut off",
+      "characters too long",
+      "no value in this language and kept the source text",
+      "Stopped before the last language.",
+      constant("NO_FRAMES"),
+      constant("NO_LAYERS"),
+      constant("PREVIEWING_FRAMES"),
+    ]) {
+      expect(ui).toContain(label)
+      expect(testing).toContain(label)
+    }
+    for (const message of [LANGUAGE_COPY_MESSAGES.component]) {
+      expect(testing).toContain(message)
+    }
+    expect(testing).toContain(header.join(", "))
+    for (const label of ["Run overflow report", "Include pseudo-localization", "Copy CSV", "Make language copies", "Clipped", "Truncated", "Outside its frame"]) {
       expect(readme).toContain(label)
     }
   })
