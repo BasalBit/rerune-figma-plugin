@@ -19,7 +19,7 @@ import {
 } from "./node-utils"
 import { exportFrameImage, exportPlan, hasOpaqueBackground, type ExportConstraint } from "./screenshots"
 import { settingsReportEntry, syncPauseOf } from "./settings"
-import { SEGMENT_FIELDS, readSegments, restoreOriginal, type StyleSegment } from "./text-write"
+import { countPagePreviews, SEGMENT_FIELDS, readSegments, restoreOriginal, type StyleSegment } from "./text-write"
 
 // Phase 0 spike folded into the plugin (§7.21). Each test returns a JSON-friendly report; the UI shows it with
 // "Copy report". T6 runs in the codegen diagnostics language (codegen.ts).
@@ -446,7 +446,9 @@ function readFileData(node: BaseNode): { raw: string; error: string | null } {
 
 // T7-settings: `file` on root and on every page, plus the resolution for the current page (the UI uses
 // `current.differ` for "Repair settings" and `current.offerMirror` for the page mirror offer, §7.7) and whether
-// link sync and screenshot upload are paused for it (no file link, branch, suspected copy; D43).
+// link sync and screenshot upload are paused for it (no file link, branch, suspected copy; D43). The UI reads it when
+// it opens, on page changes and after resets, so `current.previews` (text layers on the page that own a preview
+// record) also tells it about previews its scan does not cover, such as those of a report the plugin was closed in.
 function t7Settings(): Report {
   const root = readFileData(figma.root)
   const pages = figma.root.children.map((page) => {
@@ -467,6 +469,7 @@ function t7Settings(): Report {
       offerMirror: resolved.offerMirror,
       settings: resolved.settings,
       syncPause: syncPauseOf(resolved.settings, figma.root.name),
+      previews: countPagePreviews(),
     },
   }
 }

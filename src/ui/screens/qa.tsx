@@ -14,6 +14,7 @@ import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops
 import { buildPseudoPreview, languageLabel, type PseudoBuild, type RenderChoices } from "../state/preview"
 import {
   amountText,
+  KEEP_OPEN_HINT,
   kindLabel,
   makeLanguageCopies,
   PSEUDO_LANGUAGE,
@@ -307,7 +308,7 @@ export function QaScreen(props: QaScreenProps) {
         <SectionTitle>Overflow report</SectionTitle>
         <Small>
           Previews each language on the layers in scope, finds text that is clipped, truncated or runs outside its frame, and lists values longer than
-          their key's max length. The canvas is reset when the report ends.
+          their key's max length. The canvas is reset when the report ends; keep the plugin open until then.
         </Small>
         <Toggle value={withPseudo} onValueChange={(value) => onSession({ withPseudo: value })} disabled={busy !== null}>
           <Small>Include pseudo-localization</Small>
@@ -329,6 +330,7 @@ export function QaScreen(props: QaScreenProps) {
           )}
         </div>
         {busy === "report" && <Loading label={progress ?? "Scanning…"} />}
+        {busy === "report" && <Small muted>{KEEP_OPEN_HINT}</Small>}
         <ErrorNote message={error} />
         {refusal !== null && (
           <Note tone="warning" actions={refusal.nodeIds.length > 0 ? <TextButton onClick={() => props.onSelect(refusal.nodeIds)}>Select on canvas</TextButton> : undefined}>

@@ -18,6 +18,7 @@ import { src } from "../shared/hash"
 import { newFileSettings, serializeDiagMarker, serializeFileSettings, serializeLink } from "../shared/plugin-data"
 import { clearFontCache } from "./fonts"
 import { runDevModeProbe, runReadDiagnostic, runWriteDiagnostic, type DiagnosticsContext } from "./diagnostics"
+import { applyPreview, resetPreview } from "./text-write"
 
 let figmaMock: FigmaMock
 
@@ -253,6 +254,21 @@ describe("T7 / T8 / T10 / T9", () => {
     expect(((await runReadDiagnostic("T7-settings", CONTEXT)) as Report).current).toMatchObject({ syncPause: { paused: true, reason: "possible_copy" } })
     figmaMock.currentPage.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.file, serializeFileSettings({ ...linked, branchKey: "BrAnCh1234567890", updatedAt: 200 }))
     expect(((await runReadDiagnostic("T7-settings", CONTEXT)) as Report).current).toMatchObject({ syncPause: { paused: true, reason: "branch" } })
+  })
+
+  it("T7 counts the text layers on the current page that own a preview record, whatever is selected", async () => {
+    const previewed = fakeText("1:1", "Pay now")
+    const other = fakeText("1:2", "Checkout")
+    const copy = fakeText("1:3", "Pay now")
+    onPage(figmaMock, [fakeFrame("1:0", "Checkout", [previewed, other, copy])], [])
+    expect(((await runReadDiagnostic("T7-settings", CONTEXT)) as Report).current).toMatchObject({ previews: 0 })
+    await applyPreview({ lang: "de", source: "draft", variationOptionId: null }, [{ nodeId: "1:1", text: "Jetzt zahlen" }], 1)
+    // A duplicate carries the record of the layer it was copied from (nid of another node): not a preview of its own.
+    copy.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview, previewed.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview))
+    expect(((await runReadDiagnostic("T7-settings", CONTEXT)) as Report).current).toMatchObject({ previews: 1 })
+    await resetPreview("page", undefined, undefined)
+    expect(previewed.characters).toBe("Pay now")
+    expect(((await runReadDiagnostic("T7-settings", CONTEXT)) as Report).current).toMatchObject({ previews: 0 })
   })
 
   it("T8 sets relaunch data on the selection", async () => {

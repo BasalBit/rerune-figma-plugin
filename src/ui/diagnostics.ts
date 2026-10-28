@@ -11,7 +11,7 @@ const READ_TESTS: Record<ReadDiagnostic, Omit<DiagnosticEntry, "test">> = {
   "T2-instances": { label: "T2 Instances", hint: "Select instances (also nested and library ones) whose main has a linked text." },
   "T3-export": { label: "T3 Export frame", hint: "Select one frame; exports JPG/PNG with and without absolute bounds." },
   "T4-export-page": { label: "T4 Export page", hint: "Exports every top-level frame on this page (up to 100)." },
-  "T7-settings": { label: "T7 File settings", hint: "Reads the ReRune file settings on the file and on every page." },
+  "T7-settings": { label: "T7 File settings", hint: "Reads the ReRune file settings on the file and on every page, and counts the previews on this page." },
   "T10-environment": { label: "T10 Environment", hint: "Editor, mode, command and API version." },
 }
 

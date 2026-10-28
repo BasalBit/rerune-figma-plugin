@@ -62,29 +62,34 @@ describe("file settings", () => {
   })
 
   it("reads the settings status from the T7 report", () => {
-    expect(parseSettingsReport({ fileName: "Chapter", current: { source: "root", differ: true, offerMirror: false, settings: current } })).toEqual({
+    expect(parseSettingsReport({ fileName: "Chapter", current: { source: "root", differ: true, offerMirror: false, settings: current, previews: 12 } })).toEqual({
       settings: current,
       source: "root",
       differ: true,
       offerMirror: false,
       rootName: "Chapter",
+      pagePreviews: 12,
     })
-    expect(parseSettingsReport({ current: { source: "none", settings: null } })).toEqual({ settings: null, source: "none", differ: false, offerMirror: false, rootName: null })
+    expect(parseSettingsReport({ current: { source: "none", settings: null } })).toEqual({ settings: null, source: "none", differ: false, offerMirror: false, rootName: null, pagePreviews: 0 })
+    // A page that could not be read (null) or an odd value counts as no preview.
+    for (const previews of [null, -1, 1.5, "3"]) {
+      expect(parseSettingsReport({ current: { source: "none", settings: null, previews } })?.pagePreviews).toBe(0)
+    }
     expect(parseSettingsReport({ current: { source: "page", settings: { v: 2 } } })?.settings).toBeNull()
     expect(parseSettingsReport(null)).toBeNull()
     expect(parseSettingsReport({})).toBeNull()
   })
 
   it("offers Repair when root and page differ, else the page mirror when it is missing or older (§7.7)", () => {
-    expect(settingsOffer({ settings: current, source: "root", differ: true, offerMirror: true, rootName: null })).toEqual({ kind: "repair", settings: current, message: REPAIR_MESSAGE, action: "Repair settings" })
-    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: true, rootName: null })).toEqual({
+    expect(settingsOffer({ settings: current, source: "root", differ: true, offerMirror: true, rootName: null, pagePreviews: 0 })).toEqual({ kind: "repair", settings: current, message: REPAIR_MESSAGE, action: "Repair settings" })
+    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: true, rootName: null, pagePreviews: 0 })).toEqual({
       kind: "mirror",
       settings: current,
       message: MIRROR_MESSAGE,
       action: "Use this file's ReRune settings on this page",
     })
-    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: false, rootName: null })).toBeNull()
-    expect(settingsOffer({ settings: null, source: "none", differ: true, offerMirror: true, rootName: null })).toBeNull()
+    expect(settingsOffer({ settings: current, source: "root", differ: false, offerMirror: false, rootName: null, pagePreviews: 0 })).toBeNull()
+    expect(settingsOffer({ settings: null, source: "none", differ: true, offerMirror: true, rootName: null, pagePreviews: 0 })).toBeNull()
     expect(settingsOffer(null)).toBeNull()
   })
 })

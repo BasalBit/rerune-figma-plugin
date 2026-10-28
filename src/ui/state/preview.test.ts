@@ -8,6 +8,7 @@ import {
   buildPseudoPreview,
   defaultLanguage,
   languageLabel,
+  leftoverPreviewNotice,
   previewKeyIds,
   previewStatus,
   previewStatusText,
@@ -214,6 +215,16 @@ describe("labels and status", () => {
     expect(previewStatusText({ lang: "de-AT", source: "draft", count: 3, mixed: false })).toBe("Previewing de-AT (draft) on 3 layers")
     expect(previewStatusText({ lang: "en", source: "pseudo", count: 1, mixed: false })).toBe("Previewing pseudo-localization on 1 layer")
     expect(previewStatusText({ lang: "en", source: "pseudo", count: 4, mixed: true })).toBe("Previewing several languages on 4 layers")
+  })
+
+  it("announces previews on the page that the scan does not show, while nothing else runs", () => {
+    const shown = { lang: "de", source: "draft" as const, count: 2, mixed: false }
+    expect(leftoverPreviewNotice({ pagePreviews: 1, scanStatus: null, busy: false })).toBe("1 layer on this page still shows a preview. Reset page brings back the original text.")
+    expect(leftoverPreviewNotice({ pagePreviews: 240, scanStatus: null, busy: false })).toBe("240 layers on this page still show a preview. Reset page brings back the original text.")
+    expect(leftoverPreviewNotice({ pagePreviews: 0, scanStatus: null, busy: false })).toBeNull()
+    // The header already shows the preview (with its own Reset), or a report or reset is running.
+    expect(leftoverPreviewNotice({ pagePreviews: 5, scanStatus: shown, busy: false })).toBeNull()
+    expect(leftoverPreviewNotice({ pagePreviews: 5, scanStatus: null, busy: true })).toBeNull()
   })
 
   it("splits reset results into edited, override and other errors", () => {

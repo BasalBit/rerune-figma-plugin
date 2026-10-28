@@ -205,6 +205,17 @@ export function previewStatusText(status: PreviewStatus): string {
   return "Previewing " + status.lang + " (" + sourceLabel(status.source) + ") on " + layers
 }
 
+// Previews on the current page that the header's status (built from the scan) does not show, such as those left by a
+// plugin closed during an overflow report (§7.18.1) while nothing is selected: text layers that own a preview record,
+// counted by main. Said only while the scan shows no preview and no task or reset runs; null otherwise.
+export function leftoverPreviewNotice(input: { pagePreviews: number; scanStatus: PreviewStatus | null; busy: boolean }): string | null {
+  if (input.pagePreviews <= 0 || input.scanStatus !== null || input.busy) {
+    return null
+  }
+  const layers = input.pagePreviews === 1 ? "1 layer on this page still shows a preview." : input.pagePreviews + " layers on this page still show a preview."
+  return layers + " Reset page brings back the original text."
+}
+
 export function sourceLabel(source: PreviewInfo["source"]): string {
   switch (source) {
     case "draft":

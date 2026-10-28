@@ -95,6 +95,9 @@ export const SCAN_FAILED = "The scan didn't finish. Try again."
 export const NO_LANGUAGES = "Pick at least one language."
 export const NO_LAYERS = "No text layers to check. Select layers, or choose Page."
 export const PREVIEWING_SCOPE = "Layers in scope show a preview. Reset previews first."
+// The report's reset runs in the UI: a plugin closed before the report ends cannot run it (main's close handler
+// cannot load fonts). On the next open the leftover previews are announced with Reset page.
+export const KEEP_OPEN_HINT = "Keep the plugin open until the report ends: closing it leaves the current language on the canvas."
 
 const KIND_LABELS: Record<ReportKind, string> = {
   clipped: "Clipped",

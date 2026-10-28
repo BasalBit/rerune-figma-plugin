@@ -41,7 +41,7 @@ import { fileLinkNotice, registerFile, type FileLinkAction } from "./state/file-
 import { createLinkSyncer, linkSyncWarning } from "./state/link-sync"
 import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, singleFlight, type ErrorGroup } from "./state/ops"
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
-import { previewStatus, resetOutcome } from "./state/preview"
+import { leftoverPreviewNotice, previewStatus, resetOutcome } from "./state/preview"
 import { cacheEntriesFromResolved } from "./state/remote"
 import type { ProjectPluralChoice } from "./state/samples"
 import {
@@ -83,11 +83,16 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const workLocked = workTask !== null
   const contextRef = useRef<NavContext>({ apiBase: init.apiBase, settings })
   contextRef.current = { apiBase: init.apiBase, settings, locked: workLocked }
+  // Re-reads the page status (settings and its count of previews) when a task ends; set once refreshStatus exists.
+  const refreshStatusRef = useRef<() => Promise<unknown>>(() => Promise.resolve(null))
   const workLock = useMemo<WorkLock>(
     () =>
       createWorkLock((holder) => {
         setWorkTask(holder)
         contextRef.current = { ...contextRef.current, locked: holder !== null }
+        if (holder === null) {
+          void refreshStatusRef.current()
+        }
       }),
     [],
   )
@@ -99,6 +104,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [editedPrompt, setEditedPrompt] = useState<{ scope: Scope; nodeIds: string[] } | null>(null)
   const [resetting, setResetting] = useState(false)
   const [offerDismissedOn, setOfferDismissedOn] = useState<string | null>(null)
+  const [leftoverDismissedOn, setLeftoverDismissedOn] = useState<string | null>(null)
   const [offerSaving, setOfferSaving] = useState(false)
   // The plural form picked on the Preview screen (§7.18.5), for this session and the project it was picked in.
   const [pluralChoice, setPluralChoice] = useState<ProjectPluralChoice | null>(null)
@@ -194,6 +200,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       return null
     }
   }
+
+  refreshStatusRef.current = refreshStatus
 
   const loadingProject = useRef<string | null>(null)
 
@@ -483,6 +491,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     }
     setBanner({ tone: outcome.otherErrors.length > 0 || outcome.overrideKept > 0 ? "warning" : "good", message: parts.join(" "), errors: groupErrors(outcome.otherErrors) })
     await workspace.scan()
+    // The page's count of previews (the note about previews the scan does not show) follows the reset.
+    await refreshStatus()
   }
 
   const resetWork = useRef(runResetPreviews)
@@ -629,6 +639,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   // Keep current text / Restore original (and the header's Reset) wait while a reset or locked work (push, preview
   // apply, pseudo-localization, overflow report, language copies) runs: a reset started then would overlap that work.
   const editedPromptBusy = resetting || workLocked
+  // Previews on this page the scan does not show (e.g. the plugin was closed during an overflow report, §7.18.1).
+  const leftover = leftoverDismissedOn === pageRef.current ? null : leftoverPreviewNotice({ pagePreviews: status?.pagePreviews ?? 0, scanStatus: previewing, busy: editedPromptBusy })
   // §7.7 Repair / page-mirror offer when the plugin opens on a page that needs it (Settings shows its own copy).
   const offer = screen !== "settings" && offerDismissedOn !== pageRef.current ? settingsOffer(status) : null
   // Why link sync is off (§7.7, §7.11); Settings shows the same state in its Figma file section.
@@ -692,6 +704,23 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             }
           >
             {layerCount(editedPrompt.nodeIds.length)} {editedPrompt.nodeIds.length === 1 ? "was" : "were"} edited during preview.
+          </Note>
+        </div>
+      )}
+      {leftover !== null && (
+        <div style={{ padding: "8px 12px 0" }}>
+          <Note
+            tone="warning"
+            actions={
+              <div style={styles.row}>
+                <TextButton onClick={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}>
+                  Reset page
+                </TextButton>
+                <TextButton onClick={() => setLeftoverDismissedOn(pageRef.current)}>Dismiss</TextButton>
+              </div>
+            }
+          >
+            {leftover}
           </Note>
         </div>
       )}

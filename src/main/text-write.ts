@@ -417,6 +417,26 @@ async function clearCopiedRecord(node: TextNode): Promise<void> {
 
 // preview-reset (§7.14 reset). Runs with skipInvisibleInstanceChildren off so hidden previewed instance
 // children are found; the flag is restored when the last overlapping reset ends.
+// Text layers on the current page that own a preview record, for the UI's "N layers on this page still show a
+// preview" (a preview left by a plugin closed during an overflow report, or by an earlier session), whatever the scan
+// covers. Uses only the criteria fast path (§1.5: it may miss some instance sublayers), so it is a hint, never a list
+// of reset targets; a page reset still scans every text layer. null when the page can't be read.
+export function countPagePreviews(): number | null {
+  try {
+    const nodes = figma.currentPage.findAllWithCriteria({ types: ["TEXT"], sharedPluginData: { namespace: PLUGIN_DATA_NAMESPACE, keys: [DATA_KEYS.preview] } })
+    let count = 0
+    for (const node of nodes) {
+      const record = parsePreviewRecord(readPreviewRaw(node))
+      if (record !== null && record.nid === node.id) {
+        count++
+      }
+    }
+    return count
+  } catch {
+    return null
+  }
+}
+
 export function resetPreview(scope: Scope, nodeIds: readonly string[] | undefined, edited: "restore" | "keep" | undefined): Promise<OpOutcome> {
   return withInvisibleInstanceChildren(async () => {
     const errors: NodeError[] = []
