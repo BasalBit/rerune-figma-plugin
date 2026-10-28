@@ -755,6 +755,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             readOnly={readOnly}
             api={api}
             bus={bus}
+            onPrefs={updatePrefs}
             onSelect={selectNodes}
             resetting={resetting}
             onApplying={setApplyingPreview}
@@ -762,6 +763,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onReset={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
             onReportReset={resetPreviewsQueued}
             pluralChoice={pluralChoice}
+            onPluralChoice={setPluralChoice}
             session={qaSession}
             onSession={(patch) => setQaSession((current) => ({ ...current, ...patch }))}
           />

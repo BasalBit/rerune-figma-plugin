@@ -1,6 +1,6 @@
 import { Button, Dropdown, SegmentedControl, Toggle } from "@create-figma-plugin/ui"
 import { h } from "preact"
-import { useRef, useState } from "preact/hooks"
+import { useMemo, useRef, useState } from "preact/hooks"
 import type { FigmaProjectDetail } from "../../shared/api-types"
 import type { ResolveSource, Scope } from "../../shared/messages"
 import { pseudoLocalize } from "../../shared/pseudo"
@@ -8,6 +8,7 @@ import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { copyText } from "../clipboard"
+import { SamplesSection, useSampleDrafts } from "../components/samples"
 import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { groupErrors, runBatched, type ErrorGroup } from "../state/ops"
 import { buildPseudoPreview, languageLabel, type PseudoBuild, type RenderChoices } from "../state/preview"
@@ -27,7 +28,7 @@ import {
   type QaDeps,
   type ReportKind,
 } from "../state/qa"
-import { activePluralChoice, projectSamples, type ProjectPluralChoice } from "../state/samples"
+import { activePluralChoice, projectSamples, samplePlaceholders, type ProjectPluralChoice } from "../state/samples"
 import type { Prefs } from "../state/settings"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
@@ -37,7 +38,8 @@ import type { Workspace, WorkspaceState } from "../state/workspace"
 //   when the report ends. Per-language table with Select, and Copy CSV.
 // - Language copies (§7.18.4, D32): one copy per language of each top-level frame of the selection.
 // - Pseudo-localization (§7.18.2, Appendix A.6) through preview-apply with source "pseudo".
-// Values render with the sample values and plural form set on the Preview screen (§7.18.5).
+// Values render with the sample values and plural form (§7.18.5), set here or on the Preview screen (the same
+// saved samples and the same session plural choice).
 
 // What the QA tab keeps while other tabs are open: the picks and the last results. `source` and `variation` start
 // from the Preview screen's last choice (undefined) until changed here.
@@ -60,6 +62,7 @@ export interface QaScreenProps {
   readOnly: boolean
   api: Pick<FigmaApi, "resolveKeys">
   bus: UiBus
+  onPrefs(patch: Partial<Prefs>): void
   onSelect(nodeIds: string[]): void
   onReset(scope: Scope, nodeIds?: string[]): Promise<void>
   onReportReset(scope: Scope, nodeIds: string[]): Promise<void>  // the report's final reset: after any running reset, never merged into it
@@ -67,6 +70,7 @@ export interface QaScreenProps {
   onApplying(applying: boolean): void     // lets the app hold other resets while previews are written
   onLock(locked: boolean): void           // tabs and Change project stay put while the report or the copies run
   pluralChoice: ProjectPluralChoice | null
+  onPluralChoice(choice: ProjectPluralChoice | null): void
   session: QaSession
   onSession(patch: Partial<QaSession>): void
 }
@@ -111,12 +115,20 @@ export function QaScreen(props: QaScreenProps) {
 
   const label = (lang: string) => reportLanguageLabel(lang, project.languages)
   const ordered = project.languages.map((language) => language.code).filter((code) => languages.includes(code))
+  const sampleDrafts = useSampleDrafts(project.id, props.prefs, props.onPrefs)
+  const placeholders = useMemo(
+    () => samplePlaceholders(props.state.result?.nodes ?? [], project.id, props.state.resolved, project.main_language),
+    [props.state.result, props.state.resolved, project.id, project.main_language],
+  )
+  // The plural selector lists the forms of the first picked language; other languages use the same pick where they
+  // have that form.
+  const pluralLang = ordered.length > 0 ? ordered[0] : null
 
   function toggleLanguage(code: string) {
     onSession({ languages: languages.includes(code) ? languages.filter((entry) => entry !== code) : [...languages, code] })
   }
 
-  function deps(): QaDeps {
+  function deps(samples: Record<string, string>): QaDeps {
     return {
       bus: props.bus,
       api: props.api,
@@ -130,7 +142,7 @@ export function QaScreen(props: QaScreenProps) {
         return names
       },
       choicesFor: (lang): RenderChoices => ({
-        samples: projectSamples(props.prefs.samples, project.id),
+        samples,
         plural: activePluralChoice(props.pluralChoice, project.id, lang),
       }),
     }
@@ -161,7 +173,7 @@ export function QaScreen(props: QaScreenProps) {
     try {
       const report = await runOverflowReport(
         {
-          ...deps(),
+          ...deps(sampleDrafts.commit()),
           reset: (nodeIds) => props.onReportReset(scope, nodeIds),
           onProgress: (step) => setProgress("Checking " + label(step.lang) + " (" + (step.index + 1) + " of " + step.total + ")…"),
           shouldStop: () => stopRef.current,
@@ -183,7 +195,7 @@ export function QaScreen(props: QaScreenProps) {
   async function runCopies() {
     start("copies")
     try {
-      const copies = await makeLanguageCopies({ ...deps(), onProgress: setProgress }, { languages: ordered, source, variationOptionId: variation, projectId: project.id })
+      const copies = await makeLanguageCopies({ ...deps(sampleDrafts.commit()), onProgress: setProgress }, { languages: ordered, source, variationOptionId: variation, projectId: project.id })
       onSession({ copies })
     } catch (caught) {
       setCopiesError({ message: userMessage(caught), nodeIds: caught instanceof QaRefusal ? caught.nodeIds : [] })
@@ -277,7 +289,16 @@ export function QaScreen(props: QaScreenProps) {
             <Dropdown value={variation ?? NO_VARIATION} options={variationOptions} disabled={busy !== null} onValueChange={(value) => onSession({ variation: value === NO_VARIATION ? null : value })} />
           </div>
         )}
-        <Small muted>Values use the sample values and plural form set on the Preview screen.</Small>
+        <SamplesSection
+          placeholders={placeholders}
+          lang={pluralLang}
+          plural={activePluralChoice(props.pluralChoice, project.id, pluralLang)}
+          samples={sampleDrafts}
+          saved={projectSamples(props.prefs.samples, project.id)}
+          disabled={busy !== null}
+          note={pluralLang === null ? "Pick a language to choose a plural form." : "Plural forms of " + label(pluralLang) + ", the first language picked."}
+          onPlural={(choice) => props.onPluralChoice(choice === null ? null : { ...choice, projectId: project.id })}
+        />
 
         <SectionTitle>Overflow report</SectionTitle>
         <Small>

@@ -1,12 +1,12 @@
 import { Button, Dropdown, SegmentedControl, Toggle } from "@create-figma-plugin/ui"
 import { h } from "preact"
-import { useEffect, useMemo, useRef, useState } from "preact/hooks"
+import { useMemo, useState } from "preact/hooks"
 import type { FigmaProjectDetail } from "../../shared/api-types"
 import type { ResolveSource, Scope } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
-import { SamplesEditor } from "../components/samples"
+import { SamplesSection, useSampleDrafts } from "../components/samples"
 import { ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { groupErrors, runBatched, type ErrorGroup } from "../state/ops"
 import {
@@ -18,7 +18,7 @@ import {
   type PreviewBuild,
   type PreviewMode,
 } from "../state/preview"
-import { activePluralChoice, projectSamples, samplePlaceholders, samplesSummary, sameSamples, withDrafts, type ProjectPluralChoice } from "../state/samples"
+import { activePluralChoice, projectSamples, samplePlaceholders, type ProjectPluralChoice } from "../state/samples"
 import type { Prefs } from "../state/settings"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
@@ -70,30 +70,12 @@ export function PreviewScreen(props: PreviewScreenProps) {
   const [error, setError] = useState<string | null>(null)
   const [applied, setApplied] = useState<Applied | null>(null)
   const [showInherited, setShowInherited] = useState(false)
-  const [showSamples, setShowSamples] = useState(false)
-  const saved = projectSamples(prefs.samples, project.id)
-  const [drafts, setDrafts] = useState<Record<string, string>>(() => ({ ...saved }))
+  const sampleDrafts = useSampleDrafts(project.id, prefs, props.onPrefs)
   const placeholders = useMemo(
     () => samplePlaceholders(props.state.result?.nodes ?? [], project.id, props.state.resolved, project.main_language),
     [props.state.result, props.state.resolved, project.id, project.main_language],
   )
   const activePlural = activePluralChoice(props.pluralChoice, project.id, lang)
-
-  // Saves the typed samples (prefs, per project) when they changed; returns the samples to render with.
-  const draftsRef = useRef(drafts)
-  draftsRef.current = drafts
-  const prefsRef = useRef(prefs)
-  prefsRef.current = prefs
-  function commitSamples(): Record<string, string> {
-    const next = withDrafts(prefsRef.current.samples, project.id, draftsRef.current)
-    const samples = projectSamples(next, project.id)
-    if (!sameSamples(samples, projectSamples(prefsRef.current.samples, project.id))) {
-      props.onPrefs({ samples: next })
-    }
-    return samples
-  }
-  // Drafts typed just before leaving the screen are saved too.
-  useEffect(() => () => void commitSamples(), [])
 
   async function apply() {
     if (lang === null || props.resetting) return
@@ -114,7 +96,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
       for (const [keyId, remote] of props.workspace.store.get().remote) {
         if (remote.key !== null) names.set(keyId, remote.key)
       }
-      const samples = commitSamples()
+      const samples = sampleDrafts.commit()
       const build = buildPreview(result.nodes, project.id, request, resolved, names, { samples, plural: activePlural })
       const written = await runBatched(props.bus, build.items, (requestId, batch) => ({ type: "preview-apply", requestId, info: build.info, items: batch }))
       setApplied({ build, done: written.done, errors: groupErrors(written.errors) })
@@ -171,34 +153,15 @@ export function PreviewScreen(props: PreviewScreenProps) {
           <Small>Show key names instead of text</Small>
         </Toggle>
         {!keysMode && (
-          <div style={styles.tightStack}>
-            <div style={styles.row}>
-              <Small muted style={styles.grow}>
-                Sample values and plural forms{placeholders.length > 0 ? " (" + placeholders.length + ")" : ""}
-              </Small>
-              <TextButton onClick={() => setShowSamples(!showSamples)}>{showSamples ? "Hide" : "Edit"}</TextButton>
-            </div>
-            {showSamples ? (
-              <SamplesEditor
-                placeholders={placeholders}
-                lang={lang}
-                drafts={drafts}
-                plural={activePlural}
-                disabled={busy !== null}
-                onDraft={(name, value) => setDrafts((current) => ({ ...current, [name]: value }))}
-                onCommit={() => void commitSamples()}
-                onPlural={(choice) => props.onPluralChoice(choice === null ? null : { ...choice, projectId: project.id })}
-                onClear={() => {
-                  draftsRef.current = {}
-                  setDrafts({})
-                  commitSamples()
-                  props.onPluralChoice(null)
-                }}
-              />
-            ) : (
-              <Small muted>{samplesSummary(placeholders, saved, activePlural, lang) ?? "Placeholders show as [name]; plural messages show their other form."}</Small>
-            )}
-          </div>
+          <SamplesSection
+            placeholders={placeholders}
+            lang={lang}
+            plural={activePlural}
+            samples={sampleDrafts}
+            saved={projectSamples(prefs.samples, project.id)}
+            disabled={busy !== null}
+            onPlural={(choice) => props.onPluralChoice(choice === null ? null : { ...choice, projectId: project.id })}
+          />
         )}
         <div style={styles.tightStack}>
           <Small muted>Apply to</Small>
