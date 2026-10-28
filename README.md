@@ -60,7 +60,7 @@ npm run watch        # the same, rebuilding on every change
 2. Run it from **Plugins → Development → ReRune** in Figma Design. In Dev Mode it is in the inspect panel's plugins, and its languages are in the Code section's language dropdown.
 3. After a rebuild, run it again (⌥⌘P on macOS, Ctrl+Alt+P on Windows) or turn on **Plugins → Development → Hot reload plugin**.
 
-Figma keys the plugin's local storage (sign-in, preferences) by the plugin ID in `package.json` → `figma-plugin.id`. It is a placeholder until the plugin is created in Figma; `TESTING.md` §0.1 explains how to get the real ID.
+Figma keys the plugin's local storage (sign-in, preferences) by the plugin ID in `package.json` → `figma-plugin.id`. The ID `1697181748239106841` was issued by Figma when the plugin was created; never change it, or every user is signed out and loses their preferences.
 
 ### Point it at a local ReRune
 

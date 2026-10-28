@@ -17,12 +17,11 @@ How to use this file:
 
 ## 0. Setup
 
-### 0.1 Plugin ID (once, before the first test)
+### 0.1 Plugin ID
 
-Figma keys `clientStorage` (sign-in, preferences, codegen cache) by the plugin ID, so get the real ID before testing and keep it.
+Figma keys `clientStorage` (sign-in, preferences, codegen cache) by the plugin ID. The real ID, `1697181748239106841`, was created in Figma desktop on 2026-10-28 and is set in `package.json` → `figma-plugin.id`. Keep it.
 
-- [ ] Figma desktop → **Plugins → Development → New plugin…**, pick **Figma design** and **Dev Mode** as editors and any template, and save it somewhere outside this repo.
-- [ ] Copy the `id` from the generated `manifest.json` into `package.json` → `figma-plugin.id` (replacing `0000000000000000000`), commit it, and delete the generated folder.
+- [ ] `manifest.json` (after `npm run build:dev`) has `"id": "1697181748239106841"`.
 
 ### 0.2 Build and import
 

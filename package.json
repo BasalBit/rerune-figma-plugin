@@ -31,7 +31,7 @@
     "vitest": "5.0.5"
   },
   "figma-plugin": {
-    "id": "0000000000000000000",
+    "id": "1697181748239106841",
     "name": "ReRune",
     "editorType": ["figma", "dev"],
     "capabilities": ["inspect", "codegen", "vscode"],
