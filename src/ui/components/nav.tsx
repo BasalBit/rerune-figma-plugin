@@ -1,6 +1,7 @@
 import { h } from "preact"
 import type { WorkspaceScreen } from "../state/navigation"
 import { previewStatusText, type PreviewStatus } from "../state/preview"
+import { waitText, type WorkTask } from "../state/work-lock"
 import { styles, TextButton } from "./ui"
 
 // Header of the workspace screens: project, selection count, tabs, and the preview status bar (§7.14).
@@ -19,14 +20,17 @@ export interface NavProps {
   selectionCount: number
   previewStatus: PreviewStatus | null
   resetDisabled?: boolean
-  // A push or pull is running: tabs and Change wait for it (its results stay on the Push screen).
-  locked?: boolean
+  // The canvas task holding the work lock (push or pull, preview apply, pseudo-localization, overflow report,
+  // language copies): tabs and Change wait for it, and a closed tab's title says what for.
+  lockedBy?: WorkTask | null
   onOpen(screen: WorkspaceScreen): void
   onChangeProject(): void
   onResetPreview(): void
 }
 
 export function Nav(props: NavProps) {
+  const lockedBy = props.lockedBy ?? null
+  const locked = lockedBy !== null
   return (
     <div style={{ borderBottom: "1px solid var(--figma-color-border)" }}>
       <div style={{ ...styles.row, padding: "8px 12px 4px" }}>
@@ -34,7 +38,7 @@ export function Nav(props: NavProps) {
           {props.projectName}
         </div>
         <span style={{ ...styles.small, ...styles.muted }}>{props.selectionCount === 1 ? "1 selected" : props.selectionCount + " selected"}</span>
-        <TextButton disabled={props.locked === true} onClick={props.onChangeProject}>
+        <TextButton disabled={locked} onClick={props.onChangeProject}>
           Change
         </TextButton>
       </div>
@@ -47,8 +51,8 @@ export function Nav(props: NavProps) {
               type="button"
               role="tab"
               aria-selected={active}
-              disabled={props.locked === true && !active}
-              title={props.locked === true && !active ? "Wait for the push to finish" : undefined}
+              disabled={locked && !active}
+              title={lockedBy !== null && !active ? waitText(lockedBy) : undefined}
               onClick={() => props.onOpen(tab.screen)}
               style={{
                 background: "none",
@@ -57,8 +61,8 @@ export function Nav(props: NavProps) {
                 color: active ? "var(--figma-color-text)" : "var(--figma-color-text-secondary)",
                 fontWeight: active ? "600" : "400",
                 padding: "6px 8px",
-                cursor: props.locked === true && !active ? "default" : "pointer",
-                opacity: props.locked === true && !active ? "0.5" : "1",
+                cursor: locked && !active ? "default" : "pointer",
+                opacity: locked && !active ? "0.5" : "1",
                 font: "inherit",
               }}
             >

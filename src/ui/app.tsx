@@ -656,7 +656,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         previewStatus={previewing}
         onOpen={(next) => go({ type: "open", screen: next })}
         onChangeProject={() => go({ type: "change-project" })}
-        locked={workLocked}
+        lockedBy={workTask}
         resetDisabled={editedPromptBusy}
         onResetPreview={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}
       />

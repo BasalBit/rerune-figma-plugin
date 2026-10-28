@@ -36,3 +36,16 @@ export function createWorkLock(onChange: (holder: WorkTask | null) => void = () 
     holder: () => current,
   }
 }
+
+// The title of a tab the lock keeps closed: what the user waits for.
+const WAIT_TEXTS: Record<WorkTask, string> = {
+  push: "Wait for the push to finish",
+  preview: "Wait for the preview to be applied",
+  pseudo: "Wait for pseudo-localization to finish",
+  report: "Wait for the overflow report to finish",
+  copies: "Wait for the language copies to finish",
+}
+
+export function waitText(task: WorkTask): string {
+  return WAIT_TEXTS[task]
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createWorkLock, type WorkTask } from "./work-lock"
+import { createWorkLock, waitText, type WorkTask } from "./work-lock"
 
 describe("work lock", () => {
   it("refuses QA actions and a push while a Preview apply is in flight", () => {
@@ -36,5 +36,13 @@ describe("work lock", () => {
     lock.release("report")
     expect(changes).toEqual(["report", null])
     expect(lock.acquire("preview")).toBe(true)
+  })
+
+  it("names the running task on locked tabs, not only a push", () => {
+    expect(waitText("push")).toBe("Wait for the push to finish")
+    expect(waitText("preview")).toBe("Wait for the preview to be applied")
+    expect(waitText("pseudo")).toBe("Wait for pseudo-localization to finish")
+    expect(waitText("report")).toBe("Wait for the overflow report to finish")
+    expect(waitText("copies")).toBe("Wait for the language copies to finish")
   })
 })
