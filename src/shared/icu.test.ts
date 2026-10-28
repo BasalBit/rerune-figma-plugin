@@ -14,6 +14,7 @@ import {
   pluralLocale,
   renderContent,
   sampleCountFor,
+  sortedVariantForms,
 } from "./icu"
 
 function message(...parts: MessagePart[]): TranslationContent {
@@ -73,7 +74,15 @@ describe("renderContent: plain values", () => {
   })
 
   it("shows [name] for placeholders without a sample", () => {
-    expect(renderContent({ value: "Hi {{name}}, pay {{ amount }}" }, { lang: "en" })).toBe("Hi [name], pay [amount]")
+    expect(renderContent({ value: "Hi {{name}}, pay {{amount}}" }, { lang: "en" })).toBe("Hi [name], pay [amount]")
+  })
+
+  it("fills only the references the server treats as placeholders and shows any other {{…}} as typed", () => {
+    // The server stores Flutter "Hello {name}, {{ spaced }} and {{user.name}}" as this value, the last two as text.
+    const value = "Hello {{name}}, {{ spaced }} and {{user.name}}"
+    expect(renderContent({ value }, { lang: "en" })).toBe("Hello [name], {{ spaced }} and {{user.name}}")
+    const samples = { name: "Ada", spaced: "S", " spaced ": "T", "user.name": "U", "2x": "V" }
+    expect(renderContent({ value: value + " {{2x}} {{}} {{_total}}" }, { lang: "en", samples })).toBe("Hello Ada, {{ spaced }} and {{user.name}} {{2x}} {{}} [_total]")
   })
 
   it("uses samples when given, also an empty one", () => {
@@ -110,6 +119,41 @@ describe("renderContent: arguments and select", () => {
     }
     expect(renderContent(message({ variant: block }), { lang: "en" })).toBe("A")
     expect(renderContent(message({ text: "x" }, { variant: { kind: "plural", variable: "n", forms: [] } }), { lang: "en" })).toBe("x")
+  })
+
+  it("breaks ties in order like the server, so the first form is the server's first form", () => {
+    // `order` is not unique through the API or MCP, and select blocks need no `other` form.
+    const tied: VariantBlock = {
+      kind: "select",
+      variable: "gender",
+      forms: [
+        { selector: "male", parts: [{ text: "He" }], order: 0 },
+        { selector: "female", parts: [{ text: "She" }], order: 0 },
+      ],
+    }
+    expect(renderContent(message({ variant: tied }), { lang: "en", samples: { gender: "robot" } })).toBe("She")
+    expect(renderContent(message({ variant: tied }), { lang: "en", samples: { gender: "male" } })).toBe("He")
+  })
+})
+
+describe("sortedVariantForms (messageformat.SortedVariantForms)", () => {
+  const selectors = (forms: [string, number][]) =>
+    sortedVariantForms(forms.map(([selector, order]) => ({ selector, parts: [], order }))).map((form) => form.selector)
+
+  it("sorts by order, then =N, the CLDR categories in order, any other selector, then by selector", () => {
+    expect(selectors([["b", 0], ["other", 0], ["=1", 0], ["a", 0], ["one", 0], ["=0", 0], ["zero", 0], ["many", 0]])).toEqual(["=0", "=1", "zero", "one", "many", "other", "a", "b"])
+    expect(selectors([["other", 0], ["=0", 1], ["one", 1]])).toEqual(["other", "=0", "one"])
+    expect(selectors([["one", 2], ["few", 1], ["two", 1]])).toEqual(["two", "few", "one"])
+  })
+
+  it("compares selectors by code point, as Go compares UTF-8 bytes", () => {
+    expect(selectors([["\u{10000}", 0], ["\uFFFF", 0], ["Z", 0], ["a", 0]])).toEqual(["Z", "a", "\uFFFF", "\u{10000}"])
+  })
+
+  it("leaves the forms it is given unchanged", () => {
+    const forms = [{ selector: "other", parts: [], order: 1 }, { selector: "one", parts: [], order: 0 }]
+    sortedVariantForms(forms)
+    expect(forms.map((form) => form.selector)).toEqual(["other", "one"])
   })
 })
 

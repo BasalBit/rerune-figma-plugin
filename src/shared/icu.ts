@@ -26,8 +26,6 @@ export function isExactCategoryName(category: string): boolean {
   return EXACT_CATEGORY_COUNTS.has(category)
 }
 
-const PLACEHOLDER = /\{\{([^{}]+)\}\}/g
-
 // Counts tried for a category: 0–200 (§7.18.5), then round numbers (French, Spanish, Italian, Portuguese and
 // Catalan "many" start at 1,000,000), then halves for categories only fractions reach (Russian or Polish "other",
 // Czech "many").
@@ -43,13 +41,16 @@ export function renderContent(content: TranslationContent | null, options: Rende
     collectCounts(content.message.parts, options, counts)
     return renderParts(content.message.parts, options, counts, null)
   }
-  return content.value.replace(PLACEHOLDER, (_match, name: string) => sampleOrLabel(name.trim(), options))
+  // Only the references the server treats as placeholders; `{{ name }}` or `{{user.name}}` show as typed, as in the app.
+  return content.value.replace(PLACEHOLDER_REFERENCE, (_match, name: string) => sampleOrLabel(name, options))
 }
 
 // The `{{name}}` references the server turns into placeholders when it creates a key (D9; messageformat
-// CollectPlainPlaceholderReferences), in text order without repeats. `{{ name }}` or `{{user.name}}` stay plain text.
+// CollectPlainPlaceholderReferences) and the codecs export as placeholders. `{{ name }}` or `{{user.name}}` stay
+// plain text.
 const PLACEHOLDER_REFERENCE = /\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g
 
+// The names of those references in text order, without repeats.
 export function placeholderNames(text: string): string[] {
   const names: string[] = []
   PLACEHOLDER_REFERENCE.lastIndex = 0
@@ -214,8 +215,32 @@ function numericSample(name: string, options: RenderOptions): number | null {
   return isFinite(count) ? count : null
 }
 
-function sortedForms(block: VariantBlock): VariantForm[] {
-  return block.forms.slice().sort((a, b) => a.order - b.order)
+// The server's canonical form order (messageformat.SortedVariantForms): by `order`, then `=N` forms, then zero, one,
+// two, few, many, other, then any other selector, then by selector (byte order of UTF-8, i.e. code point order).
+// `order` is not unique through the API or MCP, so ties decide which form is first (the "else first" fallback).
+export function sortedVariantForms(forms: readonly VariantForm[]): VariantForm[] {
+  return forms.slice().sort((a, b) => a.order - b.order || selectorRank(a.selector) - selectorRank(b.selector) || compareCodePoints(a.selector, b.selector))
+}
+
+// messageformat.selectorOrderRank
+function selectorRank(selector: string): number {
+  const rank = PLURAL_CATEGORY_ORDER.indexOf(selector)
+  if (rank !== -1) {
+    return rank
+  }
+  return selector.charAt(0) === "=" ? -1 : 100
+}
+
+// Go compares strings byte by byte; UTF-8 byte order is code point order, which UTF-16 `<` breaks above U+FFFF.
+function compareCodePoints(a: string, b: string): number {
+  const left = Array.from(a, (char) => char.codePointAt(0) as number)
+  const right = Array.from(b, (char) => char.codePointAt(0) as number)
+  for (let i = 0; i < Math.min(left.length, right.length); i++) {
+    if (left[i] !== right[i]) {
+      return left[i] - right[i]
+    }
+  }
+  return left.length - right.length
 }
 
 function formBySelector(forms: readonly VariantForm[], selector: string): VariantForm | undefined {
@@ -268,7 +293,7 @@ function collectCounts(parts: readonly MessagePart[], options: RenderOptions, co
     if (block === undefined || block === null) {
       continue
     }
-    const forms = sortedForms(block)
+    const forms = sortedVariantForms(block.forms)
     if (block.kind === "plural" && !counts.values.has(block.variable)) {
       const shape: PluralShape = { selectors: forms.map((form) => form.selector), offset: block.offset ?? 0 }
       const chosen = options.plural?.variable === block.variable ? options.plural.category : null
@@ -305,7 +330,7 @@ function renderParts(parts: readonly MessagePart[], options: RenderOptions, coun
 }
 
 function renderVariant(block: VariantBlock, options: RenderOptions, counts: Counts, pound: string | null): string {
-  const forms = sortedForms(block)
+  const forms = sortedVariantForms(block.forms)
   if (forms.length === 0) {
     return ""
   }

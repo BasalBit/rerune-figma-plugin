@@ -1,6 +1,6 @@
 import type { FigmaApi } from "../api/figma-api"
 import type { FigmaResolvedKey, MessagePart, TranslationContent } from "../../shared/api-types"
-import { choiceCount, formatCount, isExactCategoryName, NO_PLURAL_SHAPE, PLURAL_CATEGORY_ORDER, placeholderNames, pluralCategories, type PluralChoice, type PluralShape } from "../../shared/icu"
+import { choiceCount, formatCount, isExactCategoryName, NO_PLURAL_SHAPE, PLURAL_CATEGORY_ORDER, placeholderNames, pluralCategories, sortedVariantForms, type PluralChoice, type PluralShape } from "../../shared/icu"
 import type { ResolveSource, ScannedNode } from "../../shared/messages"
 import { previewTargets, resolveForPreview } from "./preview"
 
@@ -27,7 +27,7 @@ function walk(parts: readonly MessagePart[], visit: (part: MessagePart) => void)
   for (const part of parts) {
     visit(part)
     if (part.variant !== undefined) {
-      for (const form of part.variant.forms.slice().sort((a, b) => a.order - b.order)) {
+      for (const form of sortedVariantForms(part.variant.forms)) {
         walk(form.parts, visit)
       }
     }
@@ -63,7 +63,7 @@ export function pluralShapes(nodes: readonly ScannedNode[], projectId: string, r
       }
       const current = shapes.get(variant.variable)
       const selectors = current === undefined ? [] : current.selectors.slice()
-      for (const form of variant.forms.slice().sort((a, b) => a.order - b.order)) {
+      for (const form of sortedVariantForms(variant.forms)) {
         if (!selectors.includes(form.selector)) selectors.push(form.selector)
       }
       shapes.set(variant.variable, { selectors, offset: current === undefined ? variant.offset ?? 0 : current.offset })
@@ -116,7 +116,7 @@ export function samplePlaceholders(
           add(part.arg.name, "text")
         } else if (part.variant !== undefined) {
           const variant = part.variant
-          const selectors = variant.forms.slice().sort((a, b) => a.order - b.order).map((form) => form.selector)
+          const selectors = sortedVariantForms(variant.forms).map((form) => form.selector)
           if (variant.kind === "plural") {
             add(variant.variable, "plural", [], { selectors, offset: variant.offset ?? 0 })
           } else {

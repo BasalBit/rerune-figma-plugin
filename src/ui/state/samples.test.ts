@@ -95,6 +95,24 @@ describe("samplePlaceholders", () => {
     ])
   })
 
+  it("lists select options and plural selectors in the server's form order, also when orders tie", () => {
+    const tied: TranslationContent = {
+      value: "",
+      message: {
+        parts: [
+          { variant: { kind: "select", variable: "gender", forms: [{ selector: "male", parts: [], order: 0 }, { selector: "female", parts: [], order: 0 }, { selector: "other", parts: [], order: 0 }] } },
+          { variant: { kind: "plural", variable: "count", forms: [{ selector: "other", parts: [], order: 0 }, { selector: "one", parts: [], order: 0 }, { selector: "=0", parts: [], order: 0 }] } },
+        ],
+      },
+    }
+    const nodes = [linkedNode("1:1", "a", { keyId: keyId(1), keyName: "a", syncedText: "a" })]
+    const resolved = new Map([[keyId(1), key(keyId(1), tied, ["gender", "count"])]])
+    expect(samplePlaceholders(nodes, PROJECT_ID, resolved, "en")).toEqual([
+      { name: "gender", kind: "select", options: ["other", "female", "male"], plural: null },
+      { name: "count", kind: "plural", options: [], plural: { selectors: ["=0", "one", "other"], offset: 0 } },
+    ])
+  })
+
   it("skips keys without a loaded state, group keys and keys without a main value", () => {
     const nodes = [
       linkedNode("1:1", "a", { keyId: keyId(1), keyName: "a", syncedText: "a" }),
