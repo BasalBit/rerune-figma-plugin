@@ -130,15 +130,15 @@ describe("CI workflow (.github/workflows/ci.yml)", () => {
 })
 
 describe("CHANGELOG.md", () => {
-  it("follows Keep a Changelog with one entry per phase", () => {
+  it("follows Keep a Changelog with an entry for the package version below Unreleased", () => {
     expect(changelog).toContain("[Keep a Changelog]")
-    expect(changelog).toContain("## [Unreleased]")
-    for (const phase of ["### Phase 3: QA and launch preparation", "### Phase 2: context and handoff", "### Phase 1: MVP"]) {
-      expect(changelog).toContain(phase)
+    const unreleased = changelog.indexOf("## [Unreleased]")
+    const entry = changelog.indexOf("## [" + pkg.version + "]")
+    expect(unreleased).toBeGreaterThan(-1)
+    expect(entry).toBeGreaterThan(unreleased)
+    const body = changelog.slice(entry)
+    for (const text of ["### Added", "### Security", "#### Dev Mode (full build only)", "`npm run zip:design-only`", "`" + pkg["figma-plugin"].id + "`"]) {
+      expect(body).toContain(text)
     }
-    expect(changelog.indexOf("### Phase 3")).toBeLessThan(changelog.indexOf("### Phase 2"))
-    expect(changelog.indexOf("### Phase 2")).toBeLessThan(changelog.indexOf("### Phase 1"))
-    expect(changelog).toContain("`" + pkg.version + "`")
-    expect(changelog).toContain("`npm run zip:design-only`")
   })
 })

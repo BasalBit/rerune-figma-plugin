@@ -4,47 +4,60 @@ All notable changes to the ReRune Figma plugin are recorded here. The format fol
 
 ## [Unreleased]
 
-Nothing has been published to Figma Community yet. The first release will be `0.1.0` (the `version` in `package.json`) and contain the three phases below. Until Dev Mode is tested on a paid Figma plan (`TESTING.md` §5.5, §5.6 and S14), the release is the design-only build (`npm run zip:design-only`).
+Changes made after `0.1.0` go here.
 
-### Phase 3: QA and launch preparation (2026-10-28)
+## [0.1.0] - not yet published
 
-#### Added
+The first release of ReRune for Figma. It brings together the three development phases: the MVP (2026-10-27), context and handoff (2026-10-28), and QA and launch preparation (2026-10-28). It is not in Figma Community yet. When it is published, this heading gets the publish date.
 
-- **Sample values and plural forms** (Preview and QA tabs): sample values for placeholders, kept per project on your machine, and a plural-form selector limited to the CLDR categories of the previewed language, each with the count it shows. ICU messages render with them (`=N` forms, `#` with offsets, select and choice, forms in ReRune's order). In plain values only the `{{name}}` references ReRune treats as placeholders take a sample; `{{ name }}` or `{{user.name}}` shows as typed, as in the app. A `zero`, `one` or `two` form in a language without that category (Flutter's `=0`, `=1`, `=2` as ReRune stores them) shows for exactly 0, 1 or 2, as in Flutter and i18next.
-- **Pseudo-localization** (QA tab): accented, about 30–40% longer text on every text layer in scope, reset like any preview.
-- **Overflow report** (QA tab): previews each chosen language (and optionally pseudo text) in turn, lists clipped, truncated and outside-its-frame text and values over the key's max length, copies the table as CSV, and resets the canvas when it ends, also after Stop or an error; the whole report is one undo step. It starts only when no layer in scope shows a preview. The reset runs in the plugin window, so keep it open until the report ends: previews left by closing it mid-report are announced the next time the plugin opens on that page ("N layers on this page still show a preview.", with **Reset page**).
-- **Language copies** (QA tab): duplicates each selected top-level frame or instance once per language, next to the original and in the same parent, with that language's text. Copies are left out of scans, pushes and link sync.
-- **max_length warnings** in Layers ("Over max length", filter **Too long**), Push (changes over the limit are held back) and Preview.
-- **Design-only build** (`npm run build:design-only`, `npm run zip:design-only`, `RERUNE_DEV_MODE=off`): a manifest with `editorType ["figma"]` and no Dev Mode capabilities or codegen languages, for releases on which Dev Mode was not tested. It keeps no codegen cache.
-- Release tooling: GitHub Actions CI (typecheck, lint, tests, both release zips as artifacts, a release check of each manifest and bundle in `scripts/check-build.mjs`), `COMMUNITY_LISTING.md`, placeholder listing images in `listing/` (made by `scripts/listing-placeholders.mjs`), this changelog.
+Until Dev Mode has been tested on a paid Figma plan (`TESTING.md` §5.5, §5.6 and spike S14), the release is the design-only build (`npm run zip:design-only`). It has everything below except the Dev Mode section, and it works on every Figma plan, including the free Starter plan, for anyone who can edit the file.
 
-#### Security
+### Added
 
-- Production builds open only `https://` links. `http://localhost` and `http://127.0.0.1` links open in development builds only, and the production bundle no longer contains the local-link pattern.
+#### Sign-in and projects
 
-### Phase 2: context and handoff (2026-10-28)
+- **Sign in with ReRune:** the plugin shows a code, you confirm it in the ReRune web app, and you never type a password into Figma. The plugin shows "Signed in as" with **Not me**, lets you sign out, and asks you to sign in again when a session ends.
+- **Projects:** pick the file's ReRune project once. The choice is stored in the file for everyone who opens it with the plugin.
 
-#### Added
+#### Layers and push
 
-- **File link:** paste the file's Figma link once (Project screen or Settings → Figma file). Branch files and suspected file copies pause link sync and screenshot upload until the link is confirmed.
-- **Link sync:** ReRune learns which layers show which key after every link, unlink and push, and on **Sync links on this page**. Links whose layer is not found are listed and removed only on request.
-- **Screenshots on push** ("Upload screenshots on push", on by default): an image of each changed top-level frame with a box for every linked layer (JPG, or PNG without an opaque fill; at most 4096 px and 2 MB), uploaded one by one with progress and Stop. Never for sandbox accounts.
-- **Dev Mode inspect panel:** the linked keys of the selection with status, max length and values in every project language (Draft or Published), snippets for React (i18next), Flutter, Android, iOS and Angular with **Copy code**, and **Open in ReRune**.
-- **Dev Mode Code section:** the same snippets, built from the file's links and a local cache, without network calls.
+- **Layers:** scan the selection or the page. Hidden, locked, numbers-only and `_` layers are skipped by default. Link text layers to keys (search, or **Link exact matches**), or mark layers to create keys. New key names follow your project's naming pattern.
+- **Push:** first review new texts, changes made in Figma or in ReRune, conflicts, copied layers and missing keys. Then the plugin saves them as drafts of the main language in ReRune. Nothing is published from Figma. Keys created from Figma count toward your ReRune plan's key limit.
+- **Components:** links on a main component show on its instances. Instance text that was changed (overridden) counts as unlinked.
+- **Max length warnings** in Layers ("Over max length", filter **Too long**), Push (changes over the key's limit are held back) and Preview.
+- One canvas task runs at a time, and each action can be undone with one Undo.
 
-#### Changed
+#### Preview
 
-- The real plugin ID `1697181748239106841` replaces the placeholder ID.
+- **Preview** any project language on the canvas: draft or published, regional languages with their inherited values, and variations. See which translations are missing, then reset to the original text and styles.
+- **Sample values and plural forms** (Preview and QA tabs): give placeholders sample values (kept per project on your machine), and pick a plural form from the forms of the previewed language, each labelled with the count it shows. ICU messages (plural, select, `#`) render as they do in ReRune. In plain values only `{{name}}` references take a sample.
 
-### Phase 1: MVP (2026-10-27)
+#### QA
 
-#### Added
+- **Overflow report:** previews each chosen language in turn (and pseudo text, if you want), then lists clipped, truncated and outside-its-frame text and values over the key's max length. You can copy the table as CSV. When the report ends, also after **Stop** or an error, the original text comes back, and one Undo covers the whole report. Keep the plugin open until the report ends. If you close it early, the plugin tells you about the leftover previews the next time it opens on that page and offers **Reset page**.
+- **Pseudo-localization:** shows accented text about 30–40% longer on every text layer in scope. Reset it like any preview.
+- **Language copies:** makes one copy of each selected top-level frame per language, next to the original, with that language's text. Copies are left out of scans, pushes and link sync.
 
-- **Sign in with ReRune:** pairing with the ReRune dashboard (code shown in the plugin, confirmed in the browser), "Signed in as" with **Not me**, sign out, and sign-in again after a session ends.
-- **Projects:** pick the file's ReRune project; the choice is stored in the file for everyone who opens it with the plugin.
-- **Layers:** scan the selection or the page in batches (hidden, locked, numeric-only and `_` layers skipped by default), link layers to keys (search, **Link exact matches**), and mark layers to create keys with names that follow the project's dominant naming pattern.
-- **Push:** a review of new texts, changes made in Figma or in ReRune, conflicts, copied layers and missing keys, then drafts of the main language in ReRune. Nothing is published from Figma. Keys created from Figma count toward the plan's key limit.
-- **Preview** any project language (draft or published, inherited regional values, variations) on the canvas, list missing translations, and reset to the original text and styles.
-- Component and instance handling: links on main components show on their instances; overridden instance text counts as unlinked.
-- **Diagnostics** (Settings → Advanced): the Figma behaviour tests T1–T10 and a Network check, each with Copy report.
-- `README.md`, `TESTING.md` (manual test plan), MIT licence.
+#### Context for translators
+
+- **File link:** paste the file's Figma link once (Project screen, or Settings → Figma file). In a branch or a suspected copy of the file, link sync and screenshots wait until you confirm the link.
+- **Link sync:** ReRune learns which layers show which key after every link, unlink and push, and when you click **Sync links on this page**. Translators then see where each key is used. Links whose layer is gone are listed and removed only when you ask.
+- **Screenshots on push** ("Upload screenshots on push", on by default): uploads an image of each changed top-level frame, with a box around each linked layer, and shows progress and **Stop**. Sandbox accounts never upload images.
+
+#### Dev Mode (full build only)
+
+Needs a paid Figma plan with a Dev or Full seat. Dev Mode is read-only.
+
+- **Inspect panel:** the linked keys of the selection with status, max length and values in every language (Draft or Published), code snippets for React (i18next), Flutter, Android, iOS and Angular with **Copy code**, and **Open in ReRune**.
+- **Code section:** the same snippets, built from the file's links and a local cache, without network requests.
+
+#### Help and releases
+
+- **Diagnostics** (Settings → Advanced): Figma behaviour tests and a Network check, each with Copy report.
+- Two release builds with the same plugin ID (`1697181748239106841`), so a later update can switch between them: the design-only build (`npm run zip:design-only`: Figma Design only, no Dev Mode parts, no codegen cache) and the full build (`npm run zip`). GitHub Actions checks, tests and packs both on every push to `main`.
+- `README.md`, `TESTING.md` (manual test plan), `COMMUNITY_LISTING.md` and the MIT licence.
+
+### Security
+
+- The plugin connects only to `https://rerune.io/api/`. Your plugin token stays in Figma's plugin storage on your device and is sent only to the ReRune API. It cannot publish.
+- Release builds open only `https://` links. `http://localhost` and `http://127.0.0.1` links open in development builds only.
