@@ -4,6 +4,7 @@ import overrideManifest from "../build-figma-plugin.manifest.js"
 import pkg from "../package.json"
 import { PRODUCTION_API_BASE, releaseProblems, VARIANTS } from "../scripts/check-build.mjs"
 import ci from "../.github/workflows/ci.yml?raw"
+import changelog from "../CHANGELOG.md?raw"
 import gitignore from "../.gitignore?raw"
 import nvmrc from "../.nvmrc?raw"
 
@@ -125,5 +126,19 @@ describe("CI workflow (.github/workflows/ci.yml)", () => {
 
   it("only reads the repository", () => {
     expect(ci).toMatch(/^permissions:\n {2}contents: read$/m)
+  })
+})
+
+describe("CHANGELOG.md", () => {
+  it("follows Keep a Changelog with one entry per phase", () => {
+    expect(changelog).toContain("[Keep a Changelog]")
+    expect(changelog).toContain("## [Unreleased]")
+    for (const phase of ["### Phase 3: QA and launch preparation", "### Phase 2: context and handoff", "### Phase 1: MVP"]) {
+      expect(changelog).toContain(phase)
+    }
+    expect(changelog.indexOf("### Phase 3")).toBeLessThan(changelog.indexOf("### Phase 2"))
+    expect(changelog.indexOf("### Phase 2")).toBeLessThan(changelog.indexOf("### Phase 1"))
+    expect(changelog).toContain("`" + pkg.version + "`")
+    expect(changelog).toContain("`npm run zip:design-only`")
   })
 })
