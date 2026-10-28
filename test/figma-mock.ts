@@ -431,7 +431,7 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
       if (start >= end) {
         throw new Error("getRangeAllFontNames: empty range")
       }
-      return uniqueFonts(rangeStyles(start, end))
+      return deepFreeze(uniqueFonts(rangeStyles(start, end)))
     },
     getStyledTextSegments(fields: string[], start = 0, end = value.length): Record<string, unknown>[] {
       const segments: Record<string, unknown>[] = []
@@ -448,7 +448,7 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
           segments.push({ characters: value.slice(i, i + 1), start: i, end: i + 1, ...picked })
         }
       }
-      return JSON.parse(JSON.stringify(segments)) as Record<string, unknown>[]
+      return deepFreeze(JSON.parse(JSON.stringify(segments)) as Record<string, unknown>[])
     },
     setRangeFontName: setRange("fontName"),
     setRangeFontSize: setRange("fontSize"),
@@ -536,6 +536,17 @@ export function followText(sublayer: FakeText, source: FakeText, instance: FakeI
     enumerable: true,
     configurable: true,
   })
+}
+
+// Figma hands out read-only values: arrays and objects from the API are frozen, so mutating them throws.
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const child of Object.values(value)) {
+      deepFreeze(child)
+    }
+  }
+  return value
 }
 
 function uniqueFonts(styles: FakeStyle[]): FakeFont[] {

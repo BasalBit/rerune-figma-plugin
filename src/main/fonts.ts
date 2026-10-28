@@ -28,14 +28,15 @@ function isFontName(value: unknown): value is FontName {
   return typeof value === "object" && value !== null && typeof (value as FontName).family === "string" && typeof (value as FontName).style === "string"
 }
 
-// Every font currently used by the node; an empty node reports its fontName (unless mixed).
+// Every font currently used by the node; an empty node reports its fontName (unless mixed). Figma returns a
+// frozen array, so callers get a copy they can extend.
 export function nodeFonts(node: TextNode): FontName[] {
   const length = node.characters.length
   if (length === 0) {
     const fontName = node.fontName
     return fontName !== figma.mixed && isFontName(fontName) ? [fontName] : []
   }
-  return node.getRangeAllFontNames(0, length)
+  return [...node.getRangeAllFontNames(0, length)]
 }
 
 export async function loadFonts(fonts: readonly unknown[]): Promise<void> {

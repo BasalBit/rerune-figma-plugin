@@ -54,6 +54,14 @@ describe("node fonts", () => {
     expect(nodeFonts(node as unknown as TextNode)).toEqual([REGULAR])
   })
 
+  it("returns a copy of Figma's frozen font list, so stored segment fonts can be added", async () => {
+    const node = fakeText("1:1", "Pay")
+    expect(Object.isFrozen(node.getRangeAllFontNames(0, 3))).toBe(true)
+    expect(Object.isFrozen(nodeFonts(node as unknown as TextNode))).toBe(false)
+    figmaMock.loadedFonts.add("Inter\u0000Bold")
+    await expect(loadNodeFonts(node as unknown as TextNode, [{ fontName: BOLD }])).resolves.toBeUndefined()
+  })
+
   it("loads current fonts plus stored segment fonts", async () => {
     const node = fakeText("1:1", "Pay")
     node.styles = node.styles.map(() => defaultStyle({ fontName: { family: "Roboto", style: "Medium" } }))
