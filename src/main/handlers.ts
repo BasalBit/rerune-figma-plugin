@@ -54,11 +54,17 @@ export async function buildInit(context: MainContext): Promise<MainToUiOf<"init"
 }
 
 const EXTERNAL_URL = /^https:\/\/[^\s]+$/i
-const LOCAL_URL = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/[^\s]*)?$/i
+// Only development builds open the local dashboard (http://localhost:3000). esbuild folds the condition, so production
+// bundles do not even contain the pattern.
+const LOCAL_URL = __RERUNE_ENV__ === "development" ? /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/[^\s]*)?$/i : null
 
 // figma.openExternal is the only way to open a browser in the desktop app and in VS Code (tooling map §3.3).
-export function isAllowedExternalUrl(url: string): boolean {
-  return EXTERNAL_URL.test(url) || LOCAL_URL.test(url)
+// Production builds open https links only; development builds also open http://localhost and http://127.0.0.1.
+export function isAllowedExternalUrl(url: string, env: BuildEnv): boolean {
+  if (EXTERNAL_URL.test(url)) {
+    return true
+  }
+  return env === "development" && LOCAL_URL !== null && LOCAL_URL.test(url)
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -139,7 +145,7 @@ export function registerHandlers(bus: MainBus, context: MainContext): void {
     bus.send({ type: "op-result", requestId: message.requestId, ok: true, done: 1, errors: [] })
   })
   bus.on("open-external", (message) => {
-    if (!isAllowedExternalUrl(message.url)) {
+    if (!isAllowedExternalUrl(message.url, context.env)) {
       throw new Error("Only web links can be opened")
     }
     figma.openExternal(message.url)

@@ -116,14 +116,16 @@ const READ_DIAGNOSTICS: ReadDiagnostic[] = ["T1-check", "T2-instances", "T3-expo
 
 // Every message Dev Mode accepts (impact ui or read), with real payloads for the fixture file. The list must cover
 // every such type: a ui or read message added to the impact map without an entry here fails the coverage test.
-function acceptedMessages(fixture: Fixture): UiToMain[] {
+function acceptedMessages(fixture: Fixture, env: BuildEnv = "development"): UiToMain[] {
   const ids = fixture.texts.map((text) => text.id)
+  // Production builds open https links only (the local dashboard is development-only).
+  const dashboardBase = env === "development" ? "http://localhost:3000" : "https://rerune.io"
   return [
     { type: "ui-ready" },
     { type: "auth-save", auth: AUTH },
     { type: "prefs-save", prefs: { inspectPlatform: "ios" } },
     { type: "cache-save", projectId: PROJECT_ID, entries: [{ keyId: keyId(2), k: "key_2", placeholders: [], sourceText: "Checkout" }] },
-    { type: "open-external", url: "http://localhost:3000/translator/translations/" + PROJECT_ID + "?key=" + keyId(2) },
+    { type: "open-external", url: dashboardBase + "/translator/translations/" + PROJECT_ID + "?key=" + keyId(2) },
     { type: "notify", message: "Copied" },
     { type: "resize", width: 320, height: 600 },
     { type: "select-nodes", nodeIds: ids },
@@ -245,7 +247,7 @@ describe("messages Dev Mode accepts never change the document", () => {
     const post = (message: MainToUi) => sent.push(message)
     const bus = createMainBus(editorType, env, post)
     registerHandlers(bus, context(editorType, env, post))
-    for (const message of acceptedMessages(fixture)) {
+    for (const message of acceptedMessages(fixture, env)) {
       await bus.dispatch(message)
       await settle()
     }

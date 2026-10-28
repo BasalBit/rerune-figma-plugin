@@ -118,8 +118,33 @@ describe("ui handlers", () => {
     await bus.dispatch({ type: "open-external", url: "javascript:alert(1)" })
     expect(figmaMock.openExternal).toHaveBeenCalledTimes(1)
     expect(sent).toEqual([{ type: "handler-error", forType: "open-external", message: "Only web links can be opened" }])
-    expect(isAllowedExternalUrl("https://rerune.io/register")).toBe(true)
-    expect(isAllowedExternalUrl("http://evil.example")).toBe(false)
+  })
+
+  it("opens http://localhost and http://127.0.0.1 links only in development builds", async () => {
+    const local = ["http://localhost:3000/figma/connect?code=K7P4QX", "http://127.0.0.1:3000/register", "http://localhost", "http://LOCALHOST:8080/"]
+    for (const url of local) {
+      expect(isAllowedExternalUrl(url, "development"), url).toBe(true)
+      expect(isAllowedExternalUrl(url, "production"), url).toBe(false)
+    }
+    for (const env of ["production", "development"] as const) {
+      expect(isAllowedExternalUrl("https://rerune.io/register", env)).toBe(true)
+      expect(isAllowedExternalUrl("https://rerune.io/translator/translations/p?key=k", env)).toBe(true)
+      for (const url of ["http://evil.example", "http://localhost.evil.example/", "http://127.0.0.1.evil.example", "http://localhost:3000/a b", "javascript:alert(1)", "file:///etc/passwd", "https://", ""]) {
+        expect(isAllowedExternalUrl(url, env), env + " " + url).toBe(false)
+      }
+    }
+
+    const production = createMainBus("figma", "production", (message) => sent.push(message))
+    registerHandlers(production, { ...context(), env: "production", apiBase: "https://rerune.io/api", dashboardBase: "https://rerune.io" })
+    await production.dispatch({ type: "open-external", url: "http://localhost:3000/figma/connect?code=K7P4QX" })
+    await production.dispatch({ type: "open-external", url: "http://127.0.0.1:3000/figma/connect?code=K7P4QX" })
+    expect(figmaMock.openExternal).not.toHaveBeenCalled()
+    expect(sent).toEqual([
+      { type: "handler-error", forType: "open-external", message: "Only web links can be opened" },
+      { type: "handler-error", forType: "open-external", message: "Only web links can be opened" },
+    ])
+    await production.dispatch({ type: "open-external", url: "https://rerune.io/figma/connect?code=K7P4QX" })
+    expect(figmaMock.openExternal).toHaveBeenCalledWith("https://rerune.io/figma/connect?code=K7P4QX")
   })
 
   it("notifies with at most 100 characters", async () => {
