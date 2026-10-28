@@ -7,7 +7,7 @@ import type { OverflowItem } from "../../shared/overflow"
 import { pseudoLocalize } from "../../shared/pseudo"
 import { ApiError } from "../api/client"
 import { createUiBus } from "../bus"
-import type { ScanResult } from "./ops"
+import { singleFlight, type ScanResult } from "./ops"
 import {
   amountText,
   checkOverflow,
@@ -21,6 +21,7 @@ import {
   NO_LANGUAGES,
   NO_LAYERS,
   PREVIEWING_FRAMES,
+  PREVIEWING_SCOPE,
   PSEUDO_LANGUAGE,
   QaRefusal,
   reportCsv,
@@ -200,17 +201,62 @@ describe("runOverflowReport (§7.18.1)", () => {
   it("resets what it wrote when a later language fails, and reports the error", async () => {
     const main = fakeMain()
     const api = fakeApi(CATALOG)
-    api.resolveKeys.mockImplementation(async (_projectId: string, body: FigmaResolveRequest) => {
+    const resolveCatalog = api.resolveKeys.getMockImplementation()
+    api.resolveKeys.mockImplementation(async (projectId: string, body: FigmaResolveRequest) => {
       if (body.languages[0] === "it") throw new ApiError(500, null, "boom", null)
-      return { source: "draft", variation_option: null, missing_key_ids: [], keys: [] }
+      return (resolveCatalog as NonNullable<typeof resolveCatalog>)(projectId, body)
     })
     const { deps, reset } = overflowDeps(main, api)
     const report = await runOverflowReport(deps, REQUEST)
     expect(report.stopped).toBe("error")
     expect(report.error).toBe("ReRune had a problem. Try again.")
     expect(report.languages.map((language) => language.lang)).toEqual(["de"])
-    // de had no values: nothing was written, so nothing to reset.
+    expect((main.sent[0] as Extract<UiToMain, { type: "preview-apply" }>).items.map((item) => item.nodeId)).toEqual(["1:1", "1:2", "1:3"])
+    // de wrote three layers before it failed: the reset covers all of them.
+    expect(reset).toHaveBeenCalledTimes(1)
+    expect([...reset.mock.calls[0][0]].sort()).toEqual(["1:1", "1:2", "1:3"])
+  })
+
+  it("still resets a layer an earlier language wrote when a later language fails on it", async () => {
+    // Main keeps the earlier record when a write fails, so 1:2 still shows German after it fails in it.
+    const main = fakeMain({ applyErrors: (message) => (message.info.lang === "it" ? [{ nodeId: "1:2", code: "write_failed", message: "Figma couldn't change this layer." }] : []) })
+    const { deps, reset } = overflowDeps(main, fakeApi(CATALOG))
+    const report = await runOverflowReport(deps, REQUEST)
+    expect(report.languages[1].errors.map((error) => error.nodeId)).toEqual(["1:2"])
+    // Not measured in it (it shows German), but reset at the end.
+    expect((main.sent[3] as Extract<UiToMain, { type: "overflow-check" }>).nodeIds).toEqual(["1:1"])
+    expect([...reset.mock.calls[0][0]].sort()).toEqual(["1:1", "1:2", "1:3"])
+  })
+
+  it("refuses to run while layers in scope show a preview, and writes nothing", async () => {
+    const main = fakeMain()
+    const previewing = [NODES[0], { ...NODES[1], preview: { lang: "de", source: "draft" as const, variationOptionId: null, appliedAt: 1 } }, NODES[2]]
+    const { deps, reset } = overflowDeps(main, fakeApi(CATALOG), { scan: vi.fn(async (scope: Scope) => scanOf(previewing, scope)) })
+    const refused = await runOverflowReport(deps, REQUEST).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(QaRefusal)
+    expect(refused).toMatchObject({ message: PREVIEWING_SCOPE, nodeIds: ["1:2"] })
+    expect(main.sent).toEqual([])
     expect(reset).not.toHaveBeenCalled()
+  })
+
+  it("resets its own layers after a reset that was already running (queued, never merged into it)", async () => {
+    const main = fakeMain()
+    const work = vi.fn<(nodeIds: string[]) => Promise<void>>()
+    let releaseOther: () => void = () => {}
+    work.mockImplementationOnce(() => new Promise<void>((resolve) => (releaseOther = resolve)))
+    work.mockImplementation(async () => {})
+    const flight = singleFlight(work)
+    // Restore original of the edited-during-preview note, started while the report runs.
+    const other = flight.run(["9:9"])
+    const { deps } = overflowDeps(main, fakeApi(CATALOG), { reset: (nodeIds) => flight.queue(nodeIds) })
+    const pending = runOverflowReport(deps, { ...REQUEST, languages: ["de"] })
+    await vi.waitFor(() => expect(main.sent.map((message) => message.type)).toEqual(["preview-apply", "overflow-check"]))
+    expect(work).toHaveBeenCalledTimes(1)
+    releaseOther()
+    await other
+    const report = await pending
+    expect(report.resetError).toBeNull()
+    expect(work.mock.calls.map((call) => call[0])).toEqual([["9:9"], ["1:1", "1:2", "1:3"]])
   })
 
   it("counts a batch that never answered as written, so the reset still covers it", async () => {

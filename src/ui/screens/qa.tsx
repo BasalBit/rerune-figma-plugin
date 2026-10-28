@@ -62,6 +62,7 @@ export interface QaScreenProps {
   bus: UiBus
   onSelect(nodeIds: string[]): void
   onReset(scope: Scope, nodeIds?: string[]): Promise<void>
+  onReportReset(scope: Scope, nodeIds: string[]): Promise<void>  // the report's final reset: after any running reset, never merged into it
   resetting: boolean                      // a reset started elsewhere (Nav, Push, Preview) is running
   onApplying(applying: boolean): void     // lets the app hold other resets while previews are written
   onLock(locked: boolean): void           // tabs and Change project stay put while the report or the copies run
@@ -95,6 +96,7 @@ export function QaScreen(props: QaScreenProps) {
   const [scope, setScope] = useState<Scope>(props.state.scope)
   const [busy, setBusy] = useState<Busy>(null)
   const [error, setError] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<{ message: string; nodeIds: string[] } | null>(null)
   const [applied, setApplied] = useState<PseudoApplied | null>(null)
   const { session, onSession } = props
   const languages = session.languages.filter((code) => project.languages.some((language) => language.code === code))
@@ -139,6 +141,7 @@ export function QaScreen(props: QaScreenProps) {
     props.onLock(true)
     props.onApplying(true)
     setError(null)
+    setRefusal(null)
     setCopiesError(null)
     setProgress(null)
   }
@@ -159,7 +162,7 @@ export function QaScreen(props: QaScreenProps) {
       const report = await runOverflowReport(
         {
           ...deps(),
-          reset: (nodeIds) => props.onReset(scope, nodeIds),
+          reset: (nodeIds) => props.onReportReset(scope, nodeIds),
           onProgress: (step) => setProgress("Checking " + label(step.lang) + " (" + (step.index + 1) + " of " + step.total + ")…"),
           shouldStop: () => stopRef.current,
         },
@@ -167,7 +170,11 @@ export function QaScreen(props: QaScreenProps) {
       )
       onSession({ report })
     } catch (caught) {
-      setError(userMessage(caught))
+      if (caught instanceof QaRefusal) {
+        setRefusal({ message: caught.message, nodeIds: caught.nodeIds })
+      } else {
+        setError(userMessage(caught))
+      }
     } finally {
       finish()
     }
@@ -199,6 +206,7 @@ export function QaScreen(props: QaScreenProps) {
     setBusy("apply")
     props.onApplying(true)
     setError(null)
+    setRefusal(null)
     setApplied(null)
     try {
       const result = await props.workspace.scan(scope)
@@ -221,6 +229,7 @@ export function QaScreen(props: QaScreenProps) {
   async function reset() {
     setBusy("reset")
     setError(null)
+    setRefusal(null)
     try {
       await props.onReset(scope)
       setApplied(null)
@@ -296,6 +305,11 @@ export function QaScreen(props: QaScreenProps) {
         </div>
         {busy === "report" && <Loading label={progress ?? "Scanning…"} />}
         <ErrorNote message={error} />
+        {refusal !== null && (
+          <Note tone="warning" actions={refusal.nodeIds.length > 0 ? <TextButton onClick={() => props.onSelect(refusal.nodeIds)}>Select on canvas</TextButton> : undefined}>
+            {refusal.message}
+          </Note>
+        )}
         {report !== null && busy !== "report" && (
           <ReportView report={report} label={label} copied={copied} onCopy={() => void copyCsv(report)} onSelect={props.onSelect} onDismiss={() => onSession({ report: null })} />
         )}

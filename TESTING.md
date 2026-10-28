@@ -292,7 +292,8 @@ QA tab: **Apply to** selection / page, **Languages** (one checkbox per project l
   - **Include pseudo-localization** adds a "Pseudo-localization" table (every text layer, linked or not).
   - **Copy CSV**, paste into a spreadsheet: columns Language, Issue, Amount, Unit, Layer, Frame, Key, Node ID; a layer named `=1+1` arrives as text.
   - **Stop** during the first language: the report ends after it ("Stopped before the last language.") and the canvas is still reset.
-  - While the report runs the tabs and **Change** are locked and Nav **Reset** is disabled.
+  - While the report runs the tabs and **Change** are locked, and Nav **Reset** and the **Keep current text** / **Restore original** buttons of an "N layers were edited during preview." note are disabled.
+  - A preview in scope (Preview a language, or **Pseudo-localize page**, then **Run overflow report**): "Layers in scope show a preview. Reset previews first." with **Select on canvas**; nothing is previewed or measured. The same for instance text whose main component (also one outside the scope) shows a preview.
   - **Apply to** Selection, change the selection while the report runs: the layers it previewed are reset all the same, nothing else.
   - Values are rendered with the samples and plural form from Preview → **Sample values and plural forms**.
   - An empty selection: "No text layers to check. Select layers, or choose Page." Run the same report in browser Figma.

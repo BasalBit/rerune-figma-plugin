@@ -330,6 +330,7 @@ describe("TESTING.md", () => {
       constant("NO_FRAMES"),
       constant("NO_LAYERS"),
       constant("PREVIEWING_FRAMES"),
+      constant("PREVIEWING_SCOPE"),
     ]) {
       expect(ui).toContain(label)
       expect(testing).toContain(label)

@@ -152,6 +152,43 @@ describe("singleFlight", () => {
     await expect(flight.run()).rejects.toThrow("refused")
     expect(flight.busy()).toBe(false)
   })
+
+  it("queues a run with its own arguments after the running one, also when that one fails", async () => {
+    const releases: (() => void)[] = []
+    const calls: string[][] = []
+    const work = vi.fn<(...nodeIds: string[]) => Promise<void>>((...nodeIds) => {
+      calls.push(nodeIds)
+      return new Promise<void>((resolve, reject) => releases.push(nodeIds[0] === "fail" ? () => reject(new Error("refused")) : resolve))
+    })
+    const busy: boolean[] = []
+    const flight = singleFlight(work, (value) => busy.push(value))
+    const running = flight.run("fail")
+    const queued = flight.queue("1:1", "1:2")
+    const another = flight.queue("1:3")
+    // Neither queued call joins the running reset (a plain run would get its promise).
+    expect(flight.run("ignored")).toBe(running)
+    expect(calls).toEqual([["fail"]])
+    releases[0]()
+    await expect(running).rejects.toThrow("refused")
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1]).toEqual(["1:1", "1:2"])
+    expect(flight.busy()).toBe(true)
+    releases[1]()
+    await queued
+    await vi.waitFor(() => expect(calls).toHaveLength(3))
+    expect(calls[2]).toEqual(["1:3"])
+    releases[2]()
+    await another
+    expect(flight.busy()).toBe(false)
+    expect(busy).toEqual([true, false, true, false, true, false])
+  })
+
+  it("runs a queued call at once when nothing is running", async () => {
+    const work = vi.fn<(nodeId: string) => Promise<void>>(async () => {})
+    const flight = singleFlight(work)
+    await flight.queue("1:1")
+    expect(work).toHaveBeenCalledWith("1:1")
+  })
 })
 
 describe("helpers", () => {

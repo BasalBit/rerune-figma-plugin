@@ -479,6 +479,12 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     return resetFlight.run(scope, nodeIds, edited)
   }
 
+  // The overflow report's final reset (§7.18.1, always): after a reset that is already running, never merged into it,
+  // so exactly the layers the report wrote are reset.
+  function resetPreviewsQueued(scope: Scope, nodeIds: string[]): Promise<void> {
+    return resetFlight.queue(scope, nodeIds)
+  }
+
   function selectNodes(nodeIds: string[]) {
     if (nodeIds.length > 0) {
       bus.send({ type: "select-nodes", nodeIds })
@@ -606,6 +612,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   }
 
   const previewing = previewStatus(space.result?.nodes ?? [])
+  // Keep current text / Restore original wait while previews are written or locked work (push, overflow report,
+  // language copies) runs: a reset started then would overlap that work.
+  const editedPromptBusy = resetting || applyingPreview || workLocked
   // §7.7 Repair / page-mirror offer when the plugin opens on a page that needs it (Settings shows its own copy).
   const offer = screen !== "settings" && offerDismissedOn !== pageRef.current ? settingsOffer(status) : null
   // Why link sync is off (§7.7, §7.11); Settings shows the same state in its Figma file section.
@@ -659,10 +668,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             tone="warning"
             actions={
               <div style={styles.row}>
-                <TextButton disabled={resetting} onClick={() => void resetPreviews(editedPrompt.scope, editedPrompt.nodeIds, "keep")}>
+                <TextButton disabled={editedPromptBusy} onClick={() => void resetPreviews(editedPrompt.scope, editedPrompt.nodeIds, "keep")}>
                   Keep current text
                 </TextButton>
-                <TextButton disabled={resetting} onClick={() => void resetPreviews(editedPrompt.scope, editedPrompt.nodeIds, "restore")}>
+                <TextButton disabled={editedPromptBusy} onClick={() => void resetPreviews(editedPrompt.scope, editedPrompt.nodeIds, "restore")}>
                   Restore original
                 </TextButton>
               </div>
@@ -751,6 +760,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onApplying={setApplyingPreview}
             onLock={lockWork}
             onReset={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
+            onReportReset={resetPreviewsQueued}
             pluralChoice={pluralChoice}
             session={qaSession}
             onSession={(patch) => setQaSession((current) => ({ ...current, ...patch }))}

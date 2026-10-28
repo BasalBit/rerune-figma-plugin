@@ -81,9 +81,18 @@ export interface OverflowDeps extends QaDeps {
   shouldStop(): boolean
 }
 
+// A request QA does not run, with the layers to select on the canvas (the screen offers "Select on canvas").
+export class QaRefusal extends Error {
+  constructor(message: string, readonly nodeIds: string[] = []) {
+    super(message)
+    this.name = "QaRefusal"
+  }
+}
+
 export const SCAN_FAILED = "The scan didn't finish. Try again."
 export const NO_LANGUAGES = "Pick at least one language."
 export const NO_LAYERS = "No text layers to check. Select layers, or choose Page."
+export const PREVIEWING_SCOPE = "Layers in scope show a preview. Reset previews first."
 
 const KIND_LABELS: Record<ReportKind, string> = {
   clipped: "Clipped",
@@ -142,7 +151,9 @@ function reportNodes(nodes: readonly ScannedNode[], keyNames: ReadonlyMap<string
 }
 
 // preview-apply in batches; every id of a batch counts as written before it is sent (a batch that times out may
-// still have been written) and loses that status when main reports it failed.
+// still have been written). A layer main reports as failed loses that status only when this language added it: a
+// failed write keeps the preview an earlier language of the run wrote (main puts its record back), so the final
+// reset must still cover it.
 async function applyTracked(
   bus: Pick<UiBus, "request">,
   info: Omit<PreviewInfo, "appliedAt">,
@@ -151,9 +162,13 @@ async function applyTracked(
 ): Promise<{ errors: NodeError[]; failed: Set<string> }> {
   const errors: NodeError[] = []
   const failed = new Set<string>()
+  const added = new Set<string>()
   for (const batch of chunk(items, WRITE_BATCH_SIZE)) {
     for (const item of batch) {
-      written.add(item.nodeId)
+      if (!written.has(item.nodeId)) {
+        written.add(item.nodeId)
+        added.add(item.nodeId)
+      }
     }
     const result = await runOp(bus, (requestId) => ({ type: "preview-apply", requestId, info, items: batch }))
     for (const error of result.errors) {
@@ -164,7 +179,9 @@ async function applyTracked(
     }
   }
   for (const nodeId of failed) {
-    written.delete(nodeId)
+    if (added.has(nodeId)) {
+      written.delete(nodeId)
+    }
   }
   return { errors, failed }
 }
@@ -214,7 +231,8 @@ async function checkLanguage(deps: OverflowDeps, request: OverflowRequest, nodes
   return { lang, rows: [...overflow, ...tooLong], checked: ids.length, missing, errors: applied.errors.filter((error) => !isWarning(error)) }
 }
 
-// The overflow report (§7.18.1). Always ends with a reset of every layer it wrote, also after an error or Stop.
+// The overflow report (§7.18.1). Refused while layers in scope show a preview. Always ends with a reset of every
+// layer it wrote, also after an error or Stop.
 export async function runOverflowReport(deps: OverflowDeps, request: OverflowRequest): Promise<OverflowReport> {
   if (request.languages.length === 0) {
     throw new Error(NO_LANGUAGES)
@@ -225,6 +243,13 @@ export async function runOverflowReport(deps: OverflowDeps, request: OverflowReq
   }
   if (scanned.nodes.length === 0) {
     throw new Error(NO_LAYERS)
+  }
+  // The report starts from the original text: a layer that already shows a preview (its own, or instance text
+  // following a previewed main component that may lie outside the scope) would be measured with that preview's text
+  // and its owner reset at the end, although the report never wrote it.
+  const previewing = scanned.nodes.filter((node) => node.preview !== null).map((node) => node.nodeId)
+  if (previewing.length > 0) {
+    throw new QaRefusal(PREVIEWING_SCOPE, previewing)
   }
   const report: OverflowReport = {
     scope: request.scope,
@@ -296,13 +321,6 @@ export function reportCsv(report: Pick<OverflowReport, "languages" | "nodes">, l
 
 export const NO_FRAMES = "Select one or more frames with text first."
 export const PREVIEWING_FRAMES = "Layers in these frames show a preview. Reset previews first."
-
-export class QaRefusal extends Error {
-  constructor(message: string, readonly nodeIds: string[] = []) {
-    super(message)
-    this.name = "QaRefusal"
-  }
-}
 
 export interface CopiesRequest { languages: string[]; source: ResolveSource; variationOptionId: string | null; projectId: string }
 
