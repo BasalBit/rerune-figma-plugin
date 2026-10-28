@@ -389,7 +389,11 @@ function LayerRowView(props: { row: LayerRow; checked: boolean; onToggle(): void
               {BADGE_LABELS[badge]}
             </Chip>
           ))}
-          {row.overMaxLength && <Chip tone="warning">Over max length ({row.maxLength})</Chip>}
+          {row.overMaxLength && (
+            <Chip tone="warning" title="A push holds this text back until it fits the key's max length">
+              Over max length ({row.textLength}/{row.maxLength})
+            </Chip>
+          )}
         </div>
       </button>
     </div>

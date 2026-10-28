@@ -1,7 +1,6 @@
 import { h } from "preact"
 import type { WorkspaceScreen } from "../state/navigation"
-import type { PreviewStatus } from "../state/preview"
-import { sourceLabel } from "../state/preview"
+import { previewStatusText, type PreviewStatus } from "../state/preview"
 import { styles, TextButton } from "./ui"
 
 // Header of the workspace screens: project, selection count, tabs, and the preview status bar (§7.14).
@@ -10,6 +9,7 @@ const TABS: { screen: WorkspaceScreen; label: string }[] = [
   { screen: "layers", label: "Layers" },
   { screen: "push", label: "Push" },
   { screen: "preview", label: "Preview" },
+  { screen: "qa", label: "QA" },
   { screen: "settings", label: "Settings" },
 ]
 
@@ -69,11 +69,7 @@ export function Nav(props: NavProps) {
       </div>
       {props.previewStatus !== null && (
         <div style={{ ...styles.row, padding: "4px 12px", background: "var(--figma-color-bg-brand-tertiary)", fontSize: "11px" }}>
-          <span style={styles.grow}>
-            {props.previewStatus.mixed
-              ? "Previewing several languages on " + props.previewStatus.count + " layers"
-              : "Previewing " + props.previewStatus.lang + " (" + sourceLabel(props.previewStatus.source) + ") on " + props.previewStatus.count + " layers"}
-          </span>
+          <span style={styles.grow}>{previewStatusText(props.previewStatus)}</span>
           <TextButton disabled={props.resetDisabled === true} onClick={props.onResetPreview}>
             Reset
           </TextButton>

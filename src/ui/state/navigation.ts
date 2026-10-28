@@ -3,10 +3,10 @@ import type { FileSettings, StoredAuth } from "../../shared/messages"
 // Design-mode screens (§7.8) and the transitions between them. Pure, so the sign-in → "Signed in as" →
 // Project path (D34) is unit-tested without a DOM.
 
-export type Screen = "sign-in" | "pairing" | "signed-in" | "project" | "layers" | "push" | "preview" | "settings" | "diagnostics"
-export type WorkspaceScreen = "layers" | "push" | "preview" | "settings"
+export type Screen = "sign-in" | "pairing" | "signed-in" | "project" | "layers" | "push" | "preview" | "qa" | "settings" | "diagnostics"
+export type WorkspaceScreen = "layers" | "push" | "preview" | "qa" | "settings"
 
-export const WORKSPACE_SCREENS: readonly WorkspaceScreen[] = ["layers", "push", "preview", "settings"]
+export const WORKSPACE_SCREENS: readonly WorkspaceScreen[] = ["layers", "push", "preview", "qa", "settings"]
 
 // `locked`: a push or pull is running on the Push screen. Leaving it would drop the run's results, and a new
 // review started before the created keys are linked would offer to create them again (§7.13 rule 10).

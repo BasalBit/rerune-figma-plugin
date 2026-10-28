@@ -45,7 +45,9 @@ describe("layerRows", () => {
     expect(rows[2].badges).toEqual(["variable", "pending"])
     expect(rows[2].pendingName).toBe("checkout_new")
     expect(rows[0].maxLength).toBe(5)
+    expect(rows[0].textLength).toBe(7)
     expect(rows[0].overMaxLength).toBe(true)
+    expect(rows[1].overMaxLength).toBe(false)
   })
 
   it("groups by frame in scan order", () => {
@@ -56,7 +58,8 @@ describe("layerRows", () => {
   })
 
   it("filters and counts by state group", () => {
-    expect(filterCounts(rows)).toEqual({ all: 6, unlinked: 1, synced: 1, changed: 1, attention: 3, readonly: 0 })
+    expect(filterCounts(rows)).toEqual({ all: 6, unlinked: 1, synced: 1, changed: 1, attention: 3, readonly: 0, too_long: 2 })
+    expect(rows.filter((row) => matchesFilter(row, "too_long")).map((row) => row.node.nodeId)).toEqual(["1:1", "1:5"])
     expect(rows.filter((row) => matchesFilter(row, "changed")).map((row) => row.node.nodeId)).toEqual(["1:2"])
     expect(linkedCount(rows)).toBe(5)
   })
@@ -118,5 +121,33 @@ describe("skippedSummary", () => {
     const none = { hidden: 0, locked: 0, empty: 0, numeric: 0, underscore: 0, languageCopy: 0, unavailable: 0 }
     expect(skippedSummary(none)).toBeNull()
     expect(skippedSummary({ ...none, hidden: 3, numeric: 1, unavailable: 2 })).toBe("Skipped 3 hidden, 1 numbers only, 2 unavailable")
+  })
+})
+
+describe("max_length in Layers (§7.18.3)", () => {
+  it("measures the normalised text a push sends and ignores unlinked layers and keys without a limit", () => {
+    const remoteMap = new Map([
+      [keyId(1), remote("pay", "Pay", 9)],
+      [keyId(2), remote("title", "Title")],
+    ])
+    const rows = layerRows(
+      [
+        linkedNode("1:1", "Pay today \n", { keyId: keyId(1), keyName: "pay", syncedText: "Pay" }),
+        linkedNode("1:2", "Pay today, please", { keyId: keyId(1), keyName: "pay", syncedText: "Pay" }),
+        linkedNode("1:3", "A very long title without any limit", { keyId: keyId(2), keyName: "title", syncedText: "Title" }),
+        scannedNode("1:4", "An unlinked text that is very long"),
+        linkedNode("1:5", "Pay 😀😀😀", { keyId: keyId(1), keyName: "pay", syncedText: "Pay" }),
+      ],
+      PROJECT_ID,
+      remoteMap,
+    )
+    expect(rows.map((row) => [row.textLength, row.maxLength, row.overMaxLength])).toEqual([
+      [9, 9, false],
+      [17, 9, true],
+      [35, null, false],
+      [34, null, false],
+      [10, 9, true],
+    ])
+    expect(filterCounts(rows).too_long).toBe(2)
   })
 })

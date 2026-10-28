@@ -504,4 +504,17 @@ describe("after-push choices and pulls", () => {
     expect(canSubmit(ready.plan, true)).toBe(true)
     expect(canSubmit(ready.plan, false)).toBe(false)
   })
+
+  it("counts updates held back by max_length apart and pushes nothing when they are all that is left (§7.18.3)", async () => {
+    const nodes = [
+      linkedNode("1:1", "Pay securely now", { keyId: keyId(1), keyName: "pay", syncedText: "Pay now" }),
+      linkedNode("1:2", "Cancel order", { keyId: keyId(2), keyName: "cancel", syncedText: "Cancel" }),
+    ]
+    const both = await preparePush({ keysByName: byName({}, []) }, input(nodes, { remote: new Map([[keyId(1), remote("pay", "Pay now", 10)], [keyId(2), remote("cancel", "Cancel", 20)]]) }))
+    expect(pushCounts(both.plan)).toMatchObject({ updates: 1, blockedUpdates: 1 })
+    expect(canSubmit(both.plan, true)).toBe(true)
+    const blockedOnly = await preparePush({ keysByName: byName({}, []) }, input([nodes[0]], { remote: new Map([[keyId(1), remote("pay", "Pay now", 10)]]) }))
+    expect(pushCounts(blockedOnly.plan)).toMatchObject({ updates: 0, blockedUpdates: 1 })
+    expect(canSubmit(blockedOnly.plan, true)).toBe(false)
+  })
 })

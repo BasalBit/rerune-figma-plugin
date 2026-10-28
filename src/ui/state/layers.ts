@@ -12,7 +12,7 @@ import type { SkipCounts } from "./ops"
 // bulk actions. Pure; the screen renders it.
 
 export type Badge = "missing_font" | "mixed_styles" | "variable" | "component_property" | "preview" | "instance" | "pending"
-export type StateFilter = "all" | "unlinked" | "synced" | "changed" | "attention" | "readonly"
+export type StateFilter = "all" | "unlinked" | "synced" | "changed" | "attention" | "readonly" | "too_long"
 
 export interface LayerRow {
   node: ScannedNode
@@ -22,6 +22,7 @@ export interface LayerRow {
   badges: Badge[]
   pendingName: string | null
   maxLength: number | null
+  textLength: number        // UTF-16 units of the text a push would send (the server's max_length measure)
   overMaxLength: boolean
 }
 
@@ -72,9 +73,10 @@ export const FILTER_LABELS: Record<StateFilter, string> = {
   changed: "Changed",
   attention: "Needs attention",
   readonly: "Read-only",
+  too_long: "Too long",
 }
 
-const FILTER_STATES: Record<Exclude<StateFilter, "all">, readonly SyncState[]> = {
+const FILTER_STATES: Record<Exclude<StateFilter, "all" | "too_long">, readonly SyncState[]> = {
   unlinked: ["unlinked"],
   synced: ["synced"],
   changed: ["changed_in_figma", "changed_in_rerune", "conflict"],
@@ -82,7 +84,7 @@ const FILTER_STATES: Record<Exclude<StateFilter, "all">, readonly SyncState[]> =
   readonly: ["readonly"],
 }
 
-export const FILTER_ORDER: readonly StateFilter[] = ["all", "unlinked", "synced", "changed", "attention", "readonly"]
+export const FILTER_ORDER: readonly StateFilter[] = ["all", "unlinked", "synced", "changed", "attention", "readonly", "too_long"]
 
 export function badgesOf(node: ScannedNode, pending: boolean): Badge[] {
   const badges: Badge[] = []
@@ -110,6 +112,7 @@ export function layerRows(nodes: readonly ScannedNode[], projectId: string, remo
     const linked = state !== "unlinked" && state !== "invalid_link"
     const maxLength = linked && node.link !== null ? remote.get(node.link.id)?.maxLength ?? null : null
     const text = layerText(node)
+    const textLength = utf16Length(nodeText(node))
     const pendingName = state === "unlinked" ? pending.get(node.nodeId) ?? null : null
     return {
       node,
@@ -119,7 +122,8 @@ export function layerRows(nodes: readonly ScannedNode[], projectId: string, remo
       badges: badgesOf(node, pendingName !== null),
       pendingName,
       maxLength,
-      overMaxLength: maxLength !== null && utf16Length(nodeText(node)) > maxLength,
+      textLength,
+      overMaxLength: maxLength !== null && textLength > maxLength,
     }
   })
 }
@@ -138,12 +142,16 @@ export function groupByFrame(rows: readonly LayerRow[]): FrameGroup[] {
   return [...groups.values()]
 }
 
+// "Too long" (§7.18.3): linked layers whose text is longer than the key's max_length (a push would hold them back).
 export function matchesFilter(row: LayerRow, filter: StateFilter): boolean {
-  return filter === "all" || FILTER_STATES[filter].includes(row.state)
+  if (filter === "all") {
+    return true
+  }
+  return filter === "too_long" ? row.overMaxLength : FILTER_STATES[filter].includes(row.state)
 }
 
 export function filterCounts(rows: readonly LayerRow[]): Record<StateFilter, number> {
-  const counts: Record<StateFilter, number> = { all: rows.length, unlinked: 0, synced: 0, changed: 0, attention: 0, readonly: 0 }
+  const counts: Record<StateFilter, number> = { all: rows.length, unlinked: 0, synced: 0, changed: 0, attention: 0, readonly: 0, too_long: 0 }
   for (const row of rows) {
     for (const filter of FILTER_ORDER) {
       if (filter !== "all" && matchesFilter(row, filter)) {

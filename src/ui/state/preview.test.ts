@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest"
 import { keyId, linkedNode, OTHER_PROJECT_ID, PROJECT_ID, scannedNode } from "../../../test/fixtures"
 import type { FigmaResolvedKey, FigmaResolveRequest, FigmaResolveResponse } from "../../shared/api-types"
+import { formatCount } from "../../shared/icu"
 import { ApiError } from "../api/client"
 import {
   buildPreview,
+  buildPseudoPreview,
   defaultLanguage,
   languageLabel,
   previewKeyIds,
   previewStatus,
+  previewStatusText,
   previewTargets,
   resetOutcome,
   resolveForPreview,
@@ -84,6 +87,82 @@ describe("buildPreview", () => {
     expect(build.info).toEqual({ lang: "de-AT", source: "keys", variationOptionId: null })
     expect(build.items.map((item) => item.text)).toEqual(["[pay]", "[greeting_renamed]", "[missing_de]", "[gone]", "[pay]"])
     expect(build.missing).toEqual([])
+    expect(build.tooLong).toEqual([])
+  })
+
+  it("renders values with the sample values and the plural form chosen", () => {
+    const pluralContent = {
+      value: "",
+      message: {
+        parts: [
+          { arg: { name: "name" } },
+          { text: ", " },
+          {
+            variant: {
+              kind: "plural" as const,
+              variable: "count",
+              forms: [
+                { selector: "one", parts: [{ text: "# Artikel" }], order: 0 },
+                { selector: "other", parts: [{ text: "# Artikel gesamt" }], order: 1 },
+              ],
+            },
+          },
+        ],
+      },
+    }
+    const keys = new Map([
+      [keyId(1), deKey(keyId(1), "cart", { ...present(""), content: pluralContent })],
+      [keyId(2), deKey(keyId(2), "greeting", present("Servus {{name}}"))],
+    ])
+    const layers = [
+      linkedNode("1:1", "Ada, 1 item", { keyId: keyId(1), keyName: "cart", syncedText: "Ada, 1 item" }),
+      linkedNode("1:2", "Hi {{name}}", { keyId: keyId(2), keyName: "greeting", syncedText: "Hi {{name}}" }),
+    ]
+    const request = { lang: "de-AT", mode: "draft" as const, variationOptionId: null }
+    expect(buildPreview(layers, PROJECT_ID, request, keys, new Map()).items.map((item) => item.text)).toEqual(["[name], 0 Artikel gesamt", "Servus [name]"])
+    const chosen = buildPreview(layers, PROJECT_ID, request, keys, new Map(), { samples: { name: "Ada" }, plural: { variable: "count", category: "one" } })
+    expect(chosen.items.map((item) => item.text)).toEqual(["Ada, 1 Artikel", "Servus Ada"])
+    const counted = buildPreview(layers, PROJECT_ID, request, keys, new Map(), { samples: { count: "1000" }, plural: null })
+    // de-AT groups thousands with a no-break space, as ICU formats # for the language.
+    expect(counted.items[0].text).toBe("[name], " + formatCount("de-AT", 1000) + " Artikel gesamt")
+    expect(formatCount("de-AT", 1000)).not.toBe("1000")
+  })
+
+  it("lists values ReRune reports as longer than the key's max length", () => {
+    const keys = new Map([
+      [keyId(1), { ...deKey(keyId(1), "pay", present("Jetzt sicher bezahlen", { length: 21, exceeds_max_length: true })), max_length: 12 }],
+      [keyId(2), { ...deKey(keyId(2), "greeting", present("Servus {{name}}", { length: 15 })), max_length: 20 }],
+    ])
+    const layers = [
+      linkedNode("1:1", "Pay now", { keyId: keyId(1), keyName: "pay", syncedText: "Pay now" }),
+      linkedNode("1:2", "Hi {{name}}", { keyId: keyId(2), keyName: "greeting", syncedText: "Hi {{name}}" }),
+    ]
+    const build = buildPreview(layers, PROJECT_ID, { lang: "de-AT", mode: "draft", variationOptionId: null }, keys, new Map())
+    expect(build.tooLong).toEqual([{ nodeId: "1:1", keyId: keyId(1), keyName: "pay", text: "Jetzt sicher bezahlen", resolvedLang: "de-AT", length: 21, maxLength: 12 }])
+    expect(build.items.map((item) => item.text)).toEqual(["Jetzt sicher bezahlen", "Servus [name]"])
+  })
+})
+
+describe("buildPseudoPreview", () => {
+  it("pseudo-localizes every text layer from its source text, mains first, skipping variable-bound text", () => {
+    const layers = [
+      linkedNode("I7:1;1:1", "Pay now", { keyId: keyId(1), keyName: "pay", syncedText: "Pay now", nid: "1:1", state: "inherited" }),
+      linkedNode("1:1", "Pay now", { keyId: keyId(1), keyName: "pay", syncedText: "Pay now" }),
+      scannedNode("1:2", "Hi {{name}}"),
+      scannedNode("1:3", "Bonjour", { originalCharacters: "Hello", preview: PREVIEWING }),
+      scannedNode("1:4", "Var", { boundToVariable: true }),
+      linkedNode("1:5", "Other", { keyId: keyId(6), keyName: "other", syncedText: "Other", projectId: OTHER_PROJECT_ID }),
+    ]
+    const build = buildPseudoPreview(layers, "en")
+    expect(build.info).toEqual({ lang: "en", source: "pseudo", variationOptionId: null })
+    expect(build.items).toEqual([
+      { nodeId: "1:1", text: "⟦Þáý ñóŵ···⟧" },
+      { nodeId: "1:2", text: "⟦Ĥí {{name}}·····⟧" },
+      { nodeId: "1:3", text: "⟦Ĥéļļó··⟧" },
+      { nodeId: "1:5", text: "⟦Óţĥéŕ··⟧" },
+      { nodeId: "I7:1;1:1", text: "⟦Þáý ñóŵ···⟧" },
+    ])
+    expect(build.skipped).toEqual({ variable: ["1:4"] })
   })
 })
 
@@ -129,6 +208,12 @@ describe("labels and status", () => {
     expect(previewStatus(nodes)).toEqual({ lang: "fr", source: "draft", count: 1, mixed: false })
     expect(previewStatus([scannedNode("1", "x")])).toBeNull()
     expect(sourceLabel("keys")).toBe("key names")
+  })
+
+  it("words the status bar, naming pseudo-localization", () => {
+    expect(previewStatusText({ lang: "de-AT", source: "draft", count: 3, mixed: false })).toBe("Previewing de-AT (draft) on 3 layers")
+    expect(previewStatusText({ lang: "en", source: "pseudo", count: 1, mixed: false })).toBe("Previewing pseudo-localization on 1 layer")
+    expect(previewStatusText({ lang: "en", source: "pseudo", count: 4, mixed: true })).toBe("Previewing several languages on 4 layers")
   })
 
   it("splits reset results into edited, override and other errors", () => {

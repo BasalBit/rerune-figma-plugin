@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import type { FigmaKeyRef, FigmaProjectDetail } from "../../shared/api-types"
 import { keyNameWarnings } from "../../shared/key-names"
 import type { FileSettings, ScannedNode, Scope } from "../../shared/messages"
-import { applyDecision, type PlanCreate, type PlanDecision, type PushFollowUp, type PushPlan } from "../../shared/push-plan"
+import { applyDecision, blockedUpdateNodeIds, maxLengthCheck, type PlanCreate, type PlanDecision, type PushFollowUp, type PushPlan } from "../../shared/push-plan"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
@@ -365,6 +365,12 @@ export function PushScreen(props: PushScreenProps) {
               </Note>
             )}
             <Summary plan={plan} />
+            {counts.blockedUpdates > 0 && (
+              <Note tone="warning" actions={<TextButton onClick={() => props.onSelect(blockedUpdateNodeIds(plan))}>Select on canvas</TextButton>}>
+                {plural(counts.blockedUpdates, "change is", "changes are")} longer than the key's max length and won't be pushed. Shorten the text in Figma, or
+                raise the max length in ReRune.
+              </Note>
+            )}
             {counts.creates > 0 && (
               <Small muted>
                 {plural(counts.creates, "new key", "new keys")}
@@ -421,6 +427,7 @@ export function PushScreen(props: PushScreenProps) {
                       </Small>
                       <TextButton onClick={() => props.onSelect(variant.nodeIds)}>Select</TextButton>
                     </div>
+                    <TooLong text={variant.text} maxLength={entry.maxLength} action="Pushing this text is blocked." />
                     <Choice
                       value={variant.decision}
                       options={[
@@ -443,6 +450,7 @@ export function PushScreen(props: PushScreenProps) {
                 </div>
                 <Small muted>ReRune: {preview(conflict.remoteText, 160) || "(empty)"}</Small>
                 <Small>Figma: {preview(conflict.figmaText, 160)}</Small>
+                <TooLong text={conflict.figmaText} maxLength={conflict.maxLength} action="Overwrite ReRune is blocked." />
                 <Choice
                   value={conflict.decision}
                   options={[
@@ -571,6 +579,19 @@ function ScreenshotStatus(props: { state: ShotsState; stopping: boolean; onStop(
         </div>
       ))}
     </div>
+  )
+}
+
+// max_length (§7.13 rule 9, §7.18.3): the Figma text is longer than the key allows, so the update is held back.
+function TooLong(props: { text: string; maxLength: number | null; action: string }) {
+  const check = maxLengthCheck(props.text, props.maxLength)
+  if (check === null) {
+    return null
+  }
+  return (
+    <Small style={{ color: "var(--figma-color-text-danger)" }}>
+      Longer than the key's max length ({check.length}/{check.maxLength}). {props.action}
+    </Small>
   )
 }
 

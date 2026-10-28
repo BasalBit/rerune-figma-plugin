@@ -1,6 +1,7 @@
 import type { FigmaLanguage, FigmaProject, FigmaResolvedKey } from "../../shared/api-types"
-import { renderContent } from "../../shared/icu"
+import { renderContent, type PluralChoice } from "../../shared/icu"
 import type { NodeError, PreviewInfo, ResolveSource, ScannedNode } from "../../shared/messages"
+import { pseudoLocalize } from "../../shared/pseudo"
 import { layerText } from "../../shared/sync-state"
 import type { FigmaApi } from "../api/figma-api"
 import { mainsFirst } from "./ops"
@@ -15,13 +16,23 @@ export interface PreviewRequest { lang: string; mode: PreviewMode; variationOpti
 
 export interface PreviewEntry { nodeId: string; keyId: string; keyName: string; text: string; resolvedLang: string }
 
+// A previewed value longer than the key's max_length (§7.18.3): E12 `exceeds_max_length`, with its `length`
+// (messageformat.ContentLength: UTF-16 units, `{{name}}` as written, the longest plural form).
+export interface PreviewTooLong extends PreviewEntry { length: number; maxLength: number }
+
 export interface PreviewBuild {
   info: Omit<PreviewInfo, "appliedAt">
   items: { nodeId: string; text: string }[]
   missing: PreviewEntry[]
   inherited: PreviewEntry[]
+  tooLong: PreviewTooLong[]
   skipped: { variable: string[]; otherProject: number; unlinked: number }
 }
+
+// Sample values (prefs, per project) and the plural category selector (§7.18.5) used to render values.
+export interface RenderChoices { samples: Record<string, string>; plural: PluralChoice | null }
+
+export const NO_RENDER_CHOICES: RenderChoices = { samples: {}, plural: null }
 
 export const PREVIEW_LINK_STATES: readonly ScannedNode["linkState"][] = ["ok", "inherited", "copied"]
 
@@ -81,12 +92,14 @@ export function buildPreview(
   request: PreviewRequest,
   resolved: ReadonlyMap<string, FigmaResolvedKey>,
   keyNames: ReadonlyMap<string, string>,
+  choices: RenderChoices = NO_RENDER_CHOICES,
 ): PreviewBuild {
   const build: PreviewBuild = {
     info: { lang: request.lang, source: request.mode, variationOptionId: request.mode === "keys" ? null : request.variationOptionId },
     items: [],
     missing: [],
     inherited: [],
+    tooLong: [],
     skipped: { variable: [], otherProject: 0, unlinked: 0 },
   }
   // A layer that is previewing but no longer resolves to a key of this project (unlinked or relinked during the
@@ -128,10 +141,39 @@ export function buildPreview(
       }
       continue
     }
-    const text = renderContent(value.content, { lang: request.lang })
+    const text = renderContent(value.content, { lang: request.lang, samples: choices.samples, plural: choices.plural })
     build.items.push({ nodeId: node.nodeId, text })
     if (value.inherited) {
       build.inherited.push({ ...entry, text })
+    }
+    if (value.exceeds_max_length && key !== undefined && key.max_length !== null) {
+      build.tooLong.push({ ...entry, text, length: value.length, maxLength: key.max_length })
+    }
+  }
+  build.items = mainsFirst(build.items)
+  return build
+}
+
+// Pseudo-localization (§7.18.2, Appendix A.6) through preview-apply with source "pseudo": every text layer in scope
+// (linked or not; it needs no server) shows its own source text pseudo-localized. Layers already previewing start from
+// their original text. Variable-bound text is never written (§7.14). `lang` records the project's main language,
+// whose text the pseudo text stands for.
+export interface PseudoBuild {
+  info: Omit<PreviewInfo, "appliedAt">
+  items: { nodeId: string; text: string }[]
+  skipped: { variable: string[] }
+}
+
+export function buildPseudoPreview(nodes: readonly ScannedNode[], mainLanguage: string): PseudoBuild {
+  const build: PseudoBuild = { info: { lang: mainLanguage, source: "pseudo", variationOptionId: null }, items: [], skipped: { variable: [] } }
+  for (const node of nodes) {
+    if (node.boundToVariable) {
+      build.skipped.variable.push(node.nodeId)
+      continue
+    }
+    const text = layerText(node)
+    if (text.trim() !== "") {
+      build.items.push({ nodeId: node.nodeId, text: pseudoLocalize(text) })
     }
   }
   build.items = mainsFirst(build.items)
@@ -149,6 +191,18 @@ export function previewStatus(nodes: readonly ScannedNode[]): PreviewStatus | nu
   const first = previewing[0].preview as PreviewInfo
   const mixed = previewing.some((node) => node.preview?.lang !== first.lang || node.preview?.source !== first.source)
   return { lang: first.lang, source: first.source, count: previewing.length, mixed }
+}
+
+// Status bar text (§7.14): "Previewing {lang} ({source}) on {n} layers"; pseudo-localization names itself.
+export function previewStatusText(status: PreviewStatus): string {
+  const layers = status.count === 1 ? "1 layer" : status.count + " layers"
+  if (status.mixed) {
+    return "Previewing several languages on " + layers
+  }
+  if (status.source === "pseudo") {
+    return "Previewing pseudo-localization on " + layers
+  }
+  return "Previewing " + status.lang + " (" + sourceLabel(status.source) + ") on " + layers
 }
 
 export function sourceLabel(source: PreviewInfo["source"]): string {

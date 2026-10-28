@@ -1,11 +1,12 @@
 import { Button, Dropdown, SegmentedControl, Toggle } from "@create-figma-plugin/ui"
 import { h } from "preact"
-import { useState } from "preact/hooks"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import type { FigmaProjectDetail } from "../../shared/api-types"
 import type { ResolveSource, Scope } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
+import { SamplesEditor } from "../components/samples"
 import { ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { groupErrors, runBatched, type ErrorGroup } from "../state/ops"
 import {
@@ -17,11 +18,13 @@ import {
   type PreviewBuild,
   type PreviewMode,
 } from "../state/preview"
+import { activePluralChoice, projectSamples, samplePlaceholders, samplesSummary, sameSamples, withDrafts, type ProjectPluralChoice } from "../state/samples"
 import type { Prefs } from "../state/settings"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // Preview (§7.8, §7.14, D24): language (with its inheritance chain), Draft/Published, variation, "Show key names",
-// Apply to selection/page, Reset, and the missing list with Select/Zoom.
+// sample values and plural forms (§7.18.5), Apply to selection/page, Reset, the missing list with Select/Zoom and
+// the values longer than their key's max length (§7.18.3).
 
 export interface PreviewScreenProps {
   workspace: Workspace
@@ -36,6 +39,8 @@ export interface PreviewScreenProps {
   onReset(scope: Scope, nodeIds?: string[]): Promise<void>
   resetting: boolean                      // a reset started elsewhere (Nav, Push) is running
   onApplying(applying: boolean): void     // lets the app hold other resets while previews are written
+  pluralChoice: ProjectPluralChoice | null
+  onPluralChoice(choice: ProjectPluralChoice | null): void
 }
 
 const SCOPE_OPTIONS = [
@@ -65,6 +70,30 @@ export function PreviewScreen(props: PreviewScreenProps) {
   const [error, setError] = useState<string | null>(null)
   const [applied, setApplied] = useState<Applied | null>(null)
   const [showInherited, setShowInherited] = useState(false)
+  const [showSamples, setShowSamples] = useState(false)
+  const saved = projectSamples(prefs.samples, project.id)
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => ({ ...saved }))
+  const placeholders = useMemo(
+    () => samplePlaceholders(props.state.result?.nodes ?? [], project.id, props.state.resolved, project.main_language),
+    [props.state.result, props.state.resolved, project.id, project.main_language],
+  )
+  const activePlural = activePluralChoice(props.pluralChoice, project.id, lang)
+
+  // Saves the typed samples (prefs, per project) when they changed; returns the samples to render with.
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
+  const prefsRef = useRef(prefs)
+  prefsRef.current = prefs
+  function commitSamples(): Record<string, string> {
+    const next = withDrafts(prefsRef.current.samples, project.id, draftsRef.current)
+    const samples = projectSamples(next, project.id)
+    if (!sameSamples(samples, projectSamples(prefsRef.current.samples, project.id))) {
+      props.onPrefs({ samples: next })
+    }
+    return samples
+  }
+  // Drafts typed just before leaving the screen are saved too.
+  useEffect(() => () => void commitSamples(), [])
 
   async function apply() {
     if (lang === null || props.resetting) return
@@ -85,7 +114,8 @@ export function PreviewScreen(props: PreviewScreenProps) {
       for (const [keyId, remote] of props.workspace.store.get().remote) {
         if (remote.key !== null) names.set(keyId, remote.key)
       }
-      const build = buildPreview(result.nodes, project.id, request, resolved, names)
+      const samples = commitSamples()
+      const build = buildPreview(result.nodes, project.id, request, resolved, names, { samples, plural: activePlural })
       const written = await runBatched(props.bus, build.items, (requestId, batch) => ({ type: "preview-apply", requestId, info: build.info, items: batch }))
       setApplied({ build, done: written.done, errors: groupErrors(written.errors) })
       props.onPrefs({ lastLanguage: lang, lastSource: source, lastVariationOptionId: variation })
@@ -140,6 +170,36 @@ export function PreviewScreen(props: PreviewScreenProps) {
         <Toggle value={keysMode} onValueChange={setKeysMode}>
           <Small>Show key names instead of text</Small>
         </Toggle>
+        {!keysMode && (
+          <div style={styles.tightStack}>
+            <div style={styles.row}>
+              <Small muted style={styles.grow}>
+                Sample values and plural forms{placeholders.length > 0 ? " (" + placeholders.length + ")" : ""}
+              </Small>
+              <TextButton onClick={() => setShowSamples(!showSamples)}>{showSamples ? "Hide" : "Edit"}</TextButton>
+            </div>
+            {showSamples ? (
+              <SamplesEditor
+                placeholders={placeholders}
+                lang={lang}
+                drafts={drafts}
+                plural={activePlural}
+                disabled={busy !== null}
+                onDraft={(name, value) => setDrafts((current) => ({ ...current, [name]: value }))}
+                onCommit={() => void commitSamples()}
+                onPlural={(choice) => props.onPluralChoice(choice === null ? null : { ...choice, projectId: project.id })}
+                onClear={() => {
+                  draftsRef.current = {}
+                  setDrafts({})
+                  commitSamples()
+                  props.onPluralChoice(null)
+                }}
+              />
+            ) : (
+              <Small muted>{samplesSummary(placeholders, saved, activePlural) ?? "Placeholders show as [name]; plural messages show their other form."}</Small>
+            )}
+          </div>
+        )}
         <div style={styles.tightStack}>
           <Small muted>Apply to</Small>
           <SegmentedControl value={scope} options={SCOPE_OPTIONS} onValueChange={(value) => setScope(value as Scope)} />
@@ -169,6 +229,26 @@ export function PreviewScreen(props: PreviewScreenProps) {
                     </div>
                   ))}
                   <TextButton onClick={() => props.onSelect(applied.build.missing.map((entry) => entry.nodeId))}>Select all missing</TextButton>
+                </div>
+              </div>
+            )}
+            {applied.build.tooLong.length > 0 && (
+              <div>
+                <SectionTitle>Longer than max length ({applied.build.tooLong.length})</SectionTitle>
+                <Small muted>ReRune counts these values as longer than their key allows.</Small>
+                <div style={{ ...styles.tightStack, marginTop: "6px" }}>
+                  {applied.build.tooLong.map((entry) => (
+                    <div key={entry.nodeId} style={{ ...styles.row, ...styles.card, flexDirection: "row" }}>
+                      <div style={styles.grow}>
+                        <div style={styles.mono}>{entry.keyName}</div>
+                        <Small muted>
+                          {entry.length}/{entry.maxLength} characters · {preview(entry.text, 80)}
+                        </Small>
+                      </div>
+                      <TextButton onClick={() => props.onSelect([entry.nodeId])}>Select</TextButton>
+                    </div>
+                  ))}
+                  <TextButton onClick={() => props.onSelect(applied.build.tooLong.map((entry) => entry.nodeId))}>Select all too long</TextButton>
                 </div>
               </div>
             )}

@@ -22,6 +22,7 @@ import { PairingScreen } from "./screens/pairing"
 import { ProjectScreen } from "./screens/project-picker"
 import { PreviewScreen } from "./screens/preview"
 import { PushScreen } from "./screens/push"
+import { QaScreen } from "./screens/qa"
 import { SettingsOfferNote, SettingsScreen } from "./screens/settings"
 import { SignInScreen } from "./screens/sign-in"
 import { SignedInScreen } from "./screens/signed-in"
@@ -42,6 +43,7 @@ import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, sing
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
 import { previewStatus, resetOutcome } from "./state/preview"
 import { cacheEntriesFromResolved } from "./state/remote"
+import type { ProjectPluralChoice } from "./state/samples"
 import {
   createAvailability,
   emptyScreenshotRun,
@@ -61,7 +63,7 @@ type Init = MainToUiOf<"init">
 
 interface Banner { tone: "good" | "info" | "warning"; message: string; errors: ErrorGroup[] }
 
-// Design mode (§7.8): sign-in, project, and the Layers / Push / Preview / Settings workspace.
+// Design mode (§7.8): sign-in, project, and the Layers / Push / Preview / QA / Settings workspace.
 function DesignApp(props: { bus: UiBus; init: Init }) {
   const { bus, init } = props
   const authRef = useRef<StoredAuth | null>(usableAuth(init.auth, init.apiBase))
@@ -87,6 +89,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [offerDismissedOn, setOfferDismissedOn] = useState<string | null>(null)
   const [offerSaving, setOfferSaving] = useState(false)
   const [applyingPreview, setApplyingPreview] = useState(false)
+  // The plural form picked on the Preview screen (§7.18.5), for this session and the project it was picked in.
+  const [pluralChoice, setPluralChoice] = useState<ProjectPluralChoice | null>(null)
   const [banner, setBanner] = useState<Banner | null>(null)
   const signedOutRef = useRef<() => void>(() => {})
   // figma.root.name for the copy heuristic (§7.7): from init, refreshed with the T7 settings status.
@@ -715,6 +719,21 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             api={api}
             bus={bus}
             onPrefs={updatePrefs}
+            onSelect={selectNodes}
+            resetting={resetting}
+            onApplying={setApplyingPreview}
+            onReset={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
+            pluralChoice={pluralChoice}
+            onPluralChoice={setPluralChoice}
+          />
+        )}
+        {screen === "qa" && (
+          <QaScreen
+            workspace={workspace}
+            state={space}
+            project={project}
+            readOnly={readOnly}
+            bus={bus}
             onSelect={selectNodes}
             resetting={resetting}
             onApplying={setApplyingPreview}
