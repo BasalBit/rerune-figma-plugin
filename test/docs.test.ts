@@ -19,6 +19,12 @@ import settingsScreen from "../src/ui/screens/settings.tsx?raw"
 import fileLinkState from "../src/ui/state/file-link.ts?raw"
 import screenshotState from "../src/ui/state/screenshots.ts?raw"
 import pushScreen from "../src/ui/screens/push.tsx?raw"
+import previewScreen from "../src/ui/screens/preview.tsx?raw"
+import qaScreen from "../src/ui/screens/qa.tsx?raw"
+import samplesComponent from "../src/ui/components/samples.tsx?raw"
+import samplesState from "../src/ui/state/samples.ts?raw"
+import layersState from "../src/ui/state/layers.ts?raw"
+import previewState from "../src/ui/state/preview.ts?raw"
 import testing from "../TESTING.md?raw"
 
 // README and TESTING.md must match what the build and the plugin actually do (P1.5: "present and accurate").
@@ -182,6 +188,30 @@ describe("TESTING.md", () => {
     const rejected = linkSyncState.match(/\+ " (saved in ReRune because [^"]+)"/)
     expect(rejected).not.toBeNull()
     expect(testing).toContain("1 link wasn't " + (rejected?.[1] ?? "missing"))
+  })
+
+  it("names the Phase 3 QA, sample, plural and max length controls the plugin shows (P3.1, P3.2, P3.5)", () => {
+    const ui = [qaScreen, previewScreen, samplesComponent, samplesState, layersState, layersScreen, pushScreen, previewState].join("\n")
+    for (const label of [
+      "Pseudo-localize",
+      "Pseudo-localization",
+      "Previewing pseudo-localization on",
+      "Sample values and plural forms",
+      "Clear samples",
+      "Automatic",
+      "Longer than max length",
+      "Over max length",
+      "Too long",
+      "Pushing this text is blocked.",
+      "Overwrite ReRune is blocked.",
+      "longer than the key's max length and won't be pushed",
+    ]) {
+      expect(ui).toContain(label)
+      expect(testing).toContain(label)
+    }
+    for (const label of ["Pseudo-localize", "Sample values and plural forms", "Over max length", "Too long"]) {
+      expect(readme).toContain(label)
+    }
   })
 
   it("uses the development hosts, the connect URL and the relaunch button name of the build", () => {

@@ -275,11 +275,18 @@ Connect an MCP client to the local server (`http://localhost:8080/mcp`, Streamab
 
 ## 6. Phase 3: QA
 
+QA tab: **Pseudo-localization** with **Apply to** selection / page, **Pseudo-localize selection** / **Pseudo-localize page** and **Reset**. Preview tab: **Sample values and plural forms** (**Edit** / **Hide**). For the plural checks add a key in ReRune whose `en` value is `{count, plural, one {# item} other {# items}}` and whose `pl` value has `one`, `few`, `many` and `other` forms (for example by importing Flutter ARB files), and link a layer to it.
+
 - [ ] **Overflow report** in `de` and `it` on Chapter lists clipped, truncated and parent-overflowing layers with Select/Zoom; the canvas is reset afterwards.
-- [ ] **Pseudo-localization** previews accented, expanded text and resets.
+- [ ] **Pseudo-localization:** QA → **Pseudo-localize page**: every text layer in scope, linked or not, shows accented, longer text inside ⟦ ⟧ ("Pay now" → "⟦Þáý ñóŵ···⟧"); `{{name}}` stays as it is. The header says "Previewing pseudo-localization on N layers · Reset" and the layers carry the Preview badge. Variable-bound text keeps its text and is counted ("N layers use a Figma variable and kept its text."). Push says "Reset previews before pushing…". **Reset page** restores text and styles exactly. Pseudo-localizing a layer that previews `de` starts from the original English text.
 - [ ] **Language copies:** duplicate a frame per language → copies sit next to the original (inside the same section), named "<frame> · <lang>", excluded from scans and pushes; a component set is refused with "Language copies work on frames…"; refused while previews are active.
-- [ ] **ICU plural selector:** sample values and plural categories render a plural key correctly per language.
-- [ ] **max_length:** warnings in Layers, Push (blocking updates) and Preview.
+- [ ] **Sample values:** a key with `{{name}}` previews as `[name]`. Preview → **Sample values and plural forms** → **Edit** lists the placeholders of the linked layers in scope; type `Ada` for `name`, **Apply** → the layer shows "Ada". Close and reopen the plugin: the sample is still there (it is kept per project; another project starts empty). **Clear samples** brings back `[name]`.
+- [ ] **ICU plural selector:** with the plural key, **Automatic** shows the `other` form (`en`: "0 items"). The dropdown next to `count` lists only the previewed language's categories with the count each shows (`en`: one (1), other (0); `pl`: one (1), few (2), many (0), other (0,5)). Picking **few** in `pl` shows the `few` form with 2. A typed number picks its category (`pl` 22 → few) and `#` is formatted for the language (1000 → "1,000 items" in `en`, "1.000" in `de`). `de-AT` offers the categories of `de`. A category the next language does not have (few, then `en`) falls back to **Automatic**. The Dev Mode inspect panel shows the same `other` form for plural values.
+- [ ] **max_length:** in the dashboard set **Max length** 10 on a linked key, then make the layer's text longer in Figma:
+  - Layers shows "Over max length (n/10)" on the layer, and the **Too long** filter lists it.
+  - Push lists the change with "Longer than the key's max length (n/10). Shorten the text before pushing." and the warning "1 change is longer than the key's max length and won't be pushed…" (**Select on canvas**); the other changes still push and this one is not sent.
+  - Two layers of the key with different texts (one too long): the long variant says "Pushing this text is blocked."; a conflict with a too-long Figma text says "Overwrite ReRune is blocked."; **Take ReRune text** still works.
+  - Preview lists values ReRune counts as too long under "Longer than max length (N)" with "n/10 characters" and **Select**. The editor refuses values over the limit, but file imports do not check it: with **Max length** 10 on the key, import a `de` file in which its value is longer, then preview `de` **Draft**.
 
 ---
 

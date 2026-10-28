@@ -24,10 +24,13 @@ No AI features run inside the plugin. Keys created from Figma count toward the R
 
 1. **Sign in with ReRune.** The plugin shows a code and opens ReRune in your browser; check that the codes match and click Connect there. The plugin then shows "Signed in as {email}" (**Not me** signs out again). Figma desktop and browser Figma keep separate sign-ins.
 2. **Choose a project** for the file and, optionally, paste the file's link (**Share → Copy link**). Everyone who opens the file with the plugin gets the same project.
-3. **Layers:** scan the selection or the page, link layers to existing keys (search, or **Link exact matches** for texts that already exist in ReRune), or mark them to create new keys with a suggested name.
-4. **Push** sends new and changed texts to ReRune as drafts after a review of every change and conflict, and can update layers whose key changed in ReRune.
-5. **Preview** shows a language on the canvas; **Reset** restores the original text and styles.
-6. **Settings:** key-name template and case style, scan options, "Upload screenshots on push", the file's Figma link, and Diagnostics (Advanced).
+3. **Layers:** scan the selection or the page, link layers to existing keys (search, or **Link exact matches** for texts that already exist in ReRune), or mark them to create new keys with a suggested name. Linked layers whose text is longer than the key's max length are marked **Over max length** (filter **Too long**).
+4. **Push** sends new and changed texts to ReRune as drafts after a review of every change and conflict, and can update layers whose key changed in ReRune. A change longer than the key's max length is held back until it fits.
+5. **Preview** shows a language on the canvas; **Reset** restores the original text and styles. Under **Sample values and plural forms** you give placeholders sample values (kept per project on your machine) and pick the plural form to show, from the categories of the language you preview. Values longer than their key's max length are listed after the preview.
+6. **QA:** **Pseudo-localize** replaces the letters of every text layer in scope with accented look-alikes and makes it about 30–40% longer, to find text that clips before translations exist; Reset restores it like any preview.
+7. **Settings:** key-name template and case style, scan options, "Upload screenshots on push", the file's Figma link, and Diagnostics (Advanced).
+
+Plural and ICU values are rendered with the sample values: without a sample a placeholder shows as `[name]`, and a plural message shows the form you picked or, by default, its `other` form, with `#` as a count of that form (formatted for the language). Plural categories follow the CLDR rules of the language as the browser knows them; a regional language such as `de-AT` uses the rules of `de`, as ReRune does.
 
 Once the file's Figma link is pasted (Project screen or Settings → Figma file), the plugin also keeps ReRune's list of which layer shows which key up to date, so the dashboard can show where a key is used: after every link, unlink and push, and on **Sync links on this page**. ReRune's link for a layer is removed only when the layer exists and shows no key or another key; links whose layer is not found are listed and removed only on request. Branch files and files that may be copies (their name differs from the one stored with the link) pause this until the link is confirmed, because they share layer IDs with the original file. Without the Edit keys permission links stay in the file only.
 
@@ -104,8 +107,8 @@ Everything that depends on real Figma behaviour (sign-in, scans of large files, 
 The plugin is built with [Create Figma Plugin](https://yuanqing.github.io/create-figma-plugin/) and Preact.
 
 - `src/main` runs in Figma's main thread: canvas reads and writes, plugin data, `clientStorage`, frame exports. It targets ES2017 and has no DOM types.
-- `src/ui` runs in the plugin iframe: screens and every call to the ReRune API. `src/ui/api` is the fetch client and one function per endpoint, `src/ui/state` the framework-free screen logic (pairing poller, scans, push and preview orchestration, link sync, screenshot uploads, the inspect panel; unit-tested in node), `src/ui/screens` the Preact screens. `src/ui/app.tsx` renders the Design-mode app, or the Dev Mode inspect app (`src/ui/inspect-app.tsx`) in Dev Mode.
-- `src/shared` holds pure, unit-tested logic used by both: message types, wire types, plugin-data parsing, hashing, key-name suggestions, Figma URL parsing, sync state and the push plan.
+- `src/ui` runs in the plugin iframe: screens and every call to the ReRune API. `src/ui/api` is the fetch client and one function per endpoint, `src/ui/state` the framework-free screen logic (pairing poller, scans, push and preview orchestration, sample values, link sync, screenshot uploads, the inspect panel; unit-tested in node), `src/ui/screens` the Preact screens. `src/ui/app.tsx` renders the Design-mode app, or the Dev Mode inspect app (`src/ui/inspect-app.tsx`) in Dev Mode.
+- `src/shared` holds pure, unit-tested logic used by both: message types, wire types, plugin-data parsing, hashing, key-name suggestions, Figma URL parsing, sync state, the push plan, ICU sample rendering and pseudo-localization.
 - `src/codegen/snippets.ts` builds the code snippets for React (i18next), Flutter, Android, iOS and Angular. It is pure and shared by the Dev Mode Code section (main) and the inspect panel (UI).
 
 ### Messages
@@ -163,7 +166,7 @@ Figma's local plugin storage (`clientStorage`, per plugin ID, separate for Figma
 | Key | Value |
 |---|---|
 | `rerune.auth.v1` | the sign-in per ReRune server: plugin token, its ID and expiry, your name and email |
-| `rerune.prefs.v1` | preferences: last preview language, source and variation, "Upload screenshots on push", the inspect panel's platform, "Create one key for layers with identical text" |
+| `rerune.prefs.v1` | preferences: last preview language, source and variation, "Upload screenshots on push", the inspect panel's platform, "Create one key for layers with identical text", and the sample values of each project's placeholders |
 | `rerune.codegen.v1.<projectId>` | the codegen cache of one project: key name, placeholders and up to 60 characters of source text per key, at most 2,000 keys |
 | `rerune.codegen.v1.index` | the projects with a codegen cache, at most 10 (the least recently used one is dropped) |
 
