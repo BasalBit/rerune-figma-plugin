@@ -9,6 +9,7 @@ import { inspectSelection, type InspectWatcher } from "./inspect"
 import { checkLinks, nodeIdsOf } from "./link-check"
 import { applyLinks, removeLinks, type OpOutcome } from "./links"
 import { pageOf } from "./node-utils"
+import { checkOverflow, languageCopiesOf, makeLanguageCopies } from "./qa"
 import { createScanner } from "./scan"
 import { exportScreenshots, frameIdsOf } from "./screenshots"
 import { readFileSettings, saveFileSettings } from "./settings"
@@ -120,8 +121,7 @@ function sendOutcome(bus: MainBus, requestId: RequestId, outcome: OpOutcome): vo
   bus.send({ type: "op-result", requestId, ok: outcomeOk(outcome.errors), done: outcome.done, errors: outcome.errors })
 }
 
-// One handler per message type. Types without a handler yet (Phase 3: overflow-check, language-copies) are
-// answered by the bus with a handler-error.
+// One handler per message type (the bus answers a type without a handler with a handler-error).
 export function registerHandlers(bus: MainBus, context: MainContext): void {
   const scanner = createScanner(bus.send)
 
@@ -189,6 +189,15 @@ export function registerHandlers(bus: MainBus, context: MainContext): void {
   })
   bus.on("preview-reset", async (message) => {
     sendOutcome(bus, message.requestId, await resetPreview(message.scope, message.nodeIds, message.edited))
+  })
+  bus.on("overflow-check", async (message) => {
+    const items = await checkOverflow(nodeIdsOf(message.nodeIds))
+    bus.send({ type: "overflow-result", requestId: message.requestId, items })
+  })
+  bus.on("language-copies", async (message) => {
+    const frameIds = frameIdsOf(message.frameIds)
+    const copies = languageCopiesOf(message.copies)
+    sendOutcome(bus, message.requestId, await makeLanguageCopies(frameIds, copies, Date.now()))
   })
   bus.on("diagnostics-read", async (message) => {
     const report = await runReadDiagnostic(message.test, { env: context.env, apiBase: context.apiBase, startup: context.startup })

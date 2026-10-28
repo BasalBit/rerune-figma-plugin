@@ -19,6 +19,17 @@ export const NODE_ERROR_MESSAGES: Record<NodeErrorCode, string> = {
   remote_component: "Update this text in the library file.",
 }
 
+// language-copies (§7.18.4, D32): why a frame got no copies (NodeError on the frame's id) and which part of a copy
+// kept the source text (on the copy's layer). They travel as NodeError messages with the closest code.
+export const LANGUAGE_COPY_MESSAGES = {
+  component: "Language copies work on frames; place an instance in a frame first.",
+  notFrame: "Language copies work on top-level frames and instances.",
+  alreadyCopy: "This frame is already a language copy.",
+  previewing: "Reset previews first.",
+  failed: "Figma couldn't copy this frame.",
+  mismatch: "This part of the copy differs from the original, so it kept the source text.",
+} as const
+
 // Warnings: the write happened, but the result is not exact. They do not make an op-result fail.
 export const NODE_WARNING_CODES: readonly NodeErrorCode[] = ["mixed_styles_flattened", "override_kept"]
 

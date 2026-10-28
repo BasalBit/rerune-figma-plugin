@@ -22,7 +22,7 @@ import { PairingScreen } from "./screens/pairing"
 import { ProjectScreen } from "./screens/project-picker"
 import { PreviewScreen } from "./screens/preview"
 import { PushScreen } from "./screens/push"
-import { QaScreen } from "./screens/qa"
+import { NEW_QA_SESSION, QaScreen, type QaSession } from "./screens/qa"
 import { SettingsOfferNote, SettingsScreen } from "./screens/settings"
 import { SignInScreen } from "./screens/sign-in"
 import { SignedInScreen } from "./screens/signed-in"
@@ -76,9 +76,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [projectError, setProjectError] = useState<string | null>(null)
   const [selectionCount, setSelectionCount] = useState(init.selectionCount)
   const pageRef = useRef(init.pageId)
-  const [pushBusy, setPushBusy] = useState(false)
+  // A push (with its screenshots), an overflow report or language copies keep the tabs and Change project locked.
+  const [workLocked, setWorkLocked] = useState(false)
   const contextRef = useRef<NavContext>({ apiBase: init.apiBase, settings })
-  contextRef.current = { apiBase: init.apiBase, settings, locked: pushBusy }
+  contextRef.current = { apiBase: init.apiBase, settings, locked: workLocked }
   const [view, setView] = useState<AppView>(() => initialView(authRef.current, contextRef.current))
   const [diagnosticsReturn, setDiagnosticsReturn] = useState<Screen>("sign-in")
   const [link, setLink] = useState<{ nodes: ScannedNode[]; key: FigmaKeyRef | null } | null>(null)
@@ -91,6 +92,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [applyingPreview, setApplyingPreview] = useState(false)
   // The plural form picked on the Preview screen (§7.18.5), for this session and the project it was picked in.
   const [pluralChoice, setPluralChoice] = useState<ProjectPluralChoice | null>(null)
+  // The QA tab's picks and last results, kept while other tabs are open.
+  const [qaSession, setQaSession] = useState<QaSession>(NEW_QA_SESSION)
   const [banner, setBanner] = useState<Banner | null>(null)
   const signedOutRef = useRef<() => void>(() => {})
   // figma.root.name for the copy heuristic (§7.7): from init, refreshed with the T7 settings status.
@@ -121,6 +124,11 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
 
   function go(event: NavEvent) {
     setView((current) => navigate(current, event, contextRef.current))
+  }
+
+  function lockWork(busy: boolean) {
+    setWorkLocked(busy)
+    contextRef.current = { ...contextRef.current, locked: busy }
   }
 
   function setAuth(next: StoredAuth | null) {
@@ -280,6 +288,11 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     [],
   )
 
+  // QA picks and results belong to the project they were made in.
+  useEffect(() => {
+    setQaSession(NEW_QA_SESSION)
+  }, [project?.id])
+
   // First look at the workspace: scan the selection (relaunch "open" lands here too, §7.4).
   useEffect(() => {
     if (project !== null && workspace.store.get().status === "idle" && workspace.store.get().scope === "selection") {
@@ -322,7 +335,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     }
     const changed = settings?.projectId !== picked.id || settings?.apiBase !== init.apiBase
     await saveSettings(next)
-    contextRef.current = { apiBase: init.apiBase, settings: next, locked: pushBusy }
+    contextRef.current = { apiBase: init.apiBase, settings: next, locked: workLocked }
     if (changed) {
       workspace.clear(true)
     }
@@ -620,7 +633,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         previewStatus={previewing}
         onOpen={(next) => go({ type: "open", screen: next })}
         onChangeProject={() => go({ type: "change-project" })}
-        locked={pushBusy}
+        locked={workLocked}
         resetDisabled={resetting || applyingPreview}
         onResetPreview={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}
       />
@@ -700,10 +713,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             resetting={resetting}
             onResetPreviews={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
             onAvailableKeys={(availableKeys) => setActiveProject({ ...project, available_keys: availableKeys })}
-            onBusy={(busy) => {
-              setPushBusy(busy)
-              contextRef.current = { ...contextRef.current, locked: busy }
-            }}
+            onBusy={lockWork}
             fileKey={pushFileKey(usable, rootName)}
             syncLinks={(nodeIds) => linkSyncer.syncNodes(nodeIds, knownNodes())}
             screenshots={screenshotUploader}
@@ -732,12 +742,18 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             workspace={workspace}
             state={space}
             project={project}
+            prefs={prefs}
             readOnly={readOnly}
+            api={api}
             bus={bus}
             onSelect={selectNodes}
             resetting={resetting}
             onApplying={setApplyingPreview}
+            onLock={lockWork}
             onReset={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
+            pluralChoice={pluralChoice}
+            session={qaSession}
+            onSession={(patch) => setQaSession((current) => ({ ...current, ...patch }))}
           />
         )}
         {screen === "settings" && (

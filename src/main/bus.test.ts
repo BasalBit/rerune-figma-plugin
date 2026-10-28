@@ -165,7 +165,7 @@ describe("main bus error boundary", () => {
     expect(sent).toEqual([])
   })
 
-  it("answers known types without a handler (later phases) with a handler-error", async () => {
+  it("answers known types without a registered handler with a handler-error", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {})
     const instance = bus("figma")
     await instance.dispatch({ type: "overflow-check", requestId: "c3-1", nodeIds: [] })

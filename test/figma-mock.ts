@@ -46,6 +46,8 @@ export interface FakeNode {
   findAllWithCriteria(criteria: { types?: string[]; sharedPluginData?: { namespace: string; keys?: string[] } }): FakeNode[]
   findAll(callback?: (node: FakeNode) => boolean): FakeNode[]
   appendChild(child: FakeNode): void
+  insertChild(index: number, child: FakeNode): void
+  clone(): FakeNode
   remove(): void
   [key: string]: unknown
 }
@@ -83,6 +85,7 @@ export interface FakeInstance extends FakeNode {
 }
 
 const registry = new Map<string, FakeNode>()
+let cloneCounter = 0
 
 function clone<T>(value: T): T {
   return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T)
@@ -213,6 +216,17 @@ export function createNode(type: string, id: string, name: string, children: Fak
       child.parent = node
       node.allChildren.push(child)
     },
+    insertChild(index: number, child: FakeNode): void {
+      if (child.parent !== null) {
+        child.parent.allChildren = child.parent.allChildren.filter((entry) => entry !== child)
+      }
+      child.parent = node
+      const at = Math.max(0, Math.min(index, node.allChildren.length))
+      node.allChildren.splice(at, 0, child)
+    },
+    clone(): FakeNode {
+      return cloneNode(node)
+    },
     remove(): void {
       node.removed = true
       if (node.parent !== null) {
@@ -220,6 +234,9 @@ export function createNode(type: string, id: string, name: string, children: Fak
       }
     },
   }
+  // Test-only access to the node's own plugin data and relaunch data (clone copies them).
+  Object.defineProperty(node, "__ownData", { value: () => new Map(own), enumerable: false })
+  Object.defineProperty(node, "__relaunch", { value: () => ({ ...relaunch }), enumerable: false })
   for (const child of children) {
     node.appendChild(child)
   }
@@ -228,6 +245,99 @@ export function createNode(type: string, id: string, name: string, children: Fak
   }
   registry.set(id, node)
   return node
+}
+
+// Properties every node gets from createNode (or fakeText's accessors); clone() copies the rest as data.
+const BASE_KEYS = new Set([
+  "id", "type", "name", "parent", "removed", "visible", "locked", "children", "allChildren", "inheritFrom",
+  "characters", "styles", "fontName", "textAutoResize", "overrides", "mainComponent", "getMainComponentAsync",
+])
+
+interface CloneRoot { sourceId: string; cloneId: string }
+
+function freshCloneId(): string {
+  cloneCounter++
+  return String(8000 + cloneCounter) + ":" + String(cloneCounter)
+}
+
+// Figma names a sublayer of an instance "I" + instance id + ";" + the path inside the main component; inside a
+// copied instance the path stays and the instance id is the copy's.
+function cloneIdFor(source: FakeNode, root: CloneRoot | null): string {
+  if (root === null) {
+    return freshCloneId()
+  }
+  const prefix = "I" + root.sourceId + ";"
+  const path = source.id.startsWith(prefix) ? source.id.slice(prefix.length) : source.id.replace(/^I/, "")
+  return "I" + root.cloneId + ";" + path
+}
+
+// node.clone() (Figma: the duplicate is parented under figma.currentPage; nested components become instances of
+// the original component; plugin data, relaunch data and overrides travel with the copy).
+export function cloneNode(source: FakeNode): FakeNode {
+  const copy = cloneTree(source, null, true, false)
+  if (current !== null) {
+    current.currentPage.appendChild(copy)
+  }
+  return copy
+}
+
+function cloneTree(source: FakeNode, root: CloneRoot | null, isRoot: boolean, inheritOnly: boolean): FakeNode {
+  const id = cloneIdFor(source, root)
+  const asInstance = !isRoot && root === null && source.type === "COMPONENT"
+  const type = asInstance ? "INSTANCE" : source.type
+  const extra: Record<string, unknown> = {}
+  for (const key of Object.keys(source)) {
+    const descriptor = Object.getOwnPropertyDescriptor(source, key)
+    if (BASE_KEYS.has(key) || descriptor === undefined || descriptor.get !== undefined || typeof descriptor.value === "function") {
+      continue
+    }
+    extra[key] = clone(descriptor.value)
+  }
+  if (asInstance) {
+    delete extra.remote
+  }
+  let copy: FakeNode
+  if (source.type === "TEXT") {
+    const text = source as FakeText
+    const fake = fakeText(id, text.characters, { ...extra, textAutoResize: text.textAutoResize })
+    fake.styles = clone(text.styles)
+    copy = fake
+  } else {
+    copy = createNode(type, id, source.name, [], extra)
+  }
+  copy.name = source.name
+  copy.visible = source.visible
+  copy.locked = source.locked
+  if (type === "INSTANCE") {
+    const instance = copy as FakeInstance
+    const sourceOverrides = asInstance ? [] : ((source as FakeInstance).overrides ?? [])
+    const nextRoot = root ?? { sourceId: source.id, cloneId: id }
+    instance.overrides = sourceOverrides.map((entry) => ({ id: cloneIdFor({ id: entry.id } as FakeNode, nextRoot), overriddenFields: entry.overriddenFields.slice() }))
+    instance.mainComponent = asInstance ? source : ((source as FakeInstance).mainComponent ?? null)
+    instance.getMainComponentAsync = vi.fn(async () => instance.mainComponent)
+  }
+  // Sublayers of a component that became an instance show the component's data (inherited); everything else keeps
+  // its own copy.
+  if (inheritOnly) {
+    copy.inheritFrom = source
+  } else {
+    const data = (source as unknown as { __ownData(): Map<string, string> }).__ownData()
+    for (const [entry, value] of data) {
+      const at = entry.indexOf("/")
+      copy.setSharedPluginData(entry.slice(0, at), entry.slice(at + 1), value)
+    }
+    copy.inheritFrom = source.inheritFrom
+    const relaunch = (source as unknown as { __relaunch(): Record<string, string> }).__relaunch()
+    if (Object.keys(relaunch).length > 0) {
+      copy.setRelaunchData(relaunch)
+      copy.setRelaunchData.mockClear()
+    }
+  }
+  const childRoot = type === "INSTANCE" ? (root ?? { sourceId: source.id, cloneId: id }) : root
+  for (const child of source.allChildren) {
+    copy.appendChild(cloneTree(child, childRoot, false, inheritOnly || asInstance))
+  }
+  return copy
 }
 
 function requireLoaded(font: FakeFont): void {
@@ -290,6 +400,23 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
       configurable: true,
     },
   })
+  // Setting textAutoResize needs the fonts loaded (as in Figma). Switching to "HEIGHT" keeps the width and takes
+  // the height the test gave as `measuredHeight` (the text's height when it wraps freely), if any.
+  let autoResize = typeof extra.textAutoResize === "string" ? extra.textAutoResize : "WIDTH_AND_HEIGHT"
+  Object.defineProperty(text, "textAutoResize", {
+    get: () => autoResize,
+    set: (next: string) => {
+      const fonts = value.length === 0 ? [baseStyle.fontName] : uniqueFonts(styles)
+      fonts.forEach(requireLoaded)
+      autoResize = next
+      const measured = (text as Record<string, unknown>).measuredHeight
+      if (next === "HEIGHT" && typeof measured === "number") {
+        text.height = measured
+      }
+    },
+    enumerable: true,
+    configurable: true,
+  })
   Object.assign(text, {
     autoRename: true,
     hasMissingFont: false,
@@ -297,7 +424,6 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
     boundVariables: {},
     width: 100,
     height: 20,
-    textAutoResize: "WIDTH_AND_HEIGHT",
     textTruncation: "DISABLED",
     maxLines: null,
     absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 20 },
@@ -360,6 +486,9 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
     }),
   })
   for (const [key, entry] of Object.entries(extra)) {
+    if (key === "textAutoResize") {
+      continue
+    }
     Object.defineProperty(text, key, { value: entry, writable: true, configurable: true, enumerable: true })
   }
   return text
@@ -593,6 +722,7 @@ export function uninstallFigma(): void {
   delete globals.__html__
   current = null
   registry.clear()
+  cloneCounter = 0
   vi.restoreAllMocks()
 }
 

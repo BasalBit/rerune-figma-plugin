@@ -237,10 +237,14 @@ describe("document handlers through the bus", () => {
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 
-  it("answers later-phase messages with a handler-error", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {})
-    await setup().dispatch({ type: "overflow-check", requestId: "s", nodeIds: [] })
-    expect(sent).toEqual([{ type: "handler-error", forType: "overflow-check", requestId: "s", message: "Not available in this version of the plugin" }])
+  it("answers overflow-check with overflow-result and language-copies with op-result (QA, §7.18)", async () => {
+    const bus = setup()
+    await bus.dispatch({ type: "overflow-check", requestId: "q1", nodeIds: ["99:1"] })
+    await bus.dispatch({ type: "language-copies", requestId: "q2", frameIds: ["99:1"], copies: [] })
+    expect(sent).toEqual([
+      { type: "overflow-result", requestId: "q1", items: [] },
+      { type: "op-result", requestId: "q2", ok: false, done: 0, errors: [{ nodeId: "99:1", code: "node_not_found", message: "Layer not found. It may be hidden or deleted." }] },
+    ])
   })
 
   it("answers screenshots-export with frame-images-done (and refuses ids that are not a list)", async () => {

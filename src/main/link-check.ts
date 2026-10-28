@@ -1,6 +1,6 @@
 import type { LinkCheck } from "../shared/messages"
 import { readLinkInfo } from "./links"
-import { createNodeCaches, pageOf, topFrameOf, withInvisibleInstanceChildren, yieldToCanvas, type NodeCaches } from "./node-utils"
+import { createNodeCaches, isInLanguageCopy, pageOf, topFrameOf, withInvisibleInstanceChildren, yieldToCanvas, type NodeCaches } from "./node-utils"
 
 // link-check (link sync, §7.11, §7.15, D43): the current link of the nodes ReRune has links for (and, on request,
 // of the instance sublayers on the current page that inherit from them). Runs with
@@ -73,14 +73,15 @@ function inComponent(node: BaseNode): boolean {
 
 // The current page's instance sublayers that show one of `sources` (D44): Figma names an instance sublayer "I" +
 // the instance path + ";" + the component node's id, so a sublayer of an instance (also a nested one) of that
-// component ends with ";" + the source id. Other pages are never loaded for it.
-function inheritorsOnPage(sources: ReadonlySet<string>, checked: ReadonlySet<string>): string[] {
+// component ends with ";" + the source id. Other pages are never loaded for it. Layers of language copies are left
+// out, as scans and pushes leave them out (D32).
+function inheritorsOnPage(sources: ReadonlySet<string>, checked: ReadonlySet<string>, caches: NodeCaches): string[] {
   if (sources.size === 0) {
     return []
   }
   const found: string[] = []
   for (const text of figma.currentPage.findAllWithCriteria({ types: ["TEXT"] })) {
-    if (text.id.charAt(0) !== "I" || checked.has(text.id)) {
+    if (text.id.charAt(0) !== "I" || checked.has(text.id) || isInLanguageCopy(text, caches)) {
       continue
     }
     const parts = text.id.split(";")
@@ -104,7 +105,7 @@ export async function checkLinks(nodeIds: readonly string[], inheritors = false)
     const results = await checkAll(nodeIds, caches, sources)
     if (sources !== null) {
       try {
-        results.push(...(await checkAll(inheritorsOnPage(sources, new Set(nodeIds)), caches)))
+        results.push(...(await checkAll(inheritorsOnPage(sources, new Set(nodeIds), caches), caches)))
       } catch {
         // The requested layers are answered; their instances are checked by the next sync or "Sync links on this page".
       }

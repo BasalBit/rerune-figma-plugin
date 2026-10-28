@@ -4,7 +4,7 @@ import { keyId, OTHER_PROJECT_ID, PROJECT_ID } from "../../test/fixtures"
 import { DATA_KEYS, PLUGIN_DATA_NAMESPACE } from "../shared/constants"
 import { src } from "../shared/hash"
 import type { MainToUi, NodeLink } from "../shared/messages"
-import { serializeLink } from "../shared/plugin-data"
+import { serializeLangCopy, serializeLink } from "../shared/plugin-data"
 import { createMainBus } from "./bus"
 import { registerHandlers, type MainContext } from "./handlers"
 import { checkLinks, nodeIdsOf } from "./link-check"
@@ -178,6 +178,22 @@ describe("checkLinks (link sync, D43)", () => {
     expect((await checkLinks(["5:67"])).map((entry) => entry.nodeId)).toEqual(["5:67"])
     // An instance sublayer already requested is answered once.
     expect((await checkLinks(["5:67", "I12:34;5:67"], true)).map((entry) => entry.nodeId)).toEqual(["5:67", "I12:34;5:67", "I12:35;5:67", "I12:40;3:2;5:67", "I12:50;5:67"])
+  })
+
+  it("leaves out instance sublayers inside a language copy (D32)", async () => {
+    const mainText = fakeText("5:67", "Pay now")
+    setLink(mainText, link("5:67"))
+    const component = fakeComponent("5:1", "Button", [mainText])
+    const inFrame = Object.assign(fakeText("I12:34;5:67", "Pay now"), { inheritFrom: mainText })
+    const inCopy = Object.assign(fakeText("I12:44;5:67", "Jetzt zahlen"), { inheritFrom: mainText })
+    const copy = fakeFrame("11:1", "Checkout · de", [fakeInstance("12:44", "Button", [inCopy], { overrides: [], mainComponent: component })])
+    copy.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.langCopy, serializeLangCopy({ v: 1, nid: "11:1", lang: "de", source: "draft", variationOptionId: null, sourceFrameId: "10:1", createdAt: 1 }))
+    // A frame carrying a copied marker (another frame's nid) is not a language copy.
+    const duplicate = fakeFrame("11:2", "Checkout · de copy", [fakeInstance("12:54", "Button", [Object.assign(fakeText("I12:54;5:67", "Pay now"), { inheritFrom: mainText })], { overrides: [], mainComponent: component })])
+    duplicate.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.langCopy, serializeLangCopy({ v: 1, nid: "11:1", lang: "de", source: "draft", variationOptionId: null, sourceFrameId: "10:1", createdAt: 1 }))
+    onPage(figmaMock, [component, fakeFrame("10:1", "Checkout", [fakeInstance("12:34", "Button", [inFrame], { overrides: [], mainComponent: component })]), copy, duplicate])
+
+    expect((await checkLinks(["5:67"], true)).map((entry) => entry.nodeId)).toEqual(["5:67", "I12:34;5:67", "I12:54;5:67"])
   })
 
   it("does not walk the page for text outside a component", async () => {

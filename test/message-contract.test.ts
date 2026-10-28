@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createMainBus, NOT_IMPLEMENTED, type MainBus } from "../src/main/bus"
+import { createMainBus, type MainBus } from "../src/main/bus"
 import { registerHandlers, type MainContext } from "../src/main/handlers"
 import { watchInspectSelection } from "../src/main/inspect"
 import { MESSAGE_IMPACT, type BuildEnv, type PluginEditorType } from "../src/shared/message-policy"
@@ -12,16 +12,9 @@ import { importClosure, normalizeSources } from "./source-graph"
 
 // Whole-repo contract for the §7.5 messages (plus the Phase 2 additions link-check / link-check-result and the
 // frame skip reason preview_active): every type is sent by one side and handled by the other, and every request
-// main receives gets exactly one answer, so the UI never waits for its watchdog. Phase 1 and Phase 2 types are
-// built. Phase 3 types are already typed and in the impact map; until Phase 3 lands, the UI never sends them,
-// main never posts them, and main answers them with a handler-error.
+// main receives gets exactly one answer, so the UI never waits for its watchdog. Every type of Phases 1–3 is built
+// (Phase 3: overflow-check / overflow-result and language-copies for the QA screen).
 // The Dev Mode side of the impact map is checked in test/dev-mode-policy.test.ts and src/ui/dev-mode-ui.test.ts.
-
-const LATER_PHASE: Partial<Record<UiToMainType | MainToUiType, 3>> = {
-  "overflow-check": 3,
-  "overflow-result": 3,
-  "language-copies": 3,
-}
 
 // What main answers to each UI → main message (null: nothing, the message is fire-and-forget).
 const ANSWER: Record<UiToMainType, MainToUiType | null> = {
@@ -109,10 +102,8 @@ const mainSources = normalizeSources(import.meta.glob<string>(["../src/main/**/*
 const UI_FILES = Object.keys(uiSources).filter((path) => path.startsWith("../src/ui/"))
 
 const UI_TO_MAIN = Object.keys(MESSAGE_IMPACT) as UiToMainType[]
-const BUILT_UI_TO_MAIN = UI_TO_MAIN.filter((type) => LATER_PHASE[type] === undefined)
-const LATER_UI_TO_MAIN = UI_TO_MAIN.filter((type) => LATER_PHASE[type] !== undefined)
-const BUILT_MAIN_TO_UI = MAIN_TO_UI_TYPES.filter((type) => LATER_PHASE[type] === undefined)
-const LATER_MAIN_TO_UI = MAIN_TO_UI_TYPES.filter((type) => LATER_PHASE[type] !== undefined)
+const BUILT_UI_TO_MAIN = UI_TO_MAIN
+const BUILT_MAIN_TO_UI = MAIN_TO_UI_TYPES
 const REQUESTS = BUILT_UI_TO_MAIN.filter((type) => "requestId" in SAMPLES[type])
 
 // A message object literal of this type (`{ type: "scan-request", … }`).
@@ -170,14 +161,12 @@ describe("§7.5 message contract", () => {
     expect(Object.keys(mainSources).some((path) => path.endsWith(".test.ts"))).toBe(false)
   })
 
-  it("splits the message types into built (Phases 1 and 2) and Phase 3", () => {
-    expect(LATER_UI_TO_MAIN).toEqual(["overflow-check", "language-copies"])
-    expect(LATER_MAIN_TO_UI).toEqual(["overflow-result"])
-    expect(BUILT_UI_TO_MAIN).toHaveLength(23)
-    expect(BUILT_MAIN_TO_UI).toHaveLength(12)
-    // Phase 2: link sync, screenshots, Dev Mode inspect and its codegen cache.
-    expect(BUILT_UI_TO_MAIN).toEqual(expect.arrayContaining(["link-check", "screenshots-export", "inspect-request", "cache-save"]))
-    expect(BUILT_MAIN_TO_UI).toEqual(expect.arrayContaining(["link-check-result", "frame-image", "frame-images-done", "inspect-selection"]))
+  it("covers every message type of Phases 1–3", () => {
+    expect(BUILT_UI_TO_MAIN).toHaveLength(25)
+    expect(BUILT_MAIN_TO_UI).toHaveLength(13)
+    // Phase 2: link sync, screenshots, Dev Mode inspect and its codegen cache. Phase 3: the QA screen.
+    expect(BUILT_UI_TO_MAIN).toEqual(expect.arrayContaining(["link-check", "screenshots-export", "inspect-request", "cache-save", "overflow-check", "language-copies"]))
+    expect(BUILT_MAIN_TO_UI).toEqual(expect.arrayContaining(["link-check-result", "frame-image", "frame-images-done", "inspect-selection", "overflow-result"]))
   })
 
   it("main registers exactly one handler for every built UI → main type", () => {
@@ -204,14 +193,6 @@ describe("§7.5 message contract", () => {
     expect(filesMentioning(uiSources, UI_FILES, type)).not.toEqual([])
   })
 
-  it.each(LATER_UI_TO_MAIN)("%s (Phase 3) is not sent yet and main answers it with a handler-error", async (type) => {
-    expect(filesBuilding(uiSources, UI_FILES, type)).toEqual([])
-    expect(await exchange(SAMPLES[type])).toEqual([{ type: "handler-error", forType: type, requestId: "c1-1", message: NOT_IMPLEMENTED }])
-  })
-
-  it.each(LATER_MAIN_TO_UI)("%s (Phase 3) is not posted by main yet", (type) => {
-    expect(filesBuilding(mainSources, Object.keys(mainSources), type)).toEqual([])
-  })
 })
 
 describe("each UI handles what main posts in its mode", () => {
