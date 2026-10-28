@@ -233,6 +233,29 @@ describe("document handlers through the bus", () => {
     expect(parseLink(node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link)).kind).toBe("none")
   })
 
+  it("keeps the true original when two preview-apply messages overlap on one layer", async () => {
+    for (let delay = 0; delay < 12; delay++) {
+      uninstallFigma()
+      figmaMock = installFigma()
+      clearFontCache()
+      sent = []
+      const node = fakeText("1:1", "Pay now")
+      onPage(figmaMock, [node], [node])
+      const bus = setup()
+      const first = bus.dispatch({ type: "preview-apply", requestId: "a", info: { lang: "de", source: "draft", variationOptionId: null }, items: [{ nodeId: "1:1", text: "Jetzt zahlen" }] })
+      let later: Promise<void> = Promise.resolve()
+      for (let tick = 0; tick < delay; tick++) later = later.then(() => undefined)
+      const second = later.then(() =>
+        bus.dispatch({ type: "preview-apply", requestId: "b", info: { lang: "en", source: "pseudo", variationOptionId: null }, items: [{ nodeId: "1:1", text: "⟦Þáý ñóŵ⟧" }] }),
+      )
+      await Promise.all([first, second])
+      expect(node.characters).toBe("⟦Þáý ñóŵ⟧")
+      await bus.dispatch({ type: "preview-reset", requestId: "r", scope: "page", nodeIds: ["1:1"] })
+      expect(node.characters).toBe("Pay now")
+      expect(node.getSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.preview)).toBe("")
+    }
+  })
+
   it("refuses document writes in Dev Mode", async () => {
     const node = fakeText("1:1", "Pay now")
     onPage(figmaMock, [node])

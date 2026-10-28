@@ -20,6 +20,7 @@ import {
 } from "../state/preview"
 import { activePluralChoice, projectSamples, samplePlaceholders, type ProjectPluralChoice } from "../state/samples"
 import type { Prefs } from "../state/settings"
+import type { WorkLock } from "../state/work-lock"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // Preview (§7.8, §7.14, D24): language (with its inheritance chain), Draft/Published, variation, "Show key names",
@@ -38,7 +39,8 @@ export interface PreviewScreenProps {
   onSelect(nodeIds: string[]): void
   onReset(scope: Scope, nodeIds?: string[]): Promise<void>
   resetting: boolean                      // a reset started elsewhere (Nav, Push) is running
-  onApplying(applying: boolean): void     // lets the app hold other resets while previews are written
+  locked: boolean                         // a canvas task (this screen's apply included) holds the work lock
+  work: Pick<WorkLock, "acquire" | "release">  // an apply holds it, so no other task writes previews meanwhile
   pluralChoice: ProjectPluralChoice | null
   onPluralChoice(choice: ProjectPluralChoice | null): void
 }
@@ -78,9 +80,8 @@ export function PreviewScreen(props: PreviewScreenProps) {
   const activePlural = activePluralChoice(props.pluralChoice, project.id, lang)
 
   async function apply() {
-    if (lang === null || props.resetting) return
+    if (lang === null || props.resetting || !props.work.acquire("preview")) return
     setBusy("apply")
-    props.onApplying(true)
     setError(null)
     setApplied(null)
     try {
@@ -106,7 +107,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
       setError(userMessage(caught))
     } finally {
       setBusy(null)
-      props.onApplying(false)
+      props.work.release("preview")
     }
   }
 
@@ -125,7 +126,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
 
   const languageOptions = project.languages.map((language) => ({ value: language.code, text: languageLabel(language) }))
   const variationOptions = [{ value: NO_VARIATION, text: "No variation" }, ...project.variation_options.map((option) => ({ value: option.id, text: option.value }))]
-  const disabled = props.readOnly || busy !== null || props.resetting
+  const disabled = props.readOnly || busy !== null || props.resetting || props.locked
 
   return (
     <div style={styles.page}>

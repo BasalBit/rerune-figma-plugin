@@ -141,7 +141,7 @@ Code comments that cite a section (`§7.14`), a decision (`D32`), a spike (`S5`)
 
 ### Messages
 
-Main and UI talk only through typed messages (`src/shared/messages.ts`). Every UI → main message has an impact in `src/shared/message-policy.ts`, and the main bus checks it before any handler runs: Dev Mode accepts `ui` and `read` messages and refuses every `metadata` and `canvas` message (Figma shows "Not available in Dev Mode"). Each `metadata` or `canvas` message is one undo step. Main answers every request with its answer or a `handler-error`, so the UI never waits for its 30-second watchdog.
+Main and UI talk only through typed messages (`src/shared/messages.ts`). Every UI → main message has an impact in `src/shared/message-policy.ts`, and the main bus checks it before any handler runs: Dev Mode accepts `ui` and `read` messages and refuses every `metadata` and `canvas` message (Figma shows "Not available in Dev Mode"). `metadata` and `canvas` messages run one at a time in the order they arrive, so two writes never interleave on a layer; the UI also runs one canvas task at a time (push, preview, pseudo-localization, overflow report, language copies) and keeps the tabs locked meanwhile. Each `metadata` or `canvas` message is one undo step. Main answers every request with its answer or a `handler-error`, so the UI never waits for its 30-second watchdog.
 
 | UI → main | Impact | Dev Mode | Main answers |
 |---|---|---|---|

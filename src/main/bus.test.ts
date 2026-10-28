@@ -121,6 +121,77 @@ describe("undo steps", () => {
   })
 })
 
+describe("document writes run one at a time", () => {
+  function deferred(): { promise: Promise<void>; resolve(): void } {
+    let resolve = () => {}
+    const promise = new Promise<void>((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+
+  it("starts a write only after the previous write ended, in arrival order; reads are not queued", async () => {
+    const order: string[] = []
+    const gate = deferred()
+    const instance = bus("figma")
+    instance.on("preview-apply", async (message) => {
+      order.push("start " + message.requestId)
+      if (message.requestId === "a") {
+        await gate.promise
+      }
+      order.push("end " + message.requestId)
+    })
+    instance.on("settings-save", () => {
+      order.push("settings")
+    })
+    instance.on("scan-request", () => {
+      order.push("scan")
+    })
+    const first = instance.dispatch({ type: "preview-apply", requestId: "a", info: {}, items: [] })
+    const second = instance.dispatch({ type: "preview-apply", requestId: "b", info: {}, items: [] })
+    const third = instance.dispatch({ type: "settings-save", requestId: "c", settings: {} })
+    await instance.dispatch({ type: "scan-request", requestId: "d", scope: "page" })
+    for (let tick = 0; tick < 10; tick++) await Promise.resolve()
+    expect(order.slice().sort()).toEqual(["scan", "start a"])
+    gate.resolve()
+    await Promise.all([first, second, third])
+    expect(order.filter((entry) => entry !== "scan")).toEqual(["start a", "end a", "start b", "end b", "settings"])
+  })
+
+  it("commits each write's undo step before the next write starts", async () => {
+    const order: string[] = []
+    figmaMock.commitUndo.mockImplementation(() => order.push("commit"))
+    const instance = bus("figma")
+    instance.on("preview-apply", async (message) => {
+      order.push("write " + message.requestId)
+      await Promise.resolve()
+      order.push("wrote " + message.requestId)
+    })
+    await Promise.all([
+      instance.dispatch({ type: "preview-apply", requestId: "a", info: {}, items: [] }),
+      instance.dispatch({ type: "preview-apply", requestId: "b", info: {}, items: [] }),
+    ])
+    expect(order).toEqual(["write a", "wrote a", "commit", "write b", "wrote b", "commit"])
+  })
+
+  it("runs the next write after one that failed, and after one whose error notice failed", async () => {
+    const instance = bus("figma")
+    const after = vi.fn()
+    instance.on("text-apply", () => {
+      throw new Error("write refused")
+    })
+    instance.on("link-remove", after)
+    figmaMock.notify.mockImplementationOnce(() => {
+      throw new Error("no notify")
+    })
+    const failing = instance.dispatch({ type: "text-apply", requestId: "a", items: [] })
+    const next = instance.dispatch({ type: "link-remove", requestId: "b", nodeIds: [] })
+    await expect(failing).rejects.toThrow("no notify")
+    await next
+    expect(after).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe("main bus error boundary", () => {
   it("turns a thrown error into a notify (≤ 100 chars) and a handler-error", async () => {
     const instance = bus("figma")

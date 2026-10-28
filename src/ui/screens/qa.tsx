@@ -30,6 +30,7 @@ import {
 } from "../state/qa"
 import { activePluralChoice, projectSamples, samplePlaceholders, type ProjectPluralChoice } from "../state/samples"
 import type { Prefs } from "../state/settings"
+import type { WorkLock } from "../state/work-lock"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // QA (§7.8, §7.18, Design mode only):
@@ -67,8 +68,10 @@ export interface QaScreenProps {
   onReset(scope: Scope, nodeIds?: string[]): Promise<void>
   onReportReset(scope: Scope, nodeIds: string[]): Promise<void>  // the report's final reset: after any running reset, never merged into it
   resetting: boolean                      // a reset started elsewhere (Nav, Push, Preview) is running
-  onApplying(applying: boolean): void     // lets the app hold other resets while previews are written
-  onLock(locked: boolean): void           // tabs and Change project stay put while the report or the copies run
+  locked: boolean                         // a canvas task (one of this screen's included) holds the work lock
+  // The report, the copies and pseudo-localization each hold it, so no other task writes previews meanwhile and the
+  // tabs and Change project stay put.
+  work: Pick<WorkLock, "acquire" | "release">
   pluralChoice: ProjectPluralChoice | null
   onPluralChoice(choice: ProjectPluralChoice | null): void
   session: QaSession
@@ -148,27 +151,28 @@ export function QaScreen(props: QaScreenProps) {
     }
   }
 
-  function start(kind: "report" | "copies") {
+  // Takes the work lock for the report or the copies; false when another canvas task holds it.
+  function start(kind: "report" | "copies"): boolean {
+    if (props.resetting || !props.work.acquire(kind)) {
+      return false
+    }
     setBusy(kind)
-    props.onLock(true)
-    props.onApplying(true)
     setError(null)
     setRefusal(null)
     setCopiesError(null)
     setProgress(null)
+    return true
   }
 
-  function finish() {
+  function finish(kind: "report" | "copies") {
     setBusy(null)
     setProgress(null)
-    props.onApplying(false)
-    props.onLock(false)
+    props.work.release(kind)
   }
 
   async function runReport() {
-    if (props.resetting) return
     const picked = withPseudo ? [...ordered, PSEUDO_LANGUAGE] : ordered
-    start("report")
+    if (!start("report")) return
     stopRef.current = false
     try {
       const report = await runOverflowReport(
@@ -188,19 +192,19 @@ export function QaScreen(props: QaScreenProps) {
         setError(userMessage(caught))
       }
     } finally {
-      finish()
+      finish("report")
     }
   }
 
   async function runCopies() {
-    start("copies")
+    if (!start("copies")) return
     try {
       const copies = await makeLanguageCopies({ ...deps(sampleDrafts.commit()), onProgress: setProgress }, { languages: ordered, source, variationOptionId: variation, projectId: project.id })
       onSession({ copies })
     } catch (caught) {
       setCopiesError({ message: userMessage(caught), nodeIds: caught instanceof QaRefusal ? caught.nodeIds : [] })
     } finally {
-      finish()
+      finish("copies")
     }
   }
 
@@ -214,9 +218,8 @@ export function QaScreen(props: QaScreenProps) {
   }
 
   async function applyPseudo() {
-    if (props.resetting) return
+    if (props.resetting || !props.work.acquire("pseudo")) return
     setBusy("apply")
-    props.onApplying(true)
     setError(null)
     setRefusal(null)
     setApplied(null)
@@ -234,7 +237,7 @@ export function QaScreen(props: QaScreenProps) {
       setError(userMessage(caught))
     } finally {
       setBusy(null)
-      props.onApplying(false)
+      props.work.release("pseudo")
     }
   }
 
@@ -252,7 +255,7 @@ export function QaScreen(props: QaScreenProps) {
     }
   }
 
-  const disabled = props.readOnly || busy !== null || props.resetting
+  const disabled = props.readOnly || busy !== null || props.resetting || props.locked
   const variationOptions = [{ value: NO_VARIATION, text: "No variation" }, ...project.variation_options.map((option) => ({ value: option.id, text: option.value }))]
   const report = session.report
   const copies = session.copies

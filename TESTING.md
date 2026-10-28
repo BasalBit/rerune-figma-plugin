@@ -195,6 +195,7 @@ Preview tab: **Language** (with its inheritance chain), **Source** Draft / Publi
 - [ ] **Re-preview an instance:** select only an instance of a local or library component (its main not previewed), preview `de`, then `fr`: the instance switches to French, stays linked in Layers (not "Not linked", not "Copied", also for the library component, which needs a paid Figma plan) and Reset brings back the original.
 - [ ] **Main edited during preview, instance with its own link:** link one instance's text to another key (explicit link), preview the main component (Page), edit the main's text, then Reset page → "1 layer was edited during preview." and nothing else is reported as reset; Diagnostics → T2 Instances shows no `preview` change on the instance. **Restore original** restores the main and the instance follows.
 - [ ] **Double-click Reset** (header and Push): one reset runs; afterwards Diagnostics → T10 still reports `skipInvisibleInstanceChildrenNow: true`.
+- [ ] **One canvas task at a time:** on a page with many text layers (or the network throttled), **Apply to page**: while "Applying preview…" shows, the other tabs and **Change** are disabled, so the QA tab's report, copies and pseudo-localization cannot start meanwhile; the header's **Reset** is disabled too. When the preview is applied, Reset page brings back every original text (no layer keeps preview text as its "original").
 - [ ] **RTL** (optional): the plugin writes RTL text as is and Figma handles the direction; note how it renders.
 
 ---

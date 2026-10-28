@@ -52,8 +52,14 @@ function requestIdOf(message: Record<string, unknown>): RequestId | undefined {
 
 // Typed main bus (§7.5): one handler per type, the Dev Mode impact guard, and an error boundary,
 // because Figma drops unhandled rejections from figma.ui.onmessage without a trace.
+//
+// Document writes (`metadata` and `canvas`) run one at a time, in the order they arrive: a write handler awaits
+// node lookups and font loads, so two of them on the same layer would interleave (a preview stored by one as the
+// "original" of the other, or an undo step committed in the middle of another write). Reads and UI messages are
+// not queued behind them.
 export function createMainBus(editorType: PluginEditorType, env: BuildEnv, post: (message: MainToUi) => void = send): MainBus {
   const handlers = new Map<UiToMainType, (message: UiToMain) => void | Promise<void>>()
+  let writes: Promise<void> = Promise.resolve()
 
   function fail(type: UiToMainType, requestId: RequestId | undefined, message: string, notify: string | null): void {
     if (notify !== null) {
@@ -94,16 +100,27 @@ export function createMainBus(editorType: PluginEditorType, env: BuildEnv, post:
         fail(type, requestId, NOT_IMPLEMENTED, null)
         return
       }
-      try {
-        await handler(message as unknown as UiToMain)
-      } catch (error) {
-        const text = errorText(error)
-        fail(type, requestId, text, "ReRune: " + text)
-      } finally {
-        if (impact === "metadata" || impact === "canvas") {
-          commitUndoStep()
+      const writesDocument = impact === "metadata" || impact === "canvas"
+      const run = async (): Promise<void> => {
+        try {
+          await handler(message as unknown as UiToMain)
+        } catch (error) {
+          const text = errorText(error)
+          fail(type, requestId, text, "ReRune: " + text)
+        } finally {
+          if (writesDocument) {
+            commitUndoStep()
+          }
         }
       }
+      if (!writesDocument) {
+        await run()
+        return
+      }
+      const queued = writes.then(run)
+      // A failure that escapes the error boundary (a failing notify or post) must not stop the writes queued after it.
+      writes = queued.catch(() => {})
+      await queued
     },
   }
 }

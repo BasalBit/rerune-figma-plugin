@@ -57,6 +57,7 @@ import {
 import { SESSION_ENDED_NOTICE, signOut, usableAuth } from "./state/session"
 import { API_BASE_MISMATCH_HINT, connectProject, parsePrefs, parseSettingsReport, replaceServerQuestion, settingsOffer, type Prefs, type SettingsStatus } from "./state/settings"
 import { useStore } from "./state/use-store"
+import { createWorkLock, type WorkLock, type WorkTask } from "./state/work-lock"
 import { createWorkspace } from "./state/workspace"
 
 type Init = MainToUiOf<"init">
@@ -76,10 +77,20 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [projectError, setProjectError] = useState<string | null>(null)
   const [selectionCount, setSelectionCount] = useState(init.selectionCount)
   const pageRef = useRef(init.pageId)
-  // A push (with its screenshots), an overflow report or language copies keep the tabs and Change project locked.
-  const [workLocked, setWorkLocked] = useState(false)
+  // One canvas task at a time: a push (with its screenshots), a preview apply, pseudo-localization, an overflow
+  // report or language copies holds the work lock, which keeps the tabs and Change project put and refuses the others.
+  const [workTask, setWorkTask] = useState<WorkTask | null>(null)
+  const workLocked = workTask !== null
   const contextRef = useRef<NavContext>({ apiBase: init.apiBase, settings })
   contextRef.current = { apiBase: init.apiBase, settings, locked: workLocked }
+  const workLock = useMemo<WorkLock>(
+    () =>
+      createWorkLock((holder) => {
+        setWorkTask(holder)
+        contextRef.current = { ...contextRef.current, locked: holder !== null }
+      }),
+    [],
+  )
   const [view, setView] = useState<AppView>(() => initialView(authRef.current, contextRef.current))
   const [diagnosticsReturn, setDiagnosticsReturn] = useState<Screen>("sign-in")
   const [link, setLink] = useState<{ nodes: ScannedNode[]; key: FigmaKeyRef | null } | null>(null)
@@ -89,7 +100,6 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [resetting, setResetting] = useState(false)
   const [offerDismissedOn, setOfferDismissedOn] = useState<string | null>(null)
   const [offerSaving, setOfferSaving] = useState(false)
-  const [applyingPreview, setApplyingPreview] = useState(false)
   // The plural form picked on the Preview screen (§7.18.5), for this session and the project it was picked in.
   const [pluralChoice, setPluralChoice] = useState<ProjectPluralChoice | null>(null)
   // The QA tab's picks and last results, kept while other tabs are open.
@@ -126,9 +136,13 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setView((current) => navigate(current, event, contextRef.current))
   }
 
-  function lockWork(busy: boolean) {
-    setWorkLocked(busy)
-    contextRef.current = { ...contextRef.current, locked: busy }
+  // The Push screen reports its runs as busy / not busy.
+  function pushBusy(busy: boolean) {
+    if (busy) {
+      workLock.acquire("push")
+    } else {
+      workLock.release("push")
+    }
   }
 
   function setAuth(next: StoredAuth | null) {
@@ -612,9 +626,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   }
 
   const previewing = previewStatus(space.result?.nodes ?? [])
-  // Keep current text / Restore original wait while previews are written or locked work (push, overflow report,
-  // language copies) runs: a reset started then would overlap that work.
-  const editedPromptBusy = resetting || applyingPreview || workLocked
+  // Keep current text / Restore original (and the header's Reset) wait while a reset or locked work (push, preview
+  // apply, pseudo-localization, overflow report, language copies) runs: a reset started then would overlap that work.
+  const editedPromptBusy = resetting || workLocked
   // §7.7 Repair / page-mirror offer when the plugin opens on a page that needs it (Settings shows its own copy).
   const offer = screen !== "settings" && offerDismissedOn !== pageRef.current ? settingsOffer(status) : null
   // Why link sync is off (§7.7, §7.11); Settings shows the same state in its Figma file section.
@@ -643,7 +657,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         onOpen={(next) => go({ type: "open", screen: next })}
         onChangeProject={() => go({ type: "change-project" })}
         locked={workLocked}
-        resetDisabled={resetting || applyingPreview}
+        resetDisabled={editedPromptBusy}
         onResetPreview={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}
       />
       {offer !== null && (
@@ -722,7 +736,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             resetting={resetting}
             onResetPreviews={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
             onAvailableKeys={(availableKeys) => setActiveProject({ ...project, available_keys: availableKeys })}
-            onBusy={lockWork}
+            onBusy={pushBusy}
             fileKey={pushFileKey(usable, rootName)}
             syncLinks={(nodeIds) => linkSyncer.syncNodes(nodeIds, knownNodes())}
             screenshots={screenshotUploader}
@@ -740,7 +754,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onPrefs={updatePrefs}
             onSelect={selectNodes}
             resetting={resetting}
-            onApplying={setApplyingPreview}
+            locked={workLocked}
+            work={workLock}
             onReset={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
             pluralChoice={pluralChoice}
             onPluralChoice={setPluralChoice}
@@ -758,8 +773,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onPrefs={updatePrefs}
             onSelect={selectNodes}
             resetting={resetting}
-            onApplying={setApplyingPreview}
-            onLock={lockWork}
+            locked={workLocked}
+            work={workLock}
             onReset={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
             onReportReset={resetPreviewsQueued}
             pluralChoice={pluralChoice}
