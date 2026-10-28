@@ -38,6 +38,16 @@ describe("COMMUNITY_LISTING.md", () => {
     expect(listing).toContain("| Source code | https://github.com/BasalBit/rerune-figma-plugin |")
   })
 
+  it("treats the GitHub repository as public, because the listing and the dashboard's public pages link to it", () => {
+    // The repository was made public on 2026-10-28; /figma and /docs/figma show it while figmaCommunityPluginUrl is null.
+    expect(listing).not.toMatch(/still private|made public before submission/)
+    expect(section(listing, "## Data security disclosure")).toContain("The source is public on GitHub (<https://github.com/BasalBit/rerune-figma-plugin>)")
+    const checklist = section(listing, "## Before you submit")
+    expect(checklist).toContain("- [x] https://github.com/BasalBit/rerune-figma-plugin is public")
+    expect(checklist).toContain("`/figma` (**View source on GitHub**) and `/docs/figma` (**Source code on GitHub**)")
+    expect(checklist).toContain("must be public before the dashboard is deployed")
+  })
+
   it("repeats the manifest's network access word for word", () => {
     const { allowedDomains, reasoning } = pkg["figma-plugin"].networkAccess
     expect(listing).toContain("| Network access reasoning | " + reasoning + " |")

@@ -405,7 +405,7 @@ S14 checklist (columns (b) and (c) need a paid Figma plan; (a) can be checked on
 
 After the server and dashboard PRs are merged and deployed (server first, with `FIGMA_CONNECT_URL` and `DESIGN_STORAGE_*`; then the dashboard), and before the Community submission.
 
-- [ ] 1. Server deployed with `FIGMA_CONNECT_URL=https://rerune.io/figma/connect` and `DESIGN_STORAGE_*`; dashboard deployed after it.
+- [ ] 1. Server deployed with `FIGMA_CONNECT_URL=https://rerune.io/figma/connect` and `DESIGN_STORAGE_*`; dashboard deployed after it. Signed out, **View source on GitHub** on `https://rerune.io/figma` and **Source code on GitHub** on `https://rerune.io/docs/figma` open the repository, not a GitHub 404 (the repository must stay public).
 - [ ] 2. The build you will publish: `npm run build:design-only` for the design-only release, or `npm run build` for the full release (only after §5.5, §5.6 and S14 passed on a paid Figma plan). Both call the API at `https://rerune.io/api`. Import it in Figma desktop (an unpublished build runs only there; browser Figma follows after approval, §10).
 - [ ] 3. Diagnostics → **Network check**: `"status": 200`, `"cors": "ok"` through nginx. Forced 429: run the command below and check that a `429` response carries `Retry-After` and `Access-Control-Expose-Headers: Retry-After`:
 

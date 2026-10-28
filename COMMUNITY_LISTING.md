@@ -84,7 +84,7 @@ Answers for Figma's data security disclosure (optional, reviewed by Figma, shown
    - On the device (Figma `clientStorage`): the plugin token with the account's name and email, preferences (including sample values for placeholders), and, in the full build only, a cache of key names, placeholders and up to 60 characters of source text for Dev Mode's Code section (the design-only build keeps no such cache).
    - Retention: Figma data stays with its ReRune project. Deleting a key removes its links, disconnecting a file in the project's Figma settings removes the file's links and screenshots, and deleting a project removes all of its Figma data; a background job deletes removed images from storage. Details: <https://rerune.io/privacy>.
 9. **Who can access it?** People who can open the ReRune project, according to their ReRune permissions (screenshots are shown in the dashboard through signed links that expire), and BasalBit for operating the service.
-10. **How are updates managed?** The source is on GitHub (made public before submission, see below). GitHub Actions runs type checks, lint and tests and builds the release zips on every push to `main` and every pull request; BasalBit publishes each release by hand from the Figma desktop app with 2FA, and records it in `CHANGELOG.md`.
+10. **How are updates managed?** The source is public on GitHub (<https://github.com/BasalBit/rerune-figma-plugin>). GitHub Actions runs type checks, lint and tests and builds the release zips on every push to `main` and every pull request; BasalBit publishes each release by hand from the Figma desktop app with 2FA, and records it in `CHANGELOG.md`.
 
 ## Notes for Figma's reviewers
 
@@ -101,7 +101,7 @@ Answers for Figma's data security disclosure (optional, reviewed by Figma, shown
 
 ## Before you submit
 
-- [ ] https://github.com/BasalBit/rerune-figma-plugin is public (it was still private on 2026-10-28): the listing's source link and answer 10 point to it.
+- [x] https://github.com/BasalBit/rerune-figma-plugin is public (checked on 2026-10-28: `gh repo view` reports `PUBLIC` and a signed-out request returns 200). Keep it public: the listing's source link and answer 10 point to it, and so do the dashboard's public pages `/figma` (**View source on GitHub**) and `/docs/figma` (**Source code on GitHub**), so it must be public before the dashboard is deployed.
 - [ ] Production acceptance passed and recorded (`TESTING.md` §9): server and dashboard deployed, Network check and pairing against production, a push, a preview and a screenshot upload, all in Figma desktop (it is the only place an unpublished build runs).
 - [ ] Build chosen (see [Which build to publish](#which-build-to-publish)). For the full build, S14 is answered in `TESTING.md` §8.2.
 - [ ] The release build is the CI artifact of the commit you publish (`rerune-figma-plugin-design-only` or `rerune-figma-plugin`) or the same command run locally, placed where Figma desktop imported the plugin from and checked with `node scripts/check-build.mjs` (README → Build and release, step 2).

@@ -285,6 +285,12 @@ describe("TESTING.md", () => {
     expect(testing).toContain("RERUNE_ENV=development RERUNE_DEV_MODE=off npx build-figma-plugin")
   })
 
+  it("checks signed out that the dashboard's GitHub links open the public repository", () => {
+    const step = section(testing, "## 9. Production acceptance").split("\n").find((line) => line.startsWith("- [ ] 1. ")) ?? ""
+    expect(step).toContain("dashboard deployed after it")
+    expect(step).toContain("Signed out, **View source on GitHub** on `https://rerune.io/figma` and **Source code on GitHub** on `https://rerune.io/docs/figma` open the repository, not a GitHub 404")
+  })
+
   it("has every section of §7.23 plus production acceptance", () => {
     for (const section of ["0. Setup", "1. Sign-in", "2. Scan", "3. Link, create and push", "4. Preview", "5. Phase 2", "6. Phase 3", "7. Browser Figma and Figma for VS Code", "8. Spike questions", "9. Production acceptance", "10. Post-publish smoke test"]) {
       expect(testing).toContain("## " + section)
