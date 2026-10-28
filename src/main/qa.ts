@@ -5,10 +5,12 @@ import {
   clippedBy,
   exceedsParentBy,
   fixedAxes,
+  largestBy,
+  NO_MARGINS,
   NO_PADDING,
   overflowChecks,
   paddingValue,
-  renderMargin,
+  renderMargins,
   truncatedBy,
   type OverflowItem,
   type ParentBox,
@@ -31,8 +33,8 @@ export const LANGUAGE_COPY_GAP = 100
 
 // ---------------------------------------------------------------------------------------------------------------
 // overflow-check (§7.18.1): measures the given text layers as they are now (the UI has just previewed a language)
-// with the heuristics of src/shared/overflow.ts. Truncating text is measured on a clone that is removed again in
-// the same synchronous step. Layers that are gone, hidden in an instance or unreadable are left out.
+// with the heuristics of src/shared/overflow.ts. Truncating text and fixed boxes are measured on a clone that is
+// removed again in the same synchronous step. Layers that are gone, hidden in an instance or unreadable are left out.
 
 export async function checkOverflow(nodeIds: readonly string[]): Promise<OverflowItem[]> {
   const items: OverflowItem[] = []
@@ -70,7 +72,7 @@ async function overflowOf(node: TextNode, parents: Map<string, ParentBox | null>
     }
   }
   if (checks.clipped) {
-    add("clipped", attempt(() => clippedBy(rectOf(node.absoluteBoundingBox), rectOf(node.absoluteRenderBounds), renderMargin(renderExtras(node)))))
+    add("clipped", await clippingOf(node))
   }
   if (checks.truncated) {
     add("truncated", await truncationOf(node))
@@ -102,19 +104,37 @@ function renderExtras(node: TextNode): RenderExtras {
   }
 }
 
-// The layer's height is read before the clone exists, so the clone cannot affect it.
-async function truncationOf(node: TextNode): Promise<number | null> {
+// How much taller than the layer its text is when the height follows the text: { by } (null within the
+// tolerance), or null when it cannot be measured (missing font, a clone Figma refuses). The layer's height is read
+// before the clone exists, so the clone cannot affect it.
+async function heightExcess(node: TextNode): Promise<{ by: number | null } | null> {
   try {
     const height = node.height
     const full = await untruncatedHeight(node)
-    return full === null ? null : truncatedBy(height, full)
+    return full === null ? null : { by: truncatedBy(height, full) }
   } catch {
     return null
   }
 }
 
-// (b) The height the text needs without truncation: a clone with truncation off, no line limit and a fixed width
-// whose height follows the text (tooling map §3.13). The fonts are loaded before the clone exists, so creating,
+// (b) Truncating text.
+async function truncationOf(node: TextNode): Promise<number | null> {
+  return (await heightExcess(node))?.by ?? null
+}
+
+// (a) A fixed box without truncation: more lines than the box holds are found on a clone whose height follows the
+// text, so glyph insets, tight line heights and text inside instances (whose render bounds can be null) do not
+// matter; a word wider than the box is found by the render bounds' left and right edges, allowing for effects and
+// strokes per side. When the clone cannot be measured, the render bounds' top and bottom edges are compared too.
+async function clippingOf(node: TextNode): Promise<number | null> {
+  const measured = await heightExcess(node)
+  const margins = read(() => renderMargins(renderExtras(node))) ?? NO_MARGINS
+  const sides = attempt(() => clippedBy(rectOf(node.absoluteBoundingBox), rectOf(node.absoluteRenderBounds), margins, { horizontal: true, vertical: measured === null }))
+  return largestBy(measured === null ? null : measured.by, sides)
+}
+
+// The height the text needs without truncation: a clone with truncation off, no line limit and a fixed width whose
+// height follows the text (tooling map §3.13). The fonts are loaded before the clone exists, so creating,
 // measuring and removing it happen without an await in between and the canvas never shows it. The clone goes to
 // the top of the current page, so it cannot reflow an auto-layout parent. Null when the fonts cannot be loaded.
 async function untruncatedHeight(node: TextNode): Promise<number | null> {

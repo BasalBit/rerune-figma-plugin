@@ -2,7 +2,9 @@ import type { MainToUiOf } from "./messages"
 
 // Overflow heuristics (§7.18.1, tooling map §3.13), pure so main and the tests share them. Figma has no "is this
 // text cut off" property; main measures each previewed text layer and these rules decide:
-// (a) fixed box, no truncation: the rendered glyphs are taller or wider than the box → "clipped";
+// (a) fixed box, no truncation → "clipped": a clone whose height follows the text is taller than the box (the
+//     text needs more lines than fit), or the rendered glyphs reach past the box's left or right edge (a word
+//     longer than the box). Without a clone measurement the glyphs' top and bottom edges are compared too;
 // (b) truncating text (ending ellipsis, or the deprecated TRUNCATE resize): a clone measured without truncation is
 //     taller than the layer → "truncated";
 // (c) auto-sized text in a parent of fixed size: the layer's box reaches past the parent's inner box (its box minus
@@ -46,8 +48,9 @@ function isRect(value: Rect | null | undefined): value is Rect {
 }
 
 // Effects and strokes enlarge the render bounds of a layer that does not overflow at all; this is how far they can
-// reach past the box on one side. Drop shadows reach their offset plus blur radius plus spread, layer blurs their
-// radius, outside and centred strokes their (half) weight. Inner shadows and background blurs stay inside.
+// reach past the glyphs on each side. A drop shadow reaches its blur radius plus spread, moved by its offset (a
+// shadow 4 px down with radius 4 reaches 8 px below and nothing above); layer blurs reach their radius and outside
+// and centred strokes their (half) weight on every side. Inner shadows and background blurs stay inside.
 export interface RenderExtras {
   effects?: ReadonlyArray<{ type: string; visible?: boolean; radius?: number; spread?: number; offset?: { x: number; y: number } }> | null
   strokes?: ReadonlyArray<{ visible?: boolean }> | null
@@ -55,18 +58,30 @@ export interface RenderExtras {
   strokeAlign?: string | null
 }
 
-export function renderMargin(extras: RenderExtras): number {
-  let shadow = 0
+export interface Margins { left: number; right: number; top: number; bottom: number }
+
+export const NO_MARGINS: Margins = { left: 0, right: 0, top: 0, bottom: 0 }
+
+function finite(value: number | undefined, fallback = 0): number {
+  return typeof value === "number" && isFinite(value) ? value : fallback
+}
+
+export function renderMargins(extras: RenderExtras): Margins {
+  const shadow = { ...NO_MARGINS }
   let blur = 0
   for (const effect of extras.effects ?? []) {
     if (effect.visible === false) {
       continue
     }
-    const radius = typeof effect.radius === "number" && isFinite(effect.radius) ? Math.max(0, effect.radius) : 0
+    const radius = Math.max(0, finite(effect.radius))
     if (effect.type === "DROP_SHADOW") {
-      const offset = effect.offset ?? { x: 0, y: 0 }
-      const spread = typeof effect.spread === "number" && isFinite(effect.spread) ? Math.max(0, effect.spread) : 0
-      shadow = Math.max(shadow, Math.max(Math.abs(offset.x), Math.abs(offset.y)) + radius + spread)
+      const reach = radius + Math.max(0, finite(effect.spread))
+      const x = finite(effect.offset?.x)
+      const y = finite(effect.offset?.y)
+      shadow.left = Math.max(shadow.left, reach - x)
+      shadow.right = Math.max(shadow.right, reach + x)
+      shadow.top = Math.max(shadow.top, reach - y)
+      shadow.bottom = Math.max(shadow.bottom, reach + y)
     } else if (effect.type === "LAYER_BLUR") {
       blur = Math.max(blur, radius)
     }
@@ -80,20 +95,37 @@ export function renderMargin(extras: RenderExtras): number {
       stroke = weight / 2
     }
   }
-  return shadow + blur + stroke
+  const side = (reach: number) => reach + blur + stroke
+  return { left: side(shadow.left), right: side(shadow.right), top: side(shadow.top), bottom: side(shadow.bottom) }
 }
 
-// (a) A fixed-size text box without truncation: Figma draws text that does not fit past the box, so its render
-// bounds grow taller (or wider, for a word longer than the box) than the box. Returns the excess beyond the
-// tolerance and what effects and strokes can explain, or null. A null render rect (an invisible layer, or text
-// clipped inside an instance) cannot be judged.
-export function clippedBy(box: Rect | null, render: Rect | null, margin = 0, tolerance = OVERFLOW_TOLERANCE_PX): number | null {
+export interface Axes { horizontal: boolean; vertical: boolean }
+
+const BOTH_AXES: Axes = { horizontal: true, vertical: true }
+
+// (a) A fixed-size text box without truncation, judged by its render bounds: how far the rendered glyphs reach past
+// an edge of the box, beyond what effects and strokes explain on that side and the tolerance, or null. Edges are
+// compared, not sizes: glyphs start below the box's top (half-leading, ascender gap), so text that spills a few
+// pixels past the bottom can still be no taller than the box. A null render rect (an invisible layer, or text cut
+// off inside an instance) cannot be judged.
+export function clippedBy(box: Rect | null, render: Rect | null, margins: Margins = NO_MARGINS, axes: Axes = BOTH_AXES, tolerance = OVERFLOW_TOLERANCE_PX): number | null {
   if (!isRect(box) || !isRect(render)) {
     return null
   }
-  const allowed = 2 * Math.max(0, margin)
-  const excess = Math.max(render.height - box.height, render.width - box.width) - allowed
+  const allow = (margin: number) => Math.max(0, margin)
+  let excess = 0
+  if (axes.horizontal) {
+    excess = Math.max(excess, box.x - render.x - allow(margins.left), render.x + render.width - (box.x + box.width) - allow(margins.right))
+  }
+  if (axes.vertical) {
+    excess = Math.max(excess, box.y - render.y - allow(margins.top), render.y + render.height - (box.y + box.height) - allow(margins.bottom))
+  }
   return excess > tolerance ? roundBy(excess) : null
+}
+
+// The larger of two measurements; null when neither found anything.
+export function largestBy(a: number | null, b: number | null): number | null {
+  return a === null ? b : b === null ? a : Math.max(a, b)
 }
 
 // (b) Truncating text: the clone without truncation (fixed width, height grows) against the layer's height.

@@ -70,30 +70,63 @@ function link(node: FakeNode, n: number, text: string): void {
 
 describe("overflow-check (§7.18.1)", () => {
   describe("(a) fixed box without truncation → clipped", () => {
-    it("reports render bounds beyond the box and nothing within the tolerance", async () => {
-      const long = fakeText("1:1", "Jetzt bezahlen und Versand wählen", { textAutoResize: "NONE", absoluteBoundingBox: rect(0, 0, 100, 20), absoluteRenderBounds: rect(0, 0, 100, 52) })
-      const fits = fakeText("1:2", "Zahlen", { textAutoResize: "NONE", absoluteBoundingBox: rect(0, 30, 100, 20), absoluteRenderBounds: rect(0, 30, 60, 21) })
-      onPage(figmaMock, [fakeFrame("10:1", "Checkout", [long, fits])])
+    it("measures the height the text needs on a clone, removes it again, and reports nothing within the tolerance", async () => {
+      const long = fakeText("1:1", "Jetzt bezahlen und Versand wählen", { textAutoResize: "NONE", height: 20, measuredHeight: 52, absoluteBoundingBox: rect(0, 0, 100, 20), absoluteRenderBounds: rect(0, 2, 100, 48) })
+      const fits = fakeText("1:2", "Zahlen", { textAutoResize: "NONE", height: 20, measuredHeight: 21.5, absoluteBoundingBox: rect(0, 30, 100, 20), absoluteRenderBounds: rect(0, 33, 60, 14) })
+      const frame = fakeFrame("10:1", "Checkout", [long, fits])
+      onPage(figmaMock, [frame])
+      const append = vi.spyOn(figmaMock.currentPage, "appendChild")
+
       expect(await checkOverflow(["1:1", "1:2"])).toEqual([{ nodeId: "1:1", kind: "clipped", by: 32 }])
+      // Figma parents a clone under the page, and checkOverflow moves it to the page's top level once more.
+      const clones = [...new Set(append.mock.calls.map((call) => call[0] as FakeText))].filter((node) => node !== frame)
+      expect(clones).toHaveLength(2)
+      expect(clones.every((clone) => clone.removed && clone.textAutoResize === "HEIGHT")).toBe(true)
+      expect([long.textAutoResize, long.height, fits.height]).toEqual(["NONE", 20, 20])
+      expect(frame.allChildren).toEqual([long, fits])
     })
 
-    it("does not count a drop shadow as overflow", async () => {
-      const shadow = fakeText("1:1", "Zahlen", {
-        textAutoResize: "NONE",
-        absoluteBoundingBox: rect(0, 0, 100, 20),
-        absoluteRenderBounds: rect(-4, -2, 108, 30),
-        effects: [{ type: "DROP_SHADOW", visible: true, radius: 4, offset: { x: 0, y: 4 }, spread: 0 }],
-        strokes: [],
-        strokeWeight: 0,
-        strokeAlign: "OUTSIDE",
-      })
-      onPage(figmaMock, [shadow])
-      expect(await checkOverflow(["1:1"])).toEqual([])
+    it("finds one more line in a box with spare height, although the glyphs are no taller than the box", async () => {
+      // The glyphs start 6 px below the top (half-leading, ascender gap) and end 5 px below the box.
+      const label = fakeText("1:1", "Kostenloser Versand für alle Bestellungen", { textAutoResize: "NONE", width: 200, height: 40, measuredHeight: 48, absoluteBoundingBox: rect(0, 0, 200, 40), absoluteRenderBounds: rect(1, 6, 180, 39) })
+      onPage(figmaMock, [label])
+      expect(await checkOverflow(["1:1"])).toEqual([{ nodeId: "1:1", kind: "clipped", by: 8 }])
     })
 
-    it("cannot judge text without render bounds (hidden, or clipped inside an instance)", async () => {
-      onPage(figmaMock, [fakeText("1:1", "Zahlen", { textAutoResize: "NONE", absoluteBoundingBox: rect(0, 0, 100, 20), absoluteRenderBounds: null })])
-      expect(await checkOverflow(["1:1"])).toEqual([])
+    it("does not count a tight line height as overflow, and finds a word wider than the box by its render bounds", async () => {
+      // Line height 100%: descenders reach past the box, but the text fits its lines.
+      const tight = fakeText("1:1", "Zahlung", { textAutoResize: "NONE", height: 16, measuredHeight: 16, absoluteBoundingBox: rect(0, 0, 100, 16), absoluteRenderBounds: rect(0, -1, 60, 19) })
+      const wide = fakeText("1:2", "Donaudampfschifffahrt", { textAutoResize: "NONE", height: 20, measuredHeight: 20, absoluteBoundingBox: rect(0, 40, 100, 20), absoluteRenderBounds: rect(0, 42, 124.26, 16) })
+      onPage(figmaMock, [tight, wide])
+      expect(await checkOverflow(["1:1", "1:2"])).toEqual([{ nodeId: "1:2", kind: "clipped", by: 24.3 }])
+    })
+
+    it("allows for a drop shadow on the sides it reaches, and only there", async () => {
+      const shadow = { effects: [{ type: "DROP_SHADOW", visible: true, radius: 0, offset: { x: 4, y: 0 }, spread: 0 }], strokes: [], strokeWeight: 0, strokeAlign: "OUTSIDE" }
+      const fits = fakeText("1:1", "Zahlen", { textAutoResize: "NONE", absoluteBoundingBox: rect(0, 0, 100, 20), absoluteRenderBounds: rect(0, 4, 104, 12), ...shadow })
+      // 3 px past the left edge, where a shadow moved to the right does not reach.
+      const spills = fakeText("1:2", "Weiter", { textAutoResize: "NONE", absoluteBoundingBox: rect(0, 40, 100, 20), absoluteRenderBounds: rect(-3, 44, 107, 12), ...shadow })
+      onPage(figmaMock, [fits, spills])
+      expect(await checkOverflow(["1:1", "1:2"])).toEqual([{ nodeId: "1:2", kind: "clipped", by: 3 }])
+    })
+
+    it("measures text without render bounds (cut off inside an instance) on the clone", async () => {
+      const inInstance = fakeText("I5:1;3:2", "Weiter zum Bezahlen", { textAutoResize: "NONE", height: 20, measuredHeight: 40, absoluteBoundingBox: rect(0, 0, 100, 20), absoluteRenderBounds: null })
+      onPage(figmaMock, [fakeInstance("5:1", "Button", [inInstance])])
+      expect(await checkOverflow(["I5:1;3:2"])).toEqual([{ nodeId: "I5:1;3:2", kind: "clipped", by: 20 }])
+    })
+
+    it("compares the render bounds' top and bottom when no clone can be measured", async () => {
+      const refused = fakeText("1:1", "Zahlen", { textAutoResize: "NONE", height: 20, measuredHeight: 60, absoluteBoundingBox: rect(0, 0, 100, 20), absoluteRenderBounds: rect(0, 4, 100, 32) })
+      refused.clone = () => {
+        throw new Error("Cannot clone")
+      }
+      const missing = fakeText("1:2", "Weiter", { textAutoResize: "NONE", height: 20, measuredHeight: 60, hasMissingFont: true, absoluteBoundingBox: rect(0, 40, 100, 20), absoluteRenderBounds: rect(0, 44, 100, 12) })
+      const unknown = fakeText("1:3", "Zurück", { textAutoResize: "NONE", absoluteBoundingBox: rect(0, 80, 100, 20), absoluteRenderBounds: null })
+      unknown.clone = refused.clone
+      onPage(figmaMock, [refused, missing, unknown])
+      expect(await checkOverflow(["1:1", "1:2", "1:3"])).toEqual([{ nodeId: "1:1", kind: "clipped", by: 16 }])
+      expect(figmaMock.currentPage.allChildren).toHaveLength(3)
     })
   })
 
@@ -211,7 +244,7 @@ describe("overflow-check (§7.18.1)", () => {
   })
 
   it("answers overflow-check with overflow-result, and a malformed request with a handler-error", async () => {
-    onPage(figmaMock, [fakeText("1:1", "Zahlen", { textAutoResize: "NONE", absoluteBoundingBox: rect(0, 0, 100, 20), absoluteRenderBounds: rect(0, 0, 100, 40) })])
+    onPage(figmaMock, [fakeText("1:1", "Zahlen", { textAutoResize: "NONE", height: 20, measuredHeight: 40, absoluteBoundingBox: rect(0, 0, 100, 20), absoluteRenderBounds: rect(0, 0, 100, 40) })])
     expect(await exchange({ type: "overflow-check", requestId: "c1-1", nodeIds: ["1:1"] })).toEqual([
       { type: "overflow-result", requestId: "c1-1", items: [{ nodeId: "1:1", kind: "clipped", by: 20 }] },
     ])
