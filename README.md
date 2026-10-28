@@ -58,8 +58,11 @@ npm run watch        # the same, rebuilding on every change
 |---|---|---|---|
 | Development | `npm run build:dev`, `npm run watch` | `http://localhost:8080` | `http://localhost:3000` |
 | Production | `npm run build`, `npm run zip` | `https://rerune.io/api` | `https://rerune.io` |
+| Production, design-only | `npm run build:design-only`, `npm run zip:design-only` | `https://rerune.io/api` | `https://rerune.io` |
 
-`RERUNE_ENV` picks the build (`production` by default, or `development`); any other value fails the build. The development build adds the "ReRune diagnostics" codegen language. Both builds write the same `manifest.json` (not committed), so run `npm run build:dev` again after a production build before testing locally.
+`RERUNE_ENV` picks the build (`production` by default, or `development`); any other value fails the build. The development build adds the "ReRune diagnostics" codegen language, and only development builds open `http://localhost` / `http://127.0.0.1` links (production builds open `https://` links only). All builds write the same `manifest.json` (not committed), so run `npm run build:dev` again after a production build before testing locally.
+
+`RERUNE_DEV_MODE` picks the variant: `on` (the default) keeps Dev Mode; `off` writes a design-only manifest with `editorType` `["figma"]` and no `capabilities` or `codegenLanguages` (no inspect panel, Code section or Figma for VS Code). The plugin ID, network access, `documentAccess` and the code are the same in both. Any other value fails the build. It combines with `RERUNE_ENV`: `RERUNE_ENV=development RERUNE_DEV_MODE=off npx build-figma-plugin` is a local design-only build for checking what a design-only release does.
 
 ### Import the development build into Figma
 
@@ -89,6 +92,8 @@ The development build always calls `http://localhost:8080` and opens the dashboa
 | `npm run lint` | ESLint, including Figma's plugin rules for main-thread code |
 | `npm test` | Unit tests (vitest, node environment, with a fake `figma` global in `test/figma-mock.ts`) |
 | `npm run zip` | Production build packed as `rerune-figma-plugin.zip` |
+| `npm run build:design-only` | Production build without Dev Mode (`RERUNE_DEV_MODE=off`) |
+| `npm run zip:design-only` | Design-only production build packed as `rerune-figma-plugin-design-only.zip` |
 
 ### Tests
 

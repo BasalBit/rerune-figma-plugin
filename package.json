@@ -12,7 +12,9 @@
     "typecheck": "tsc -p src/main && tsc -p src/ui && tsc -p .",
     "lint": "eslint src test",
     "test": "vitest run",
-    "zip": "npm run build && zip -r rerune-figma-plugin.zip manifest.json build"
+    "zip": "npm run build && zip -r rerune-figma-plugin.zip manifest.json build",
+    "build:design-only": "RERUNE_DEV_MODE=off build-figma-plugin --minify",
+    "zip:design-only": "npm run build:design-only && zip -r rerune-figma-plugin-design-only.zip manifest.json build"
   },
   "dependencies": {
     "@create-figma-plugin/ui": "4.0.3",
