@@ -174,11 +174,37 @@ describe("Flutter identifiers", () => {
 
 describe("argumentNames", () => {
   it("uses ReRune placeholder names as they are", () => {
-    expect(argumentNames(["count", "_x", "userName2"]).map((entry) => entry.argument)).toEqual(["count", "_x", "userName2"])
+    expect(argumentNames(["count", "_x", "userName2"], "react-i18next").map((entry) => entry.argument)).toEqual(["count", "_x", "userName2"])
+  })
+
+  it("renames placeholders that are reserved words of the platform", () => {
+    const names = ["class", "default", "in", "is", "fun", "new", "self", "undefined", "_", "name"]
+    const argumentsOf = (platform: CodegenPlatform) => argumentNames(names, platform).map((entry) => entry.argument)
+    expect(argumentsOf("react-i18next")).toEqual(["class_", "default_", "in_", "is", "fun", "new_", "self", "undefined", "_", "name"])
+    expect(argumentsOf("angular")).toEqual(["class_", "default_", "in_", "is", "fun", "new_", "self", "undefined_", "_", "name"])
+    expect(argumentsOf("android")).toEqual(["class_", "default", "in_", "is_", "fun_", "new", "self", "undefined", "arg9", "name"])
+    expect(argumentsOf("ios")).toEqual(["class_", "default_", "in_", "is_", "fun", "new", "self_", "undefined", "__", "name"])
+    expect(argumentsOf("flutter")).toEqual(["class_", "default_", "in_", "is_", "fun", "new_", "self", "undefined", "__", "name"])
+    expect(argumentNames(["__"], "android").map((entry) => entry.argument)).toEqual(["arg1"])
+    expect(argumentNames(["class_", "class"], "react-i18next").map((entry) => entry.argument)).toEqual(["class_", "class_2"])
+  })
+
+  it("writes snippets with reserved-word placeholders that compile (class, default)", () => {
+    const key = { name: "greeting", placeholders: ["class", "default"] }
+    const react = snippetText("react-i18next", key)
+    expect(react).toBe("t('greeting', { class: class_, default: default_ })")
+    // Parses as JavaScript (the shorthand `{ class, default }` is a SyntaxError).
+    expect(() => new Function("t", "class_", "default_", "return " + react)).not.toThrow()
+    expect(() => new Function("t", "return t('greeting', { class, default })")).toThrow(SyntaxError)
+    expect(snippetText("angular", key)).toBe("{{ 'greeting' | translate: { class: class_, default: default_ } }}")
+    expect(snippetText("android", key)).toBe("stringResource(R.string.greeting, class_, default)")
+    expect(snippetText("android", { name: "greeting", placeholders: ["in", "is", "fun"] })).toBe("stringResource(R.string.greeting, in_, is_, fun_)")
+    expect(snippetText("ios", key)).toBe('String(format: NSLocalizedString("greeting", comment: ""), class_, default_)')
+    expect(snippetText("flutter", key)).toBe("AppLocalizations.of(context)!.greeting(class_, default_)")
   })
 
   it("turns names that are not identifiers into variables and quotes them as object keys", () => {
-    const args = argumentNames(["user.name", "2nd", "-", "a b"])
+    const args = argumentNames(["user.name", "2nd", "-", "a b"], "react-i18next")
     expect(args.map((entry) => entry.argument)).toEqual(["user_name", "_2nd", "arg3", "a_b"])
     expect(snippetText("react-i18next", { name: "x", placeholders: ["user.name", "count"] })).toBe("t('x', { 'user.name': user_name, count })")
     expect(snippetText("angular", { name: "x", placeholders: ["it's"] })).toBe("{{ 'x' | translate: { 'it\\'s': it_s } }}")
@@ -186,8 +212,8 @@ describe("argumentNames", () => {
   })
 
   it("drops repeated names and numbers clashing variables", () => {
-    expect(argumentNames(["a", "a", "b"]).map((entry) => entry.argument)).toEqual(["a", "b"])
-    const clash = argumentNames(["a-b", "a_b"])
+    expect(argumentNames(["a", "a", "b"], "ios").map((entry) => entry.argument)).toEqual(["a", "b"])
+    const clash = argumentNames(["a-b", "a_b"], "react-i18next")
     expect(clash.map((entry) => entry.argument)).toEqual(["a_b", "a_b2"])
     expect(snippetText("react-i18next", { name: "x", placeholders: ["a-b", "a_b"] })).toBe("t('x', { 'a-b': a_b, a_b: a_b2 })")
   })

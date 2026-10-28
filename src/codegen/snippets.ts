@@ -101,9 +101,48 @@ export function isDartIdentifier(key: string): boolean {
   return DART_IDENTIFIER.test(key)
 }
 
+// Words a placeholder variable cannot be called in each target language (reserved words, literals and, for Angular
+// templates, the expression keywords). ReRune allows them as placeholder names (`class`, `default`, `in`, `is`).
+const JS_RESERVED = [
+  "await", "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "enum",
+  "export", "extends", "false", "finally", "for", "function", "if", "implements", "import", "in", "instanceof",
+  "interface", "let", "new", "null", "package", "private", "protected", "public", "return", "static", "super", "switch",
+  "this", "throw", "true", "try", "typeof", "var", "void", "while", "with", "yield",
+]
+const KOTLIN_RESERVED = [
+  "as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in", "interface", "is", "null", "object",
+  "package", "return", "super", "this", "throw", "true", "try", "typealias", "typeof", "val", "var", "when", "while",
+]
+const SWIFT_RESERVED = [
+  "_", "Any", "as", "associatedtype", "await", "borrowing", "break", "case", "catch", "class", "consuming", "continue",
+  "default", "defer", "deinit", "do", "else", "enum", "extension", "fallthrough", "false", "fileprivate", "for", "func",
+  "guard", "if", "import", "in", "init", "inout", "internal", "is", "let", "nil", "nonisolated", "open", "operator",
+  "precedencegroup", "private", "protocol", "public", "repeat", "rethrows", "return", "self", "Self", "static", "struct",
+  "subscript", "super", "switch", "throw", "throws", "true", "try", "typealias", "var", "where", "while",
+]
+const DART_RESERVED = [
+  "_", "assert", "await", "break", "case", "catch", "class", "const", "continue", "default", "do", "else", "enum",
+  "extends", "false", "final", "finally", "for", "if", "in", "is", "new", "null", "rethrow", "return", "super", "switch",
+  "this", "throw", "true", "try", "var", "void", "while", "with", "yield",
+]
+
+const RESERVED: Record<CodegenPlatform, ReadonlySet<string>> = {
+  "react-i18next": new Set(JS_RESERVED),
+  angular: new Set(JS_RESERVED.concat(["as", "undefined"])),
+  android: new Set(KOTLIN_RESERVED),
+  ios: new Set(SWIFT_RESERVED),
+  flutter: new Set(DART_RESERVED),
+}
+
+// Kotlin also reserves every name made only of underscores.
+function isReserved(platform: CodegenPlatform, name: string): boolean {
+  return RESERVED[platform].has(name) || (platform === "android" && /^_+$/.test(name))
+}
+
 // Variable names for the placeholders, in ReRune order. ReRune names are identifiers already; anything else (an
-// old or hand-edited cache) is made one, and repeated names are numbered.
-export function argumentNames(placeholders: readonly string[]): { name: string; argument: string }[] {
+// old or hand-edited cache) is made one, a reserved word of the platform gets a trailing "_" (`class` → `class_`),
+// and repeated names are numbered.
+export function argumentNames(placeholders: readonly string[], platform: CodegenPlatform): { name: string; argument: string }[] {
   const result: { name: string; argument: string }[] = []
   const used = new Set<string>()
   placeholders.forEach((name, index) => {
@@ -119,6 +158,9 @@ export function argumentNames(placeholders: readonly string[]): { name: string; 
         argument = "_" + argument
       }
     }
+    if (isReserved(platform, argument)) {
+      argument = isReserved(platform, argument + "_") ? "arg" + (index + 1) : argument + "_"
+    }
     let unique = argument
     for (let n = 2; used.has(unique); n++) {
       unique = argument + n
@@ -129,7 +171,8 @@ export function argumentNames(placeholders: readonly string[]): { name: string; 
   return result
 }
 
-// `{ a, b }` (React) or `{ a: a, b: b }` (Angular); a name that is not an identifier is quoted.
+// `{ a, b }` (React) or `{ a: a, b: b }` (Angular); a name that is not an identifier is quoted, and a renamed
+// variable is written out (`{ class: class_ }`: reserved words are valid property names).
 function jsObject(args: readonly { name: string; argument: string }[], shorthand: boolean): string {
   const entries = args.map(({ name, argument }) => {
     if (PLACEHOLDER_NAME.test(name)) {
@@ -156,7 +199,7 @@ export function commentLine(platform: CodegenPlatform, text: string): string {
 
 // The snippet for one key (§7.17 table). Every line is complete code or a comment of the platform.
 export function snippetLines(platform: CodegenPlatform, key: SnippetKey): string[] {
-  const args = argumentNames(key.placeholders)
+  const args = argumentNames(key.placeholders, platform)
   const list = args.map((entry) => entry.argument).join(", ")
   switch (platform) {
     case "react-i18next": {
