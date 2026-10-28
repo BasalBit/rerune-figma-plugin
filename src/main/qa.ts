@@ -288,7 +288,8 @@ async function copySource(frameId: string): Promise<{ frame: CopySource } | { er
     try {
       await page.loadAsync()
     } catch {
-      return { error: nodeError(frameId, "write_failed", LANGUAGE_COPY_MESSAGES.failed) }
+      // A refusal of the whole frame: no copy of any language is made.
+      return { error: nodeError(frameId, "write_failed", LANGUAGE_COPY_MESSAGES.pageNotLoaded) }
     }
   }
   return { frame: node }

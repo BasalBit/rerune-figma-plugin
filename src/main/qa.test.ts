@@ -330,6 +330,18 @@ describe("language-copies (§7.18.4, D32)", () => {
     expect(other.allChildren.map((node) => node.name)).toEqual(["Checkout", "Checkout · de"])
   })
 
+  it("refuses the whole frame when its page can't be loaded", async () => {
+    const { frame } = checkoutFrame()
+    const other = fakePage("0:2", "Desktop", [frame])
+    figmaMock.root.appendChild(other)
+    other.loadAsync = vi.fn(async () => Promise.reject(new Error("offline")))
+    expect(await makeLanguageCopies(["1:1"], [copyRequest("de", { "1:2": "Kasse" }), copyRequest("it", { "1:2": "Cassa" })], 1)).toEqual({
+      done: 0,
+      errors: [{ nodeId: "1:1", code: "write_failed", message: LANGUAGE_COPY_MESSAGES.pageNotLoaded }],
+    })
+    expect(other.allChildren.map((node) => node.name)).toEqual(["Checkout"])
+  })
+
   it("copies a top-level instance and maps its sublayers", async () => {
     const mainText = fakeText("5:2", "Pay now")
     const component = fakeComponent("5:1", "Button", [mainText])

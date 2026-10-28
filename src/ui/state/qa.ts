@@ -328,10 +328,12 @@ export interface CopiesResult {
   frames: { id: string; name: string }[]
   languages: string[]
   made: number                                          // copies created
+  framesCopied: number                                  // frames that got at least one copy
   written: number                                       // text layers written into the copies
   missing: { lang: string; entries: PreviewEntry[] }[]  // linked layers without a value (kept the source text)
-  refused: NodeError[]                                  // frames that got no copies (error on the frame's id)
-  errors: NodeError[]                                   // layers of copies that kept the source text
+  refused: NodeError[]                                  // frames that got no copies (errors on the frame's id)
+  errors: NodeError[]                                   // layers of copies that kept the source text, and the
+                                                        // languages Figma couldn't copy a frame for (frame's id)
   variableSkipped: number
   truncatedScan: boolean
 }
@@ -351,8 +353,9 @@ export function selectedFrames(nodes: readonly ScannedNode[]): { id: string; nam
   return [...frames].map(([id, name]) => ({ id, name }))
 }
 
-// Copies of a frame made by one language-copies message: none when the frame was refused as a whole, else one per
-// language minus the languages whose copy Figma refused.
+// Copies of a frame made by one language-copies message: none when the frame was refused as a whole (any error on
+// the frame's id other than "Figma couldn't copy this frame."), else one per language minus the languages whose
+// copy Figma refused.
 export function copiesMade(frameId: string, languages: number, errors: readonly NodeError[]): number {
   const own = errors.filter((error) => error.nodeId === frameId)
   if (own.some((error) => error.message !== LANGUAGE_COPY_MESSAGES.failed)) {
@@ -389,6 +392,7 @@ export async function makeLanguageCopies(deps: CopiesDeps, request: CopiesReques
     frames,
     languages: request.languages.slice(),
     made: 0,
+    framesCopied: 0,
     written: 0,
     missing: [],
     refused: [],
@@ -427,10 +431,16 @@ export async function makeLanguageCopies(deps: CopiesDeps, request: CopiesReques
       texts: byFrame.get(frame.id)?.get(lang) ?? [],
     }))
     const outcome = await runOp(deps.bus, (requestId) => ({ type: "language-copies", requestId, frameIds: [frame.id], copies }), LONG_OP_IDLE_MS)
+    const made = copiesMade(frame.id, request.languages.length, outcome.errors)
     result.written += outcome.done
-    result.made += copiesMade(frame.id, request.languages.length, outcome.errors)
+    result.made += made
+    if (made > 0) {
+      result.framesCopied++
+    }
+    // A frame that got no copy is refused; one copy Figma couldn't make of a frame that got others is a problem
+    // of that frame, so the summary still counts the frame.
     for (const error of outcome.errors) {
-      if (error.nodeId === frame.id) {
+      if (error.nodeId === frame.id && made === 0) {
         result.refused.push(error)
       } else {
         result.errors.push(error)

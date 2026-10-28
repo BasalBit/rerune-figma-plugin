@@ -27,6 +27,7 @@ export const LANGUAGE_COPY_MESSAGES = {
   alreadyCopy: "This frame is already a language copy.",
   previewing: "Reset previews first.",
   failed: "Figma couldn't copy this frame.",
+  pageNotLoaded: "Figma couldn't load this frame's page.",
   mismatch: "This part of the copy differs from the original, so it kept the source text.",
 } as const
 

@@ -432,11 +432,11 @@ function LanguageReportView(props: { language: LanguageReport; report: OverflowR
 
 function CopiesView(props: { result: CopiesResult; label(lang: string): string; onSelect(nodeIds: string[]): void; onDismiss(): void }) {
   const { result } = props
-  const frames = result.frames.length - new Set(result.refused.map((error) => error.nodeId)).size
+  const frames = result.framesCopied
   return (
     <div style={styles.stack}>
       <Note tone={result.made > 0 && result.errors.length === 0 && result.refused.length === 0 ? "good" : "warning"} actions={<TextButton onClick={props.onDismiss}>Dismiss</TextButton>}>
-        Made {plural(result.made, "copy", "copies")} of {plural(Math.max(0, frames), "frame", "frames")} ({plural(result.written, "layer", "layers")} translated).
+        Made {plural(result.made, "copy", "copies")} of {plural(frames, "frame", "frames")} ({plural(result.written, "layer", "layers")} translated).
         {result.variableSkipped > 0 ? " " + plural(result.variableSkipped, "layer uses", "layers use") + " a Figma variable and kept its text." : ""}
         {result.truncatedScan ? " The page has more than 5,000 text layers; layers after them kept the source text." : ""}
       </Note>

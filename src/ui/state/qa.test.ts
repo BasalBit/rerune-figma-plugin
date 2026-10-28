@@ -426,7 +426,7 @@ describe("makeLanguageCopies (§7.18.4)", () => {
       [["de"], "published", "6a47", [K1, K2, K3]],
       [["it"], "published", "6a47", [K1, K2, K3]],
     ])
-    expect(result).toMatchObject({ frames: [{ id: "10:1", name: "Checkout" }, { id: "20:1", name: "Profile" }], languages: ["de", "it"], made: 4, written: 5, refused: [], errors: [], truncatedScan: false })
+    expect(result).toMatchObject({ frames: [{ id: "10:1", name: "Checkout" }, { id: "20:1", name: "Profile" }], languages: ["de", "it"], made: 4, framesCopied: 2, written: 5, refused: [], errors: [], truncatedScan: false })
     expect(result.missing.map((entry) => [entry.lang, entry.entries.map((missing) => missing.nodeId)])).toEqual([["it", ["2:1"]]])
     expect(deps.progress).toEqual(["Loading de values…", "Loading it values…", "Copying Checkout (1 of 2)…", "Copying Profile (2 of 2)…"])
   })
@@ -441,8 +441,24 @@ describe("makeLanguageCopies (§7.18.4)", () => {
     const result = await makeLanguageCopies(copiesDeps(main, fakeApi(CATALOG), [PAGE[0], PAGE[3]]), COPIES_REQUEST)
     expect(result.made).toBe(1)
     expect(result.written).toBe(1)
-    expect(result.refused.map((error) => error.nodeId)).toEqual(["10:1", "20:1"])
-    expect(result.errors.map((error) => error.nodeId)).toEqual(["8001:1"])
+    // Profile got its de copy (it failed): it counts as copied, and the failed language is a problem of the frame.
+    expect(result.framesCopied).toBe(1)
+    expect(result.refused.map((error) => error.nodeId)).toEqual(["10:1"])
+    expect(result.errors.map((error) => error.nodeId)).toEqual(["8001:1", "20:1"])
+  })
+
+  it("refuses a frame whose every language failed, and one whose page couldn't be loaded", async () => {
+    const failed = { code: "write_failed" as const, message: LANGUAGE_COPY_MESSAGES.failed }
+    const main = fakeMain({
+      copies: (message) =>
+        message.frameIds[0] === "10:1"
+          ? { done: 0, errors: [{ nodeId: "10:1", ...failed }, { nodeId: "10:1", ...failed }] }
+          : { done: 0, errors: [{ nodeId: "20:1", code: "write_failed", message: LANGUAGE_COPY_MESSAGES.pageNotLoaded }] },
+    })
+    const result = await makeLanguageCopies(copiesDeps(main, fakeApi(CATALOG), [PAGE[0], PAGE[3]]), COPIES_REQUEST)
+    expect([result.made, result.framesCopied]).toEqual([0, 0])
+    expect(result.refused.map((error) => error.nodeId)).toEqual(["10:1", "10:1", "20:1"])
+    expect(result.errors).toEqual([])
   })
 
   it("asks for frames, refuses while layers in them preview, and needs a language", async () => {
@@ -473,6 +489,7 @@ describe("makeLanguageCopies (§7.18.4)", () => {
     expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "write_failed", message: LANGUAGE_COPY_MESSAGES.failed }])).toBe(2)
     expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "preview_active", message: LANGUAGE_COPY_MESSAGES.previewing }])).toBe(0)
     expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "node_not_found", message: "Layer not found." }])).toBe(0)
+    expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "write_failed", message: LANGUAGE_COPY_MESSAGES.pageNotLoaded }])).toBe(0)
     expect(copiesMade("10:1", 2, [{ nodeId: "8001:2", code: "missing_font", message: "x" }])).toBe(2)
   })
 })
