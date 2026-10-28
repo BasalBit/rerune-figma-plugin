@@ -48,6 +48,7 @@ function context(): MainContext {
   return {
     editorType: "figma",
     env: "development",
+    devMode: true,
     apiBase: "http://localhost:8080",
     dashboardBase: "http://localhost:3000",
     pluginVersion: "0.1.0",

@@ -120,6 +120,7 @@ function context(editorType: PluginEditorType, env: BuildEnv, post: (message: Ma
   return {
     editorType,
     env,
+    devMode: true,
     apiBase: "http://localhost:8080",
     dashboardBase: "http://localhost:3000",
     pluginVersion: "0.1.0",

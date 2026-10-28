@@ -147,6 +147,7 @@ describe("build-figma-plugin.{main,ui}.js", () => {
         __API_BASE__: '"https://rerune.io/api"',
         __DASHBOARD_BASE__: '"https://rerune.io"',
         __PLUGIN_VERSION__: JSON.stringify(pkg.version),
+        __RERUNE_DEV_MODE__: "true",
       },
     })
   })
@@ -161,7 +162,21 @@ describe("build-figma-plugin.{main,ui}.js", () => {
       __API_BASE__: '"http://localhost:8080"',
       __DASHBOARD_BASE__: '"http://localhost:3000"',
       __PLUGIN_VERSION__: JSON.stringify(pkg.version),
+      __RERUNE_DEV_MODE__: "true",
     })
+  })
+
+  it.each([
+    ["main", overrideMain],
+    ["ui", overrideUi],
+  ])("defines __RERUNE_DEV_MODE__ false for the design-only build and refuses other values (%s)", (_name, override) => {
+    delete env.RERUNE_ENV
+    env.RERUNE_DEV_MODE = "off"
+    expect((override({}).define as Record<string, string>).__RERUNE_DEV_MODE__).toBe("false")
+    env.RERUNE_DEV_MODE = "on"
+    expect((override({}).define as Record<string, string>).__RERUNE_DEV_MODE__).toBe("true")
+    env.RERUNE_DEV_MODE = "maybe"
+    expect(() => override({})).toThrow('RERUNE_DEV_MODE must be "on" or "off"')
   })
 
   it("refuses unknown environments", () => {

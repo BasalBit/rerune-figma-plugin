@@ -6,6 +6,7 @@ export default defineConfig({
     __API_BASE__: JSON.stringify("http://localhost:8080"),
     __DASHBOARD_BASE__: JSON.stringify("http://localhost:3000"),
     __PLUGIN_VERSION__: JSON.stringify("0.0.0-test"),
+    __RERUNE_DEV_MODE__: JSON.stringify(true),
   },
   test: {
     environment: "node",

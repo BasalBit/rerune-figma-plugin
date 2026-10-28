@@ -18,6 +18,7 @@ import { applyPreview, applyTexts, resetPreview } from "./text-write"
 export interface MainContext {
   editorType: PluginEditorType
   env: BuildEnv
+  devMode: boolean                 // false in the design-only build: it has no Dev Mode, so it keeps no codegen cache
   apiBase: string
   dashboardBase: string
   pluginVersion: string
@@ -138,7 +139,10 @@ export function registerHandlers(bus: MainBus, context: MainContext): void {
   bus.on("auth-clear", (message) => clearAuth(message.apiBase))
   bus.on("prefs-save", (message) => savePrefs(message.prefs))
   bus.on("cache-save", async (message) => {
-    await saveCodegenCache(message.projectId, message.entries, Date.now())
+    // The codegen cache (key names, placeholders, source text) only serves Dev Mode's Code section.
+    if (context.devMode) {
+      await saveCodegenCache(message.projectId, message.entries, Date.now())
+    }
   })
   bus.on("settings-save", (message) => {
     saveFileSettings(message.settings)

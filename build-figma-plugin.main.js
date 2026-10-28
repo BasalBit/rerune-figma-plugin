@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import { devModeOf } from "./build-figma-plugin.manifest.js"
 
 const ENVIRONMENTS = {
   production: { apiBase: "https://rerune.io/api", dashboardBase: "https://rerune.io" },
@@ -20,6 +21,8 @@ export default function (buildOptions) {
       __API_BASE__: JSON.stringify(config.apiBase),
       __DASHBOARD_BASE__: JSON.stringify(config.dashboardBase),
       __PLUGIN_VERSION__: JSON.stringify(version),
+      // false in the design-only build (RERUNE_DEV_MODE=off): no Dev Mode, so no codegen cache is kept.
+      __RERUNE_DEV_MODE__: JSON.stringify(devModeOf(process.env.RERUNE_DEV_MODE)),
     },
   }
 }

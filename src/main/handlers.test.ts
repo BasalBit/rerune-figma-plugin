@@ -27,6 +27,7 @@ function context(editorType: "figma" | "dev" = "figma"): MainContext {
   return {
     editorType,
     env: "development",
+    devMode: true,
     apiBase: "http://localhost:8080",
     dashboardBase: "http://localhost:3000",
     pluginVersion: "0.1.0",
@@ -101,6 +102,15 @@ describe("ui handlers", () => {
     expect(figmaMock.clientStorage.data.has(codegenCacheKey(PROJECT_ID))).toBe(true)
     await bus.dispatch({ type: "auth-clear", apiBase: AUTH.apiBase })
     expect(figmaMock.clientStorage.data.has(STORAGE_KEYS.auth)).toBe(false)
+    expect(sent).toEqual([])
+  })
+
+  it("keeps no codegen cache in the design-only build (no Dev Mode reads it)", async () => {
+    const bus = createMainBus("figma", "production", (message) => sent.push(message))
+    registerHandlers(bus, { ...context(), env: "production", devMode: false })
+    await bus.dispatch({ type: "cache-save", projectId: PROJECT_ID, entries: [{ keyId: keyId(1), k: "a", placeholders: [], sourceText: "A" }] })
+    expect(figmaMock.clientStorage.data.has(codegenCacheKey(PROJECT_ID))).toBe(false)
+    expect(figmaMock.clientStorage.data.has(STORAGE_KEYS.codegenIndex)).toBe(false)
     expect(sent).toEqual([])
   })
 

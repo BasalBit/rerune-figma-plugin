@@ -99,6 +99,9 @@ describe("COMMUNITY_LISTING.md", () => {
     expect(answers).toContain("`clientStorage`")
     expect(answers).toContain("`Authorization: Bearer`")
     expect(answers).toContain("up to " + CODEGEN_SOURCE_TEXT_MAX_CHARS + " characters of source text")
+    // The design-only build has no Dev Mode and keeps no codegen cache (MainContext.devMode).
+    expect(answers).toContain("in the full build only, a cache of key names")
+    expect(answers).toContain("the design-only build keeps no such cache")
     // "Upload screenshots on push" is on by default in the plugin's preferences.
     expect(settingsState).toMatch(/uploadScreenshotsOnPush: true,/)
     expect(settingsScreen).toContain("Upload screenshots on push")

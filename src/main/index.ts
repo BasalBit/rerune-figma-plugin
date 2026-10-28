@@ -11,6 +11,7 @@ function attachBus(editorType: PluginEditorType, startup: MainContext["startup"]
   registerHandlers(bus, {
     editorType,
     env: __RERUNE_ENV__,
+    devMode: __RERUNE_DEV_MODE__,
     apiBase: __API_BASE__,
     dashboardBase: __DASHBOARD_BASE__,
     pluginVersion: __PLUGIN_VERSION__,

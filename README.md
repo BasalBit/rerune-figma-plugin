@@ -62,7 +62,7 @@ npm run watch        # the same, rebuilding on every change
 
 `RERUNE_ENV` picks the build (`production` by default, or `development`); any other value fails the build. The development build adds the "ReRune diagnostics" codegen language, and only development builds open `http://localhost` / `http://127.0.0.1` links (production builds open `https://` links only). All builds write the same `manifest.json` (not committed), so run `npm run build:dev` again after a production build before testing locally.
 
-`RERUNE_DEV_MODE` picks the variant: `on` (the default) keeps Dev Mode; `off` writes a design-only manifest with `editorType` `["figma"]` and no `capabilities` or `codegenLanguages` (no inspect panel, Code section or Figma for VS Code). The plugin ID, network access, `documentAccess` and the code are the same in both. Any other value fails the build. It combines with `RERUNE_ENV`: `RERUNE_ENV=development RERUNE_DEV_MODE=off npx build-figma-plugin` is a local design-only build for checking what a design-only release does.
+`RERUNE_DEV_MODE` picks the variant: `on` (the default) keeps Dev Mode; `off` writes a design-only manifest with `editorType` `["figma"]` and no `capabilities` or `codegenLanguages` (no inspect panel, Code section or Figma for VS Code). The plugin ID, network access, `documentAccess` and the code are the same in both, except that the design-only build keeps no codegen cache (`__RERUNE_DEV_MODE__` is `false`; nothing would read it). Any other value fails the build. It combines with `RERUNE_ENV`: `RERUNE_ENV=development RERUNE_DEV_MODE=off npx build-figma-plugin` is a local design-only build for checking what a design-only release does.
 
 ### Import the development build into Figma
 
@@ -111,7 +111,7 @@ Everything that depends on real Figma behaviour (sign-in, scans of large files, 
 
 ## Build and release
 
-There are two release builds. Both use the plugin ID `1697181748239106841`, the same network access and the same code, so a later release can switch from one to the other as an update of the same Community plugin.
+There are two release builds. Both use the plugin ID `1697181748239106841`, the same network access and the same code (only the design-only build keeps no codegen cache), so a later release can switch from one to the other as an update of the same Community plugin. After a switch to the full build the Code section fills its cache from the next inspect panel or Figma Design session.
 
 | Release | Command | Archive | Manifest |
 |---|---|---|---|
@@ -191,7 +191,7 @@ Figma's local plugin storage (`clientStorage`, per plugin ID, separate for Figma
 |---|---|
 | `rerune.auth.v1` | the sign-in per ReRune server: plugin token, its ID and expiry, your name and email |
 | `rerune.prefs.v1` | preferences: last preview language, source and variation, "Upload screenshots on push", the inspect panel's platform, "Create one key for layers with identical text", and the sample values of each project's placeholders |
-| `rerune.codegen.v1.<projectId>` | the codegen cache of one project: key name, placeholders and up to 60 characters of source text per key, at most 2,000 keys |
+| `rerune.codegen.v1.<projectId>` | the codegen cache of one project: key name, placeholders and up to 60 characters of source text per key, at most 2,000 keys (builds with Dev Mode only; the design-only build keeps none) |
 | `rerune.codegen.v1.index` | the projects with a codegen cache, at most 10 (the least recently used one is dropped) |
 
 ### ReRune API
