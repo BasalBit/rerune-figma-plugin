@@ -10,7 +10,7 @@ import type { UiBus } from "../bus"
 import { copyText } from "../clipboard"
 import { SamplesSection, useSampleDrafts } from "../components/samples"
 import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
-import { groupErrors, runBatched, type ErrorGroup } from "../state/ops"
+import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import { buildPseudoPreview, languageLabel, type PseudoBuild, type RenderChoices } from "../state/preview"
 import {
   amountText,
@@ -230,7 +230,8 @@ export function QaScreen(props: QaScreenProps) {
         return
       }
       const build = buildPseudoPreview(result.nodes, project.main_language)
-      const written = await runBatched(props.bus, build.items, (requestId, batch) => ({ type: "preview-apply", requestId, info: build.info, items: batch }))
+      // One undo step for the whole run, however many batches it takes.
+      const written = await runBatched(props.bus, build.items, (requestId, batch, last) => ({ type: "preview-apply", requestId, info: build.info, items: batch, ...undoStep(last) }))
       setApplied({ build, done: written.done, errors: groupErrors(written.errors) })
       await props.workspace.scan(scope)
     } catch (caught) {

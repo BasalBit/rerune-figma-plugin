@@ -37,7 +37,10 @@ export function errorText(error: unknown): string {
 
 // Each document-changing message becomes its own undo step. Figma keeps every plugin write uncommitted until
 // commitUndo, so without it one Cmd+Z would revert everything the plugin wrote since it opened (links written
-// after a push included). A failing commit never fails the message.
+// after a push included). A failing commit never fails the message. A message sent with `commit: false` (a batch of
+// a preview run or of the overflow report, which more writes of the same run follow) leaves its changes to the next
+// write's undo step, so one run is one undo step: Cmd+Z after an overflow report does not bring back the preview of
+// its last language, and Cmd+Z after a preview of a large page reverts all of it, not only its last batch.
 function commitUndoStep(): void {
   try {
     figma.commitUndo()
@@ -101,6 +104,7 @@ export function createMainBus(editorType: PluginEditorType, env: BuildEnv, post:
         return
       }
       const writesDocument = impact === "metadata" || impact === "canvas"
+      const commits = writesDocument && message.commit !== false
       const run = async (): Promise<void> => {
         try {
           await handler(message as unknown as UiToMain)
@@ -108,7 +112,7 @@ export function createMainBus(editorType: PluginEditorType, env: BuildEnv, post:
           const text = errorText(error)
           fail(type, requestId, text, "ReRune: " + text)
         } finally {
-          if (writesDocument) {
+          if (commits) {
             commitUndoStep()
           }
         }

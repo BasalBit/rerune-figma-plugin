@@ -75,11 +75,13 @@ export type UiToMain =
   | { type: "link-check"; requestId: RequestId; nodeIds: string[]                         // Phase 2 addition (link sync)
       inheritors?: boolean }                                                              // also the page's instance sublayers inheriting from them
   | { type: "text-apply"; requestId: RequestId; items: { nodeId: string; text: string; src: string }[] }
-  | { type: "preview-apply"; requestId: RequestId; info: Omit<PreviewInfo, "appliedAt">; items: { nodeId: string; text: string }[] }
+  | { type: "preview-apply"; requestId: RequestId; info: Omit<PreviewInfo, "appliedAt">; items: { nodeId: string; text: string }[]
+      commit?: false }                                                                    // Phase 3 addition: no undo step yet (more of the run follows)
   | { type: "preview-reset"; requestId: RequestId; scope: Scope; nodeIds?: string[]; edited?: "restore" | "keep" }
   | { type: "screenshots-export"; requestId: RequestId; frameIds: string[] }
   | { type: "inspect-request" }
-  | { type: "overflow-check"; requestId: RequestId; nodeIds: string[] }
+  | { type: "overflow-check"; requestId: RequestId; nodeIds: string[]
+      commit?: false }                                                                    // Phase 3 addition: as preview-apply
   | { type: "language-copies"; requestId: RequestId; frameIds: string[]; copies: { lang: string; source: ResolveSource; variationOptionId: string | null; texts: { nodeId: string; text: string }[] }[] }
   | { type: "diagnostics-read"; requestId: RequestId; test: ReadDiagnostic }
   | { type: "diagnostics-write"; requestId: RequestId; test: WriteDiagnostic }

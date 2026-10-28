@@ -159,17 +159,25 @@ export { mainsFirst }
 
 export interface BatchOutcome { done: number; errors: NodeError[] }
 
+// `commit: false` for a write that more writes of the same run follow, so main makes the whole run one undo step
+// (preview-apply and overflow-check carry it, §7.5 Phase 3 addition).
+export function undoStep(last: boolean): { commit?: false } {
+  return last ? {} : { commit: false }
+}
+
 // Sends a document write in batches so each op-result arrives within the bus watchdog (main sends no progress
-// for writes). Results are merged.
+// for writes). Results are merged. `last` tells the builder whether this is the run's last batch (see undoStep).
 export async function runBatched<T>(
   bus: Pick<UiBus, "request">,
   items: readonly T[],
-  build: (requestId: RequestId, batch: T[]) => UiToMain,
+  build: (requestId: RequestId, batch: T[], last: boolean) => UiToMain,
   size: number = WRITE_BATCH_SIZE,
 ): Promise<BatchOutcome> {
   const outcome: BatchOutcome = { done: 0, errors: [] }
-  for (const batch of chunk(items, size)) {
-    const result = await runOp(bus, (requestId) => build(requestId, batch))
+  const batches = chunk(items, size)
+  for (let index = 0; index < batches.length; index++) {
+    const batch = batches[index]
+    const result = await runOp(bus, (requestId) => build(requestId, batch, index === batches.length - 1))
     outcome.done += result.done
     outcome.errors.push(...result.errors)
   }

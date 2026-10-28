@@ -8,7 +8,7 @@ import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { SamplesSection, useSampleDrafts } from "../components/samples"
 import { ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
-import { groupErrors, runBatched, type ErrorGroup } from "../state/ops"
+import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import {
   buildPreview,
   defaultLanguage,
@@ -99,7 +99,8 @@ export function PreviewScreen(props: PreviewScreenProps) {
       }
       const samples = sampleDrafts.commit()
       const build = buildPreview(result.nodes, project.id, request, resolved, names, { samples, plural: activePlural })
-      const written = await runBatched(props.bus, build.items, (requestId, batch) => ({ type: "preview-apply", requestId, info: build.info, items: batch }))
+      // One undo step for the whole apply, however many batches it takes.
+      const written = await runBatched(props.bus, build.items, (requestId, batch, last) => ({ type: "preview-apply", requestId, info: build.info, items: batch, ...undoStep(last) }))
       setApplied({ build, done: written.done, errors: groupErrors(written.errors) })
       props.onPrefs({ lastLanguage: lang, lastSource: source, lastVariationOptionId: variation })
       await props.workspace.scan(scope)

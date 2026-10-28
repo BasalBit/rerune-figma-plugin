@@ -256,6 +256,22 @@ describe("document handlers through the bus", () => {
     }
   })
 
+  it("makes an overflow report's messages one undo step, committed by its final reset", async () => {
+    const node = fakeText("1:1", "Pay now")
+    onPage(figmaMock, [node], [node])
+    const bus = setup()
+    figmaMock.commitUndo.mockClear()
+    for (const [lang, text] of [["de", "Jetzt zahlen"], ["it", "Paga ora"]]) {
+      await bus.dispatch({ type: "preview-apply", requestId: "p-" + lang, info: { lang, source: "draft", variationOptionId: null }, items: [{ nodeId: "1:1", text }], commit: false })
+      await bus.dispatch({ type: "overflow-check", requestId: "o-" + lang, nodeIds: ["1:1"], commit: false })
+    }
+    expect(node.characters).toBe("Paga ora")
+    expect(figmaMock.commitUndo).not.toHaveBeenCalled()
+    await bus.dispatch({ type: "preview-reset", requestId: "r", scope: "page", nodeIds: ["1:1"] })
+    expect(figmaMock.commitUndo).toHaveBeenCalledTimes(1)
+    expect(node.characters).toBe("Pay now")
+  })
+
   it("refuses document writes in Dev Mode", async () => {
     const node = fakeText("1:1", "Pay now")
     onPage(figmaMock, [node])

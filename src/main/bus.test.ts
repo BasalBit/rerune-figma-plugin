@@ -112,6 +112,28 @@ describe("undo steps", () => {
     await expect(instance.dispatch({ type: "link-remove", requestId: "c2", nodeIds: [] })).resolves.toBeUndefined()
   })
 
+  it("leaves a write sent with commit: false to the next write's undo step", async () => {
+    const order: string[] = []
+    figmaMock.commitUndo.mockImplementation(() => order.push("commit"))
+    const instance = bus("figma")
+    instance.on("preview-apply", (message) => {
+      order.push("apply " + message.requestId)
+    })
+    instance.on("overflow-check", (message) => {
+      order.push("check " + message.requestId)
+    })
+    instance.on("preview-reset", () => {
+      order.push("reset")
+    })
+    await instance.dispatch({ type: "preview-apply", requestId: "a", info: {}, items: [], commit: false })
+    await instance.dispatch({ type: "overflow-check", requestId: "b", nodeIds: [], commit: false })
+    await instance.dispatch({ type: "preview-apply", requestId: "c", info: {}, items: [], commit: false })
+    await instance.dispatch({ type: "preview-reset", requestId: "d", scope: "page" })
+    expect(order).toEqual(["apply a", "check b", "apply c", "reset", "commit"])
+    await instance.dispatch({ type: "preview-apply", requestId: "e", info: {}, items: [] })
+    expect(order.slice(-2)).toEqual(["apply e", "commit"])
+  })
+
   it("does not commit refused writes", async () => {
     figmaMock.commitUndo.mockClear()
     const instance = bus("dev")

@@ -22,7 +22,9 @@ import type { ScanResult } from "./ops"
 //
 // Overflow report: for each picked language in turn, resolve → preview-apply → overflow-check → collect, then one
 // preview-reset of every layer the report wrote, always (also after an error or Stop). Values longer than their
-// key's max length come from E12 (`exceeds_max_length`) and are added UI-side as "max_length".
+// key's max length come from E12 (`exceeds_max_length`) and are added UI-side as "max_length". Its preview-apply and
+// overflow-check messages carry `commit: false` and the final reset commits, so the whole report is one undo step
+// with no net change (Cmd+Z after it never brings back the last language's preview).
 //
 // Language copies: the top-level frames of the selection are copied once per language by main (language-copies),
 // with the resolved text of every scanned layer in those frames; missing values keep the source text and are listed.
@@ -170,7 +172,7 @@ async function applyTracked(
         added.add(item.nodeId)
       }
     }
-    const result = await runOp(bus, (requestId) => ({ type: "preview-apply", requestId, info, items: batch }))
+    const result = await runOp(bus, (requestId) => ({ type: "preview-apply", requestId, info, items: batch, commit: false }))
     for (const error of result.errors) {
       errors.push(error)
       if (!isWarning(error)) {
@@ -186,11 +188,12 @@ async function applyTracked(
   return { errors, failed }
 }
 
-// overflow-check in batches of 200 layers, so each answer arrives within the bus watchdog.
+// overflow-check in batches of 200 layers, so each answer arrives within the bus watchdog. No undo step of its own:
+// the report's final reset commits the whole report.
 export async function checkOverflow(bus: Pick<UiBus, "request">, nodeIds: readonly string[]): Promise<OverflowItem[]> {
   const items: OverflowItem[] = []
   for (const batch of chunk(nodeIds, WRITE_BATCH_SIZE)) {
-    const answer = await bus.request((requestId) => ({ type: "overflow-check", requestId, nodeIds: batch }), {
+    const answer = await bus.request((requestId) => ({ type: "overflow-check", requestId, nodeIds: batch, commit: false }), {
       done: (message) => (message.type === "overflow-result" ? message.items : undefined),
     })
     items.push(...answer)

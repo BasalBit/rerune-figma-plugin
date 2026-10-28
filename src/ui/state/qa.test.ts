@@ -175,6 +175,8 @@ describe("runOverflowReport (§7.18.1)", () => {
       { lang: "it", rows: [], checked: 2, missing: 1, errors: [] },
       { lang: PSEUDO_LANGUAGE, rows: NODES.map((node) => ({ nodeId: node.nodeId, kind: "clipped", by: 3 })), checked: 4, missing: 0, errors: [] },
     ])
+    // No undo step of their own: the final reset (the app's preview-reset) commits the whole report as one step.
+    expect(main.sent.map((message) => (message as { commit?: false }).commit)).toEqual([false, false, false, false, false, false])
     expect(report.nodes.get("1:1")).toEqual({ name: "Pay button", frameName: "Checkout", keyName: "checkout_pay_renamed" })
     expect(report.nodes.get("1:4")).toEqual({ name: "Help", frameName: "Checkout", keyName: null })
     expect([report.stopped, report.error, report.resetError, report.truncatedScan]).toEqual([null, null, null, false])

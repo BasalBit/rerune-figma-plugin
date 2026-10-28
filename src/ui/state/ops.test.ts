@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { scannedNode } from "../../../test/fixtures"
 import { createUiBus, HandlerError, RequestTimeoutError } from "../bus"
-import { chunk, createScanRunner, groupErrors, layerCount, mainsFirst, removeLinksBatched, runBatched, runOp, ScanCancelledError, singleFlight } from "./ops"
+import { chunk, createScanRunner, groupErrors, layerCount, mainsFirst, removeLinksBatched, runBatched, runOp, ScanCancelledError, singleFlight, undoStep } from "./ops"
 import { fakeBusEnvironment } from "./test-fakes"
 
 const SKIPPED = { hidden: 0, locked: 0, empty: 0, numeric: 0, underscore: 0, languageCopy: 0, unavailable: 0 }
@@ -115,6 +115,24 @@ describe("runOp and runBatched", () => {
     }
     expect(await pending).toEqual({ done: 4, errors: [] })
     expect(fake.posted.map((message) => (message as { type: string; nodeIds: string[] }).nodeIds)).toEqual([["5:67", "1:1"], ["I12:34;5:67", "I1:2;3:4;5:6"]])
+  })
+
+  it("marks every batch but the last with commit: false, so a run is one undo step", async () => {
+    const fake = fakeBusEnvironment()
+    const bus = createUiBus(fake.environment)
+    const info = { lang: "de", source: "draft" as const, variationOptionId: null }
+    const items = Array.from({ length: 5 }, (_, i) => ({ nodeId: "1:" + i, text: "T" + i }))
+    const pending = runBatched(bus, items, (requestId, batch, last) => ({ type: "preview-apply", requestId, info, items: batch, ...undoStep(last) }), 2)
+    for (let round = 0; round < 3; round++) {
+      await vi.advanceTimersByTimeAsync(0)
+      const message = fake.posted[round] as { requestId: string; items: unknown[] }
+      fake.deliver({ type: "op-result", requestId: message.requestId, ok: true, done: message.items.length, errors: [] })
+    }
+    await pending
+    expect(fake.posted.map((message) => (message as { commit?: false }).commit)).toEqual([false, false, undefined])
+    expect("commit" in fake.posted[2]).toBe(false)
+    expect(undoStep(true)).toEqual({})
+    expect(undoStep(false)).toEqual({ commit: false })
   })
 
   it("sends nothing for an empty list", async () => {
