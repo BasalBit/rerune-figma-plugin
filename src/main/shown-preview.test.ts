@@ -57,7 +57,7 @@ describe("shownPreview", () => {
     onPage(figmaMock, [fakeComponent("5:1", "Button", [mainText]), fakeComponent("3:1", "Card", [nestedInstance]), outerInstance])
     expect(await shownPreview(asText(outer), createNodeCaches())).toMatchObject({ record: { nid: "5:6" }, owner: mainText })
 
-    nestedInstance.overrides.push({ id: "I3:4;5:6", overriddenFields: ["characters"] })
+    nestedInstance.overrides = [{ id: "I3:4;5:6", overriddenFields: ["characters"] }]
     expect(await shownPreview(asText(outer), createNodeCaches())).toBeNull()
   })
 

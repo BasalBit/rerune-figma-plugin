@@ -92,6 +92,68 @@ function clone<T>(value: T): T {
 }
 let current: FigmaMock | null = null
 
+// Figma hands out read-only values: arrays and objects that the API returns (properties such as fills, children,
+// selection, overrides or boundVariables, and method results such as getRangeAllFontNames or
+// getStyledTextSegments) are frozen, so changing one in place throws ("object is not extensible", "Cannot assign
+// to read only property"; developers.figma.com/docs/plugins/editing-properties). The mock hands out frozen copies
+// and keeps its own state mutable. Nodes inside a value (children, selection) stay the live nodes; only the list is
+// frozen. Results Figma does not document as frozen (findAll, plugin data keys, relaunch data, clientStorage) are
+// frozen too: getRangeAllFontNames is typed as a plain array and is frozen in Figma, so code must never count on
+// changing what it read.
+const liveNodes = new WeakSet<object>()
+
+function handOut<T>(value: T): T {
+  if (typeof value !== "object" || value === null || liveNodes.has(value) || ArrayBuffer.isView(value)) {
+    return value
+  }
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(handOut)) as T
+  }
+  const copy: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    copy[key] = handOut(entry)
+  }
+  return Object.freeze(copy) as T
+}
+
+function frozenList<T>(value: T): T {
+  return Array.isArray(value) ? (Object.freeze(value.slice()) as T) : value
+}
+
+// Node properties whose value Figma hands out frozen (object or array valued). Tests set them through the node's
+// extras or by assignment; reads get a frozen copy.
+const FROZEN_DATA_KEYS = new Set([
+  "fills", "strokes", "effects", "layoutGrids", "exportSettings", "constraints", "absoluteBoundingBox",
+  "absoluteRenderBounds", "absoluteTransform", "relativeTransform", "boundVariables", "componentPropertyReferences",
+  "componentProperties", "componentPropertyDefinitions", "variantProperties", "overrides", "guides",
+])
+// Node lists: the list is frozen, its nodes are not.
+const FROZEN_LIST_KEYS = new Set(["selection", "exposedInstances"])
+// Getters the mock defines for those keys; clone() reads their value instead of skipping them like a test's getter.
+const handOutGetters = new WeakSet<() => unknown>()
+
+// Defines `key` on a fake node: a frozen hand-out accessor for the keys above (assigning stores the value the next
+// read hands out; a function value is called on every read, as for overrides that change or cannot be read), a
+// plain data property otherwise.
+function defineValue(node: object, key: string, value: unknown): void {
+  if (!FROZEN_DATA_KEYS.has(key) && !FROZEN_LIST_KEYS.has(key)) {
+    Object.defineProperty(node, key, { value, writable: true, configurable: true, enumerable: true })
+    return
+  }
+  let stored = value
+  const get = FROZEN_LIST_KEYS.has(key) ? () => frozenList(stored) : () => handOut(typeof stored === "function" ? (stored as () => unknown)() : stored)
+  handOutGetters.add(get)
+  Object.defineProperty(node, key, {
+    get,
+    set: (next: unknown) => {
+      stored = next
+    },
+    configurable: true,
+    enumerable: true,
+  })
+  Object.defineProperty(node, "__stored_" + key, { value: () => stored, configurable: true, enumerable: false })
+}
+
 function fontId(font: FakeFont): string {
   return font.family + "\u0000" + font.style
 }
@@ -160,7 +222,7 @@ export function createNode(type: string, id: string, name: string, children: Fak
     allChildren: [],
     inheritFrom: null,
     get children(): FakeNode[] {
-      return node.allChildren.filter((child) => !isSkippedInvisible(child))
+      return Object.freeze(node.allChildren.filter((child) => !isSkippedInvisible(child))) as FakeNode[]
     },
     getSharedPluginData(namespace: string, key: string): string {
       const value = own.get(dataKey(namespace, key))
@@ -180,16 +242,16 @@ export function createNode(type: string, id: string, name: string, children: Fak
       }
     },
     getSharedPluginDataKeys(namespace: string): string[] {
-      return [...own.keys()].filter((entry) => entry.startsWith(namespace + "/")).map((entry) => entry.slice(namespace.length + 1))
+      return Object.freeze([...own.keys()].filter((entry) => entry.startsWith(namespace + "/")).map((entry) => entry.slice(namespace.length + 1))) as string[]
     },
     setRelaunchData: vi.fn((data: Record<string, string>) => {
       relaunch = { ...data }
     }),
-    getRelaunchData: () => ({ ...relaunch }),
+    getRelaunchData: () => handOut(relaunch),
     findAllWithCriteria(criteria) {
       const all: FakeNode[] = []
       preorder(node, all)
-      return all.filter((candidate) => {
+      return frozenList(all.filter((candidate) => {
         if (criteria.types !== undefined && !criteria.types.includes(candidate.type)) {
           return false
         }
@@ -202,12 +264,12 @@ export function createNode(type: string, id: string, name: string, children: Fak
           return (keys ?? []).some((key) => candidate.getSharedPluginData(namespace, key) !== "")
         }
         return true
-      })
+      }))
     },
     findAll(callback) {
       const all: FakeNode[] = []
       preorder(node, all)
-      return callback === undefined ? all : all.filter(callback)
+      return frozenList(callback === undefined ? all : all.filter(callback))
     },
     appendChild(child: FakeNode): void {
       if (child.parent !== null) {
@@ -241,8 +303,9 @@ export function createNode(type: string, id: string, name: string, children: Fak
     node.appendChild(child)
   }
   for (const [key, value] of Object.entries(extra)) {
-    Object.defineProperty(node, key, { value, writable: true, configurable: true, enumerable: true })
+    defineValue(node, key, value)
   }
+  liveNodes.add(node)
   registry.set(id, node)
   return node
 }
@@ -288,7 +351,14 @@ function cloneTree(source: FakeNode, root: CloneRoot | null, isRoot: boolean, in
   const extra: Record<string, unknown> = {}
   for (const key of Object.keys(source)) {
     const descriptor = Object.getOwnPropertyDescriptor(source, key)
-    if (BASE_KEYS.has(key) || descriptor === undefined || descriptor.get !== undefined || typeof descriptor.value === "function") {
+    if (BASE_KEYS.has(key) || descriptor === undefined) {
+      continue
+    }
+    if (descriptor.get !== undefined && handOutGetters.has(descriptor.get)) {
+      extra[key] = clone(descriptor.get())
+      continue
+    }
+    if (descriptor.get !== undefined || typeof descriptor.value === "function") {
       continue
     }
     extra[key] = clone(descriptor.value)
@@ -312,7 +382,7 @@ function cloneTree(source: FakeNode, root: CloneRoot | null, isRoot: boolean, in
     const instance = copy as FakeInstance
     const sourceOverrides = asInstance ? [] : ((source as FakeInstance).overrides ?? [])
     const nextRoot = root ?? { sourceId: source.id, cloneId: id }
-    instance.overrides = sourceOverrides.map((entry) => ({ id: cloneIdFor({ id: entry.id } as FakeNode, nextRoot), overriddenFields: entry.overriddenFields.slice() }))
+    defineValue(instance, "overrides", sourceOverrides.map((entry) => ({ id: cloneIdFor({ id: entry.id } as FakeNode, nextRoot), overriddenFields: entry.overriddenFields.slice() })))
     instance.mainComponent = asInstance ? source : ((source as FakeInstance).mainComponent ?? null)
     instance.getMainComponentAsync = vi.fn(async () => instance.mainComponent)
   }
@@ -362,7 +432,7 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
         requireLoaded(next as FakeFont)
       }
       for (let i = start; i < end; i++) {
-        styles[i] = { ...styles[i], [field]: next }
+        styles[i] = { ...styles[i], [field]: clone(next) }
       }
     })
   Object.defineProperties(text, {
@@ -394,7 +464,7 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
     fontName: {
       get: () => {
         const fonts = value.length === 0 ? [baseStyle.fontName] : uniqueFonts(styles)
-        return fonts.length === 1 ? fonts[0] : (current?.mixed ?? Symbol("mixed"))
+        return fonts.length === 1 ? handOut(fonts[0]) : (current?.mixed ?? Symbol("mixed"))
       },
       enumerable: true,
       configurable: true,
@@ -417,21 +487,21 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
     enumerable: true,
     configurable: true,
   })
+  defineValue(text, "componentPropertyReferences", null)
+  defineValue(text, "boundVariables", {})
+  defineValue(text, "absoluteBoundingBox", { x: 0, y: 0, width: 100, height: 20 })
   Object.assign(text, {
     autoRename: true,
     hasMissingFont: false,
-    componentPropertyReferences: null,
-    boundVariables: {},
     width: 100,
     height: 20,
     textTruncation: "DISABLED",
     maxLines: null,
-    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 20 },
     getRangeAllFontNames(start: number, end: number): FakeFont[] {
       if (start >= end) {
         throw new Error("getRangeAllFontNames: empty range")
       }
-      return deepFreeze(uniqueFonts(rangeStyles(start, end)))
+      return handOut(uniqueFonts(rangeStyles(start, end)))
     },
     getStyledTextSegments(fields: string[], start = 0, end = value.length): Record<string, unknown>[] {
       const segments: Record<string, unknown>[] = []
@@ -448,7 +518,7 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
           segments.push({ characters: value.slice(i, i + 1), start: i, end: i + 1, ...picked })
         }
       }
-      return deepFreeze(JSON.parse(JSON.stringify(segments)) as Record<string, unknown>[])
+      return handOut(clone(segments))
     },
     setRangeFontName: setRange("fontName"),
     setRangeFontSize: setRange("fontSize"),
@@ -489,7 +559,7 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
     if (key === "textAutoResize") {
       continue
     }
-    Object.defineProperty(text, key, { value: entry, writable: true, configurable: true, enumerable: true })
+    defineValue(text, key, entry)
   }
   return text
 }
@@ -524,12 +594,13 @@ export function followText(sublayer: FakeText, source: FakeText, instance: FakeI
     set: (next: string) => {
       write(next)
       overridden = true
-      if (instance !== null && Array.isArray(instance.overrides)) {
-        const entry = instance.overrides.find((override) => override.id === sublayer.id)
-        if (entry === undefined) {
-          instance.overrides.push({ id: sublayer.id, overriddenFields: ["characters"] })
-        } else if (!entry.overriddenFields.includes("characters")) {
-          entry.overriddenFields.push("characters")
+      const list = instance === null ? undefined : storedOverrides(instance)
+      if (list !== undefined) {
+        const at = list.findIndex((override) => override.id === sublayer.id)
+        if (at < 0) {
+          list.push({ id: sublayer.id, overriddenFields: ["characters"] })
+        } else if (!list[at].overriddenFields.includes("characters")) {
+          list[at] = { id: sublayer.id, overriddenFields: [...list[at].overriddenFields, "characters"] }
         }
       }
     },
@@ -538,15 +609,12 @@ export function followText(sublayer: FakeText, source: FakeText, instance: FakeI
   })
 }
 
-// Figma hands out read-only values: arrays and objects from the API are frozen, so mutating them throws.
-function deepFreeze<T>(value: T): T {
-  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
-    Object.freeze(value)
-    for (const child of Object.values(value)) {
-      deepFreeze(child)
-    }
-  }
-  return value
+// The instance's own (mutable) override list behind the frozen `overrides` it hands out; for overrides given as a
+// function, the list that function returns. undefined when the overrides are not a list.
+function storedOverrides(instance: FakeInstance): FakeOverride[] | undefined {
+  const stored = (instance as unknown as { __stored_overrides?: () => unknown }).__stored_overrides?.()
+  const list = typeof stored === "function" ? (stored as () => unknown)() : stored
+  return Array.isArray(list) ? (list as FakeOverride[]) : undefined
 }
 
 function uniqueFonts(styles: FakeStyle[]): FakeFont[] {
@@ -584,12 +652,8 @@ export function fakeInstance(
   options: { overrides?: FakeOverride[] | (() => FakeOverride[]); mainComponent?: FakeNode | null } = {},
 ): FakeInstance {
   const instance = createNode("INSTANCE", id, name, children) as FakeInstance
-  const overrides = options.overrides ?? []
-  if (typeof overrides === "function") {
-    Object.defineProperty(instance, "overrides", { get: overrides, configurable: true, enumerable: true })
-  } else {
-    instance.overrides = overrides
-  }
+  // A function stands for overrides Figma computes on every read (it may throw, as an unreadable list does).
+  defineValue(instance, "overrides", options.overrides ?? [])
   instance.mainComponent = options.mainComponent ?? null
   instance.getMainComponentAsync = vi.fn(async () => instance.mainComponent)
   return instance
@@ -683,7 +747,7 @@ export function installFigma(overrides: Record<string, unknown> = {}): FigmaMock
     clientStorage: {
       data: storage,
       failWrites: false,
-      getAsync: vi.fn(async (key: string) => (storage.has(key) ? clone(storage.get(key)) : undefined)),
+      getAsync: vi.fn(async (key: string) => (storage.has(key) ? handOut(clone(storage.get(key))) : undefined)),
       setAsync: vi.fn(async (key: string, value: unknown) => {
         if (figma.clientStorage.failWrites) {
           throw new Error("Storage limit exceeded")
@@ -693,7 +757,7 @@ export function installFigma(overrides: Record<string, unknown> = {}): FigmaMock
       deleteAsync: vi.fn(async (key: string) => {
         storage.delete(key)
       }),
-      keysAsync: vi.fn(async () => [...storage.keys()]),
+      keysAsync: vi.fn(async () => Object.freeze([...storage.keys()])),
     },
     codegen: { on: vi.fn() },
     viewport: { scrollAndZoomIntoView: vi.fn() },

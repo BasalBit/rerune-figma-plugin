@@ -83,9 +83,9 @@ describe("readLinkInfo", () => {
     // The preview write is a characters override; Figma may also list the record as a pluginData override.
     expect(instance.overrides).toEqual([{ id: "I12:34;5:67", overriddenFields: ["characters"] }])
     expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches())).toMatchObject({ state: "inherited", textOverridden: false })
-    instance.overrides[0].overriddenFields.push("pluginData")
+    instance.overrides = [{ id: "I12:34;5:67", overriddenFields: ["characters", "pluginData"] }]
     expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches())).toMatchObject({ state: "inherited", textOverridden: false })
-    instance.overrides[0].overriddenFields.pop()
+    instance.overrides = [{ id: "I12:34;5:67", overriddenFields: ["characters"] }]
 
     // Re-preview in another language reaches it and keeps the first original.
     await applyPreview({ lang: "fr", source: "draft", variationOptionId: null }, [{ nodeId: "I12:34;5:67", text: "Payer" }], 2)
@@ -109,7 +109,8 @@ describe("readLinkInfo", () => {
     expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches()).state).toBe("inherited")
 
     expect(await applyPreview({ lang: "de", source: "draft", variationOptionId: null }, [{ nodeId: "I12:34;77:1", text: "Jetzt zahlen" }], 1)).toEqual({ done: 1, errors: [] })
-    instance.overrides[0].overriddenFields.push("pluginData")
+    expect(instance.overrides).toEqual([{ id: "I12:34;77:1", overriddenFields: ["characters"] }])
+    instance.overrides = [{ id: "I12:34;77:1", overriddenFields: ["characters", "pluginData"] }]
     // The id pattern cannot match a library nid (3:9), so the pre-preview override state decides (D44).
     expect(readLinkInfo(sublayer as unknown as BaseNode, createNodeCaches())).toMatchObject({ state: "inherited", ownPluginDataOverride: false, textOverridden: false })
   })

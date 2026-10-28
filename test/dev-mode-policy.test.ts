@@ -242,7 +242,7 @@ describe("messages Dev Mode accepts never change the document", () => {
     figmaMock.mode = editorType === "dev" ? "inspect" : "default"
     const fixture = connectedFile(figmaMock)
     const before = snapshot(figmaMock)
-    const selection = figmaMock.currentPage.selection
+    const selection = figmaMock.currentPage.selection as FakeNode[]
     const skipBefore = figmaMock.skipInvisibleInstanceChildren
     const sent: MainToUi[] = []
     const post = (message: MainToUi) => sent.push(message)
@@ -272,7 +272,10 @@ describe("messages Dev Mode accepts never change the document", () => {
     ])
     if (editorType === "dev") {
       // select-nodes only zooms in Dev Mode (§7.5): the selection is the user's.
-      expect(figmaMock.currentPage.selection).toBe(selection)
+      // (Figma hands out a frozen copy of the list, so its nodes are compared.)
+      const after = figmaMock.currentPage.selection as FakeNode[]
+      expect(after).toHaveLength(selection.length)
+      after.forEach((node, index) => expect(node).toBe(selection[index]))
       expect(figmaMock.viewport.scrollAndZoomIntoView).toHaveBeenCalled()
     } else {
       expect((figmaMock.currentPage.selection as FakeNode[]).map((node) => node.id)).toEqual(fixture.texts.map((text) => text.id))
