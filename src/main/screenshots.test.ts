@@ -305,6 +305,42 @@ describe("screenshots-export (§7.16)", () => {
     })
   })
 
+  it("reports a frame deleted while its texts are read or while it exports as not_found (§7.9)", async () => {
+    connectFile()
+    const removedNodeError = () => new Error("The node with id \"10:1\" does not exist")
+    // Deleted during the box walk, which yields to the canvas: reading the frame afterwards throws, as in Figma.
+    const text = linkedText("12:1", rect(120, 250, 100, 20))
+    const frame = exportingFrame("10:1", [text])
+    const bounds = rect(100, 200, 400, 800)
+    Object.defineProperty(frame, "absoluteBoundingBox", {
+      configurable: true,
+      get: () => {
+        if (frame.removed) throw removedNodeError()
+        return bounds
+      },
+    })
+    Object.defineProperty(text, "absoluteBoundingBox", {
+      configurable: true,
+      get: () => {
+        frame.remove()
+        return rect(120, 250, 100, 20)
+      },
+    })
+    // Deleted between the bounds read and the export.
+    const exporting = exportingFrame("11:1", [])
+    exporting.exportAsync = vi.fn(async () => {
+      exporting.remove()
+      throw removedNodeError()
+    })
+    onPage(figmaMock, [frame, exporting])
+
+    const sent = await run(["10:1", "11:1"])
+    expect(sent).toEqual([
+      { type: "frame-images-done", requestId: "r1", exported: 0, skipped: [{ frameId: "10:1", reason: "not_found" }, { frameId: "11:1", reason: "not_found" }] },
+    ])
+    expect(frame.exportAsync).not.toHaveBeenCalled()
+  })
+
   it("skips a frame whose text shows a language preview, own or through its main component (D23)", async () => {
     connectFile()
     const previewing = linkedText("12:1", rect(120, 250, 100, 20))

@@ -212,9 +212,19 @@ export async function exportScreenshot(frameId: string, projectId: string | null
   if (collected.previewing) {
     return { ok: false, reason: "preview_active" }
   }
-  const exported = await exportFrameImage(frame)
+  // The box walk yields to the canvas: the designer may have deleted the frame (or undone its creation) meanwhile.
+  if (frame.removed) {
+    return { ok: false, reason: "not_found" }
+  }
+  let exported: FrameExport
+  try {
+    exported = await exportFrameImage(frame)
+  } catch {
+    // A node removed during the export throws on its first read (absoluteBoundingBox).
+    exported = { ok: false, reason: "export_failed" }
+  }
   if (!exported.ok) {
-    return { ok: false, reason: exported.reason }
+    return { ok: false, reason: frame.removed ? "not_found" : exported.reason }
   }
   return {
     ok: true,
