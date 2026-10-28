@@ -93,11 +93,31 @@ export function PushScreen(props: PushScreenProps) {
   const [resolved, setResolved] = useState<Record<string, ConflictChoice | "done">>({})
   const [shots, setShots] = useState<ShotsState | null>(null)
   const [stopping, setStopping] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const stopShots = useRef(false)
   const nameTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const editKeys = props.project.permissions.includes("edit_keys")
 
+  // One push, pull or conflict resolution at a time, from its first request until its screenshots are uploaded or
+  // stopped: review, push and the follow-up choices wait meanwhile, and the app's lock (onBusy) is released by the
+  // run that took it.
+  async function exclusive(work: () => Promise<void>): Promise<void> {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    props.onBusy(true)
+    try {
+      await work()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+      props.onBusy(false)
+    }
+  }
+
   async function review() {
+    if (busyRef.current) return
     setPhase("preparing")
     setError(null)
     setRun(null)
@@ -162,28 +182,25 @@ export function PushScreen(props: PushScreenProps) {
 
   async function push() {
     if (prepared === null) return
-    setPhase("pushing")
-    setError(null)
-    setShots(null)
-    props.onBusy(true)
-    let pushed: PushRun | null = null
-    try {
-      pushed = await executePush(pushDeps(), prepared.plan, prepared.context)
-      setRun(pushed)
-      if (pushed.availableKeys !== null) props.onAvailableKeys(pushed.availableKeys)
-      // The rescan drops pending names of layers that are now linked; failed creates keep the chosen name.
-      await props.workspace.scan()
-    } catch (caught) {
-      setError(userMessage(caught))
-    }
-    setPhase("results")
-    try {
+    await exclusive(async () => {
+      setPhase("pushing")
+      setError(null)
+      setShots(null)
+      let pushed: PushRun | null = null
+      try {
+        pushed = await executePush(pushDeps(), prepared.plan, prepared.context)
+        setRun(pushed)
+        if (pushed.availableKeys !== null) props.onAvailableKeys(pushed.availableKeys)
+        // The rescan drops pending names of layers that are now linked; failed creates keep the chosen name.
+        await props.workspace.scan()
+      } catch (caught) {
+        setError(userMessage(caught))
+      }
+      setPhase("results")
       if (pushed !== null) {
         await uploadScreenshots(affectedFrames(pushed.affectedNodeIds, prepared.context.nodes))
       }
-    } finally {
-      props.onBusy(false)
-    }
+    })
   }
 
   // §7.13 rule 11: screenshots of the frames the push changed, when the gate allows (§7.16). A gate that is off
@@ -220,44 +237,45 @@ export function PushScreen(props: PushScreenProps) {
 
   async function pull() {
     if (prepared === null) return
-    setPulling(true)
-    setError(null)
-    props.onBusy(true)
-    try {
-      setPulled(await executePulls({ api: props.api, bus: props.bus }, prepared.plan, prepared.context))
-    } catch (caught) {
-      setError(userMessage(caught))
-    } finally {
-      props.onBusy(false)
-    }
-    setPulling(false)
+    await exclusive(async () => {
+      setPulling(true)
+      setError(null)
+      try {
+        setPulled(await executePulls({ api: props.api, bus: props.bus }, prepared.plan, prepared.context))
+      } catch (caught) {
+        setError(userMessage(caught))
+      }
+      setPulling(false)
+    })
   }
 
   async function resolveConflict(conflict: PushFollowUp["conflicts"][number], choice: ConflictChoice) {
-    if (prepared === null || run === null) return
+    if (prepared === null || run === null || busyRef.current) return
     setResolved((current) => ({ ...current, [conflict.ref]: choice }))
     if (choice === "skip") return
-    // Several conflicts can be resolving at once: each result is merged into the latest run.
+    // Each result is merged into the latest run.
     const merge = (result: Parameters<typeof resolveConflictInRun>[2]) =>
       setRun((current) => (current === null ? current : resolveConflictInRun(current, conflict.ref, result)))
-    try {
-      if (choice === "overwrite") {
-        const next = await pushChunks({ api: props.api, bus: props.bus, fileKey: props.fileKey }, [overwriteChunk(conflict)], prepared.context)
-        sendCache({ bus: props.bus }, props.project.id, next.cacheEntries)
-        merge({ updated: next.updated, conflicts: next.conflicts, failures: next.failures, writeErrors: next.writeErrors })
-      } else {
-        const written = await applyTakeReRune({ api: props.api, bus: props.bus }, conflict, prepared.context.nodes)
-        merge({ writeErrors: written.errors })
+    await exclusive(async () => {
+      try {
+        if (choice === "overwrite") {
+          const next = await pushChunks({ api: props.api, bus: props.bus, fileKey: props.fileKey }, [overwriteChunk(conflict)], prepared.context)
+          sendCache({ bus: props.bus }, props.project.id, next.cacheEntries)
+          merge({ updated: next.updated, conflicts: next.conflicts, failures: next.failures, writeErrors: next.writeErrors })
+        } else {
+          const written = await applyTakeReRune({ api: props.api, bus: props.bus }, conflict, prepared.context.nodes)
+          merge({ writeErrors: written.errors })
+        }
+        setResolved((current) => ({ ...current, [conflict.ref]: "done" }))
+      } catch (caught) {
+        setError(userMessage(caught))
+        setResolved((current) => {
+          const next = { ...current }
+          delete next[conflict.ref]
+          return next
+        })
       }
-      setResolved((current) => ({ ...current, [conflict.ref]: "done" }))
-    } catch (caught) {
-      setError(userMessage(caught))
-      setResolved((current) => {
-        const next = { ...current }
-        delete next[conflict.ref]
-        return next
-      })
-    }
+    })
   }
 
   function nodesOf(nodeIds: readonly string[]): ScannedNode[] {
@@ -289,11 +307,11 @@ export function PushScreen(props: PushScreenProps) {
       <div style={styles.page}>
         <div style={{ ...styles.body, ...styles.stack }}>
           <ErrorNote message={error} />
-          {run !== null && <Results run={run} props={props} resolved={resolved} onResolve={resolveConflict} nodesOf={nodesOf} />}
+          {run !== null && <Results run={run} props={props} resolved={resolved} busy={busy} onResolve={resolveConflict} nodesOf={nodesOf} />}
           {shots !== null && <ScreenshotStatus state={shots} stopping={stopping} onStop={stopScreenshots} onSelect={props.onSelect} />}
         </div>
         <div style={{ ...styles.footer, justifyContent: "flex-end" }}>
-          <Button disabled={shots?.kind === "running"} onClick={() => void review()}>
+          <Button disabled={busy} onClick={() => void review()}>
             Review again
           </Button>
         </div>
@@ -310,6 +328,7 @@ export function PushScreen(props: PushScreenProps) {
       <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--figma-color-border)" }}>
         <SegmentedControl
           value={props.state.scope}
+          disabled={busy}
           options={SCOPE_OPTIONS}
           onValueChange={(value) => {
             props.workspace.setScope(value as Scope)
@@ -476,7 +495,7 @@ export function PushScreen(props: PushScreenProps) {
                 <Note
                   tone="info"
                   actions={
-                    <Button secondary disabled={pulling || props.readOnly || pulled !== null || !canPull(plan)} loading={pulling} onClick={() => void pull()}>
+                    <Button secondary disabled={busy || props.readOnly || pulled !== null || !canPull(plan)} loading={pulling} onClick={() => void pull()}>
                       Update layers from ReRune
                     </Button>
                   }
@@ -498,10 +517,12 @@ export function PushScreen(props: PushScreenProps) {
         )}
       </div>
       <div style={styles.footer}>
-        <TextButton onClick={() => void review()}>Review again</TextButton>
+        <TextButton disabled={busy} onClick={() => void review()}>
+          Review again
+        </TextButton>
         <div style={styles.grow} />
         {counts !== null && counts.needsDecision > 0 && <Small muted>{plural(counts.needsDecision, "item needs", "items need")} a decision</Small>}
-        <Button disabled={!submittable} onClick={() => void push()}>
+        <Button disabled={!submittable || busy} onClick={() => void push()}>
           {counts === null ? "Push" : "Push " + plural(counts.creates + counts.updates + counts.links + counts.keepCopied + counts.takeReRune + counts.unlinks, "change", "changes")}
         </Button>
       </div>
@@ -643,6 +664,7 @@ function Results(props: {
   run: PushRun
   props: PushScreenProps
   resolved: Record<string, ConflictChoice | "done">
+  busy: boolean
   onResolve(conflict: PushFollowUp["conflicts"][number], choice: ConflictChoice): Promise<void>
   nodesOf(nodeIds: readonly string[]): ScannedNode[]
 }) {
@@ -683,7 +705,7 @@ function Results(props: {
             ) : (
               <Choice
                 value={state === undefined || state === "done" ? null : state}
-                disabled={state !== undefined}
+                disabled={state !== undefined || props.busy}
                 options={[
                   { value: "overwrite", label: "Overwrite" },
                   { value: "take_rerune", label: "Take ReRune text" },
