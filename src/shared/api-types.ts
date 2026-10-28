@@ -396,3 +396,74 @@ export interface FigmaScreenshotUploadResponse {
   unchanged_image: boolean
   dropped_boxes: FigmaDroppedBox[]
 }
+
+// Phase 2: screenshot list and URL, key design, URL keys (E20–E23). The plugin does not call these yet; they are
+// typed so the wire contract of §4 is complete in one place.
+
+export interface FigmaScreenshotsQuery {
+  file_key?: string | null
+  frame_id?: string | null
+  key_id?: string | null
+  cursor?: string | null
+  limit?: number | null
+}
+
+// E20: with `key_id`, each screenshot's boxes are those of that key.
+export interface FigmaScreenshotsResponse { screenshots: FigmaScreenshot[]; next_cursor: string | null; has_more: boolean }
+
+// E21: a fresh signed URL for one screenshot.
+export interface FigmaScreenshotUrlResponse { image_url: string; image_url_expires_at: string }
+
+// E22: a key's links carry no key fields (they are all this key's).
+export interface FigmaKeyDesignLink {
+  node_id: string
+  file_key: string
+  frame_id: string
+  frame_name: string
+  page_id: string
+  page_name: string
+  node_name: string
+  figma_url: string
+  updated_at: string
+}
+
+export interface FigmaKeyDesignResponse {
+  key_id: string
+  storage_enabled: boolean
+  links: FigmaKeyDesignLink[]
+  screenshots: FigmaScreenshot[]
+}
+
+export interface FigmaUrlKeysQuery {
+  figma_url: string
+  project_id?: string | null
+  source?: FigmaResolveSource | null
+  languages?: string | null      // comma-separated project language codes, ≤ 20
+}
+
+// E23 node matching: frame, node or page id; the whole file when the URL has no node id; none when nothing matched.
+export type FigmaUrlKeysMatch = "frame" | "node" | "page" | "file" | "none"
+
+export const FIGMA_URL_KEYS_MATCHES: readonly FigmaUrlKeysMatch[] = ["frame", "node", "page", "file", "none"]
+
+export interface FigmaUrlKey {
+  key_id: string
+  key: string
+  node_ids: string[]
+  frame_names: string[]
+  status: PublicationStatus
+  description: string
+  max_length: number | null
+  placeholders: FigmaPlaceholder[]
+  values: FigmaResolvedValue[]
+}
+
+export interface FigmaUrlKeysResponse {
+  project_id: string
+  file_key: string
+  node_id: string | null
+  matched: FigmaUrlKeysMatch
+  source: FigmaResolveSource
+  truncated: boolean
+  keys: FigmaUrlKey[]
+}

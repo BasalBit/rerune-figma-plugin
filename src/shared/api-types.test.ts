@@ -3,7 +3,15 @@ import {
   ERROR_REASONS,
   FIGMA_DROPPED_BOX_REASONS,
   FIGMA_LINK_REJECT_REASONS,
+  FIGMA_URL_KEYS_MATCHES,
   PUSH_ITEM_REASONS,
+  type FigmaKeyDesignResponse,
+  type FigmaScreenshotsQuery,
+  type FigmaScreenshotsResponse,
+  type FigmaScreenshotUrlResponse,
+  type FigmaUrlKeysMatch,
+  type FigmaUrlKeysQuery,
+  type FigmaUrlKeysResponse,
   type ErrorReason,
   type FigmaDroppedBoxReason,
   type FigmaFile,
@@ -280,6 +288,81 @@ const screenshotUpload: FigmaScreenshotUploadResponse = {
   unchanged_image: false,
   dropped_boxes: [{ node_id: "12:346", key_id: "6a4800000000000000000009", reason: "key_not_found" }],
 }
+
+// Phase 2 examples (E20–E23), as written in §4.
+const screenshotsQuery: FigmaScreenshotsQuery = { file_key: "AbCdEf1234567890XyZ", frame_id: "10:1", key_id: "6a4800000000000000000001", cursor: null, limit: 50 }
+
+const screenshots: FigmaScreenshotsResponse = { screenshots: [screenshot], next_cursor: null, has_more: false }
+
+const screenshotUrl: FigmaScreenshotUrlResponse = { image_url: screenshot.image_url ?? "", image_url_expires_at: "2026-10-27T11:00:00Z" }
+
+const keyDesign: FigmaKeyDesignResponse = {
+  key_id: "6a4800000000000000000001",
+  storage_enabled: true,
+  links: [
+    {
+      node_id: "12:345",
+      file_key: "AbCdEf1234567890XyZ",
+      frame_id: "10:1",
+      frame_name: "Checkout",
+      page_id: "0:1",
+      page_name: "Mobile",
+      node_name: "Pay button",
+      figma_url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter?node-id=10-1",
+      updated_at: "2026-10-27T10:00:00Z",
+    },
+  ],
+  screenshots: [screenshot],
+}
+
+const keyDesignOff: FigmaKeyDesignResponse = { ...keyDesign, storage_enabled: false, screenshots: [] }
+
+const urlKeysQuery: FigmaUrlKeysQuery = {
+  figma_url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter?node-id=10-1",
+  project_id: null,
+  source: "draft",
+  languages: "en,de",
+}
+
+const urlKeys: FigmaUrlKeysResponse = {
+  project_id: "6a4600000000000000000c35",
+  file_key: "AbCdEf1234567890XyZ",
+  node_id: "10:1",
+  matched: "frame",
+  source: "draft",
+  truncated: false,
+  keys: [
+    {
+      key_id: "6a4800000000000000000001",
+      key: "checkout_pay_button",
+      node_ids: ["12:345"],
+      frame_names: ["Checkout"],
+      status: "published",
+      description: "Checkout",
+      max_length: 20,
+      placeholders: [{ name: "amount", type: "string", format: "" }],
+      values: [
+        { lang: "en", present: true, resolved_lang: "en", inherited: false, variation_applied: false, content: { value: "Pay now" }, length: 7, exceeds_max_length: false },
+      ],
+    },
+  ],
+}
+
+const urlKeysFile: FigmaUrlKeysResponse = { ...urlKeys, node_id: null, matched: "file" }
+
+const urlKeysMatchesComplete: Equal<(typeof FIGMA_URL_KEYS_MATCHES)[number], FigmaUrlKeysMatch> = true
+
+describe("wire types (§4, E20–E23)", () => {
+  it("accept the spec examples", () => {
+    const examples = [screenshotsQuery, screenshots, screenshotUrl, keyDesign, keyDesignOff, urlKeysQuery, urlKeys, urlKeysFile]
+    expect(JSON.parse(JSON.stringify(examples))).toEqual(examples)
+  })
+
+  it("list every E23 match", () => {
+    expect(urlKeysMatchesComplete).toBe(true)
+    expect([...FIGMA_URL_KEYS_MATCHES].sort()).toEqual(["file", "frame", "node", "none", "page"])
+  })
+})
 
 describe("wire types (§4, E19)", () => {
   it("accept the spec examples", () => {
