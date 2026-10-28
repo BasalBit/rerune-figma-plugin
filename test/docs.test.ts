@@ -141,7 +141,7 @@ describe("TESTING.md", () => {
       expect([settingsScreen, pushScreen, screenshotState].join("\n")).toContain(label)
       expect(testing).toContain(label)
     }
-    for (const name of ["SCREENSHOTS_ON_HINT", "SERVER_DISABLED_HINT", "NO_FILE_HINT", "COPY_HINT"]) {
+    for (const name of ["SCREENSHOTS_ON_HINT", "SERVER_DISABLED_HINT", "NO_FILE_HINT", "COPY_HINT", "CHECKING_HINT"]) {
       const match = screenshotState.match(new RegExp("export const " + name + ' = "([^"]+)"'))
       expect(match).not.toBeNull()
       expect(testing).toContain(match?.[1] ?? "")

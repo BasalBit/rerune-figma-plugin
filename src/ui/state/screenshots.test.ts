@@ -10,6 +10,7 @@ import { BRANCH_MESSAGE } from "./file-link"
 import {
   affectedFrames,
   contentTypeOf,
+  CHECKING_HINT,
   COPY_HINT,
   createAvailability,
   emptyScreenshotRun,
@@ -92,11 +93,24 @@ describe("screenshotSetting (Settings → Push)", () => {
     expect(setting({ availability: { ...READY, meta: { ...META, screenshots_enabled: false } } })).toEqual({ visible: true, toggle: false, hint: SERVER_DISABLED_HINT })
   })
 
+  it("shows no toggle until E8 says the account is not a sandbox account (D4)", () => {
+    const offline = "Can't reach ReRune. Check your connection."
+    expect(setting({ availability: { meta: META, user: null, error: null } })).toEqual({ visible: true, toggle: false, hint: CHECKING_HINT })
+    expect(setting({ pref: false, availability: { meta: META, user: null, error: null } })).toEqual({ visible: true, toggle: false, hint: CHECKING_HINT })
+    expect(setting({ availability: { meta: null, user: null, error: null } })).toEqual({ visible: true, toggle: false, hint: CHECKING_HINT })
+    expect(setting({ availability: { meta: META, user: null, error: offline } })).toEqual({
+      visible: true,
+      toggle: false,
+      hint: "ReRune couldn't be asked about screenshots: " + offline,
+    })
+    expect(setting({ availability: { meta: { ...META, screenshots_enabled: false }, user: null, error: null } })).toEqual({ visible: true, toggle: false, hint: SERVER_DISABLED_HINT })
+    expect(setting({ availability: { meta: null, user: USER, error: null } })).toEqual({ visible: true, toggle: true, hint: null })
+  })
+
   it("explains why nothing is uploaded", () => {
     expect(setting({})).toEqual({ visible: true, toggle: true, hint: SCREENSHOTS_ON_HINT })
     expect(setting({ pref: false }).hint).toBeNull()
-    expect(setting({ availability: { meta: null, user: null, error: null } }).hint).toBeNull()
-    expect(setting({ availability: { meta: null, user: null, error: "Can't reach ReRune. Check your connection." } }).hint).toBe(
+    expect(setting({ availability: { meta: null, user: USER, error: "Can't reach ReRune. Check your connection." } }).hint).toBe(
       "ReRune couldn't be asked about screenshots: Can't reach ReRune. Check your connection.",
     )
     expect(setting({ settings: linkedFile({ fileKey: null }) }).hint).toBe(NO_FILE_HINT)

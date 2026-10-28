@@ -145,12 +145,17 @@ export const SERVER_DISABLED_HINT = "Screenshots aren't available on this ReRune
 export const NO_FILE_HINT = "Screenshots upload once this file's Figma link is saved."
 export const COPY_HINT = "Screenshots wait until you confirm this file under Figma file."
 export const NO_PERMISSION_HINT = "Uploading screenshots needs the Edit keys permission in this project."
+export const CHECKING_HINT = "Checking whether screenshots can be uploaded…"
 
 export interface ScreenshotSetting { visible: boolean; toggle: boolean; hint: string | null }
 
-// Settings → Push (§7.8): the toggle is hidden for sandbox users (D4); a server without screenshot storage gets a
-// note instead of the toggle; otherwise the hint says what happens on push, or why nothing is uploaded.
+// Settings → Push (§7.8): the toggle is hidden for sandbox users (D4), and so until E8 has said the account is not a
+// sandbox account (still loading, or failed: the hint says which); a server without screenshot storage gets a note
+// instead of the toggle; otherwise the hint says what happens on push, or why nothing is uploaded.
 export function screenshotSetting(gate: ScreenshotGate, availability: Availability): ScreenshotSetting {
+  if (availability.user === null && gate.reason !== "server_disabled") {
+    return { visible: true, toggle: false, hint: availability.error === null ? CHECKING_HINT : unavailableHint(availability.error) }
+  }
   switch (gate.reason) {
     case "sandbox":
       return { visible: false, toggle: false, hint: null }
@@ -161,7 +166,7 @@ export function screenshotSetting(gate: ScreenshotGate, availability: Availabili
     case "pref_off":
       return { visible: true, toggle: true, hint: null }
     case "unavailable":
-      return { visible: true, toggle: true, hint: availability.error === null ? null : "ReRune couldn't be asked about screenshots: " + availability.error }
+      return { visible: true, toggle: true, hint: availability.error === null ? null : unavailableHint(availability.error) }
     case "no_file":
       return { visible: true, toggle: true, hint: NO_FILE_HINT }
     case "branch":
@@ -171,6 +176,10 @@ export function screenshotSetting(gate: ScreenshotGate, availability: Availabili
     case "no_permission":
       return { visible: true, toggle: true, hint: NO_PERMISSION_HINT }
   }
+}
+
+function unavailableHint(error: string): string {
+  return "ReRune couldn't be asked about screenshots: " + error
 }
 
 export interface ScreenshotFrame { frameId: string; frameName: string }
