@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { canonicalFileUrl, figmaNodeUrl, figmaSlug, isFigmaNodeId, isFigmaPageId, parseFigmaUrl } from "./figma-url"
+import { canonicalFileUrl, figmaNodeUrl, figmaSlug, fileKeyUrl, isFigmaNodeId, isFigmaPageId, parseFigmaUrl } from "./figma-url"
 
 // Appendix A.2 vectors, verbatim ("–" = absent: null in the plugin, "" on the server).
 const PARSE_VECTORS: { url: string; fileKey: string; branchKey: string | null; nodeId: string | null; slug: string }[] = [
@@ -89,6 +89,11 @@ describe("parseFigmaUrl (Appendix A.2)", () => {
 describe("canonical URLs (Appendix A.2 build)", () => {
   it.each(BUILD_VECTORS)("builds $result", (vector) => {
     expect(vector.node === null ? canonicalFileUrl(vector.fileKey, vector.fileName) : figmaNodeUrl(vector.fileKey, vector.fileName, vector.node)).toBe(vector.result)
+  })
+
+  it("builds a URL without slug that parses with an empty slug", () => {
+    expect(fileKeyUrl("AbCdEf1234567890XyZ")).toBe("https://www.figma.com/design/AbCdEf1234567890XyZ")
+    expect(parseFigmaUrl(fileKeyUrl("AbCdEf1234567890XyZ"))).toEqual({ fileKey: "AbCdEf1234567890XyZ", branchKey: null, nodeId: null, slug: "" })
   })
 
   it("cuts the slug to 100 characters and round-trips through the parser", () => {

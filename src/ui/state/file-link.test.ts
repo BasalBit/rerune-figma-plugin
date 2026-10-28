@@ -90,11 +90,20 @@ describe("fileRegistration and registerFile (E14)", () => {
     expect(fileRegistration({ ...linked, fileName: "  " }, "  ")).toEqual({ url: linked.fileUrl })
   })
 
-  it("does not register without a link, for a branch or for a suspected copy", () => {
+  it("does not register without a link or for a suspected copy", () => {
     expect(fileRegistration(settings(), "Chapter")).toBeNull()
     expect(fileRegistration({ ...linked, fileKey: "x/y" }, "Chapter App")).toBeNull()
-    expect(fileRegistration({ ...linked, branchKey: BRANCH_KEY }, "Chapter App")).toBeNull()
     expect(fileRegistration(linked, "Chapter App (Copy)")).toBeNull()
+  })
+
+  it("registers the main file of a branch link without the branch's name (E14)", async () => {
+    const branch = withFileLink(settings(), { fileKey: FILE_KEY, branchKey: BRANCH_KEY }, "Chapter App – new checkout", 5)
+    expect(fileRegistration(branch, "Chapter App – new checkout")).toEqual({ url: "https://www.figma.com/design/" + FILE_KEY })
+    const api = { registerFile: vi.fn(async (_projectId: string, request: FigmaRegisterFileRequest) => registered(request)) }
+    expect((await registerFile(api, PROJECT_ID, branch, "Chapter App – new checkout", EDITOR)).error).toBeNull()
+    expect(api.registerFile).toHaveBeenCalledWith(PROJECT_ID, { url: "https://www.figma.com/design/" + FILE_KEY })
+    expect(await registerFile(api, PROJECT_ID, branch, "Chapter App – new checkout", [])).toEqual({ file: null, error: null })
+    expect(api.registerFile).toHaveBeenCalledTimes(1)
   })
 
   it("calls E14 only with edit_keys and reports failures without throwing", async () => {

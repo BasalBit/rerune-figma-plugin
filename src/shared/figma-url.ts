@@ -123,7 +123,12 @@ export function figmaSlug(fileName: string): string {
 
 // Canonical file URL: https://www.figma.com/design/<file_key>/<slug>.
 export function canonicalFileUrl(fileKey: string, fileName: string): string {
-  return "https://www.figma.com/design/" + fileKey + "/" + figmaSlug(fileName)
+  return fileKeyUrl(fileKey) + "/" + figmaSlug(fileName)
+}
+
+// The file's URL without a slug (A.2 parses it with an empty slug), for requests that must not carry a file name.
+export function fileKeyUrl(fileKey: string): string {
+  return "https://www.figma.com/design/" + fileKey
 }
 
 // Node link: the canonical URL + ?node-id= with ":" → "-" and ";" → "%3B".

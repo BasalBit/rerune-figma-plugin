@@ -1,6 +1,6 @@
 import type { FigmaFile, FigmaRegisterFileRequest } from "../../shared/api-types"
 import { EDIT_KEYS_PERMISSION, isPossibleCopy, type LinkSyncBlock, type LinkSyncGate } from "../../shared/file-link"
-import { canonicalFileUrl, isFigmaFileKey, parseFigmaUrl, type ParsedFigmaUrl } from "../../shared/figma-url"
+import { canonicalFileUrl, fileKeyUrl, isFigmaFileKey, parseFigmaUrl, type ParsedFigmaUrl } from "../../shared/figma-url"
 import type { FileSettings } from "../../shared/messages"
 import { firstRunes } from "../../shared/text"
 import { REASON_MESSAGES, userMessage } from "../api/client"
@@ -78,12 +78,17 @@ export function fileLinkStatus(gate: LinkSyncGate): string {
 
 type FileLinkFields = Pick<FileSettings, "fileKey" | "fileUrl" | "fileName" | "branchKey">
 
-// E14 body for the file's link: the canonical URL and the file's name, cut to 200 runes. Only a confirmed main
-// file is registered: a branch link names the main file, whose name is not the branch's, and a suspected copy
-// would register the original under the copy's name (sync waits for both anyway, D43).
+// E14 body for the file's link: the canonical URL and the file's name, cut to 200 runes. A branch link registers
+// the main file (E14 registers the URL's first key), but the branch's name is not the main file's: the request
+// then has no file_name and a URL without slug, so the server keeps the name of a registered main file and leaves
+// a new row unnamed, as links do (D15). A suspected copy is not registered: it would register the original under
+// the copy's name (sync waits for it anyway, D43).
 export function fileRegistration(settings: FileLinkFields, rootName: string): FigmaRegisterFileRequest | null {
-  if (settings.fileKey === null || !isFigmaFileKey(settings.fileKey) || settings.branchKey !== null || isPossibleCopy(settings, rootName)) {
+  if (settings.fileKey === null || !isFigmaFileKey(settings.fileKey) || isPossibleCopy(settings, rootName)) {
     return null
+  }
+  if (settings.branchKey !== null) {
+    return { url: fileKeyUrl(settings.fileKey) }
   }
   const url = settings.fileUrl ?? canonicalFileUrl(settings.fileKey, rootName)
   const name = firstRunes(rootName.trim(), FILE_NAME_MAX_RUNES)
