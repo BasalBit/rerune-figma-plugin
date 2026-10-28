@@ -115,6 +115,7 @@ export async function exportFrameImage(frame: ExportableNode): Promise<FrameExpo
 export type FrameImage = Omit<MainToUiOf<"frame-image">, "type" | "requestId">
 export type ScreenshotExport = { ok: true; image: FrameImage } | { ok: false; reason: FrameSkipReason }
 
+// `rect` is relative to the frame's top-left corner, read in the same synchronous step as the frame's bounds.
 interface BoxSource { nodeId: string; keyId: string; rect: BoxRect }
 export interface FrameBoxSources { previewing: boolean; sources: BoxSource[] }
 
@@ -125,10 +126,13 @@ function isExportable(node: BaseNode): node is ExportableNode {
 }
 
 // §7.16 step 5 inputs: the visible text under the frame that shows a key of this project (link state ok or
-// inherited; inherited_overridden and copied links show no key), with its absolute bounds. `previewing` is set
-// as soon as one text shows a language preview: the image would show preview text, never the design (D23).
-// A text that fails to read is left out; the frame still exports.
-export async function frameBoxSources(frame: SceneNode, projectId: string | null, caches: NodeCaches): Promise<FrameBoxSources> {
+// inherited; inherited_overridden and copied links show no key), with its bounds relative to the frame. The walk
+// yields to the canvas and the designer can move the frame meanwhile, so each text's absolute bounds are taken
+// relative to the frame's bounds read in the same step (never to bounds read before or after an await): the
+// boxes stay on their text however the frame moves before the export. `previewing` is set as soon as one text
+// shows a language preview: the image would show preview text, never the design (D23). A text that fails to read
+// is left out; the frame still exports.
+export async function frameBoxSources(frame: SceneNode & { absoluteBoundingBox: Rect | null }, projectId: string | null, caches: NodeCaches): Promise<FrameBoxSources> {
   const sources: BoxSource[] = []
   const texts = "findAllWithCriteria" in frame ? (frame as SceneNode & ChildrenMixin).findAllWithCriteria({ types: ["TEXT"] }) : []
   for (let index = 0; index < texts.length; index++) {
@@ -151,9 +155,10 @@ export async function frameBoxSources(frame: SceneNode, projectId: string | null
       if (link === null || !BOX_STATES.includes(info.state) || link.p !== projectId || !OBJECT_ID_PATTERN.test(link.id)) {
         continue
       }
+      const origin = frame.absoluteBoundingBox
       const rect = text.absoluteBoundingBox
-      if (rect !== null) {
-        sources.push({ nodeId: text.id, keyId: link.id, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } })
+      if (rect !== null && origin !== null) {
+        sources.push({ nodeId: text.id, keyId: link.id, rect: { x: rect.x - origin.x, y: rect.y - origin.y, width: rect.width, height: rect.height } })
       }
     } catch {
       // The canvas stays editable: a text removed or unreadable meanwhile gets no box.
@@ -162,12 +167,14 @@ export async function frameBoxSources(frame: SceneNode, projectId: string | null
   return { previewing: false, sources }
 }
 
-// Boxes in image pixels (Appendix A.8) for the exported image; texts clipped away by the frame get none. E19
-// takes at most 500 boxes per image, so the first 500 in layer order are kept.
-export function boxesFor(sources: readonly BoxSource[], frame: BoxRect, scale: number, imgW: number, imgH: number): Box[] {
+const FRAME_ORIGIN: BoxRect = { x: 0, y: 0, width: 0, height: 0 }
+
+// Boxes in image pixels (Appendix A.8, with frame-relative rects) for the exported image; texts clipped away by the
+// frame get none. E19 takes at most 500 boxes per image, so the first 500 in layer order are kept.
+export function boxesFor(sources: readonly BoxSource[], scale: number, imgW: number, imgH: number): Box[] {
   const boxes: Box[] = []
   for (const source of sources) {
-    const box = boxFor(source.rect, frame, scale, imgW, imgH)
+    const box = boxFor(source.rect, FRAME_ORIGIN, scale, imgW, imgH)
     if (box !== null) {
       boxes.push({ nodeId: source.nodeId, keyId: source.keyId, ...box })
       if (boxes.length >= SCREENSHOT_MAX_BOXES) {
@@ -237,7 +244,7 @@ export async function exportScreenshot(frameId: string, projectId: string | null
       bytes: exported.bytes,
       width: exported.width,
       height: exported.height,
-      boxes: boxesFor(collected.sources, exported.bounds, exported.scale, exported.width, exported.height),
+      boxes: boxesFor(collected.sources, exported.scale, exported.width, exported.height),
     },
   }
 }

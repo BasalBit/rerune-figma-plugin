@@ -375,23 +375,41 @@ describe("screenshots-export (§7.16)", () => {
 
   it("keeps the first 500 boxes (E19 limit)", () => {
     const sources = Array.from({ length: 501 }, (_, index) => ({ nodeId: "12:" + index, keyId: K1, rect: rect(10, 10, 5, 5) }))
-    const boxes = boxesFor(sources, rect(0, 0, 100, 100), 1, 100, 100)
+    const boxes = boxesFor(sources, 1, 100, 100)
     expect(boxes).toHaveLength(500)
     expect(boxes[499].nodeId).toBe("12:499")
   })
 
-  it("collects box sources without loading pages and skips unreadable text", async () => {
-    const good = linkedText("12:1", rect(1, 2, 3, 4))
-    const broken = linkedText("12:2", rect(1, 2, 3, 4))
+  it("collects box sources relative to the frame, without loading pages, and skips unreadable text", async () => {
+    const good = linkedText("12:1", rect(101, 202, 3, 4))
+    const broken = linkedText("12:2", rect(101, 202, 3, 4))
     broken.getSharedPluginData = () => {
       throw new Error("gone")
     }
-    const frame = fakeFrame("10:1", "Checkout", [good, broken])
+    const frame = fakeFrame("10:1", "Checkout", [good, broken], { absoluteBoundingBox: rect(100, 200, 50, 50) })
     onPage(figmaMock, [frame])
     expect(await frameBoxSources(frame as unknown as FrameNode, PROJECT_ID, createNodeCaches())).toEqual({
       previewing: false,
       sources: [{ nodeId: "12:1", keyId: K1, rect: rect(1, 2, 3, 4) }],
     })
+  })
+
+  it("keeps the boxes on their text when the frame moves while its texts are read (§7.16 step 5)", async () => {
+    connectFile()
+    // More texts than one batch: the walk yields to the canvas after 200 of them, and the designer drags the frame
+    // (with its texts) by (+50, +30) meanwhile. The export then reads the moved frame's bounds.
+    const texts = Array.from({ length: 201 }, (_, index) => linkedText("12:" + index, rect(120, 250, 100, 20)))
+    const frame = exportingFrame("10:1", texts, rect(100, 200, 400, 800))
+    onPage(figmaMock, [frame])
+    setTimeout(() => {
+      frame.absoluteBoundingBox = rect(150, 230, 400, 800)
+      for (const text of texts) {
+        text.absoluteBoundingBox = rect(170, 280, 100, 20)
+      }
+    }, 0)
+    const boxes = image(await run(["10:1"]), "10:1").boxes
+    expect(boxes).toHaveLength(201)
+    expect(boxes.every((box) => box.x === 20 && box.y === 50 && box.w === 100 && box.h === 20)).toBe(true)
   })
 
   it("accepts only a list of frame ids", () => {
