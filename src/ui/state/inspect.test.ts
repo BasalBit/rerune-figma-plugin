@@ -154,11 +154,11 @@ describe("access and navigation", () => {
 describe("inspectModel", () => {
   it("is empty without a selection", () => {
     expect(inspectModel(null)).toEqual({ kind: "empty", keys: [] })
-    expect(inspectModel({ type: "inspect-selection", kind: "none", nodes: [] })).toEqual({ kind: "empty", keys: [] })
+    expect(inspectModel({ type: "inspect-selection", kind: "none", nodes: [], truncated: false })).toEqual({ kind: "empty", keys: [] })
   })
 
   it("says when the selected text has no key", () => {
-    expect(inspectModel({ type: "inspect-selection", kind: "text", nodes: [scannedNode("1:1", "Plain")] })).toEqual({ kind: "unlinked", keys: [] })
+    expect(inspectModel({ type: "inspect-selection", kind: "text", nodes: [scannedNode("1:1", "Plain")], truncated: false })).toEqual({ kind: "unlinked", keys: [] })
   })
 
   it("lists one row per key with the layer count and project", () => {
@@ -170,9 +170,10 @@ describe("inspectModel", () => {
       linkedNode("1:6", "Other", { keyId: keyId(4), keyName: "other", syncedText: "Other", projectId: OTHER_PROJECT_ID }),
       scannedNode("1:5", "Unlinked"),
     ]
-    const model = inspectModel({ type: "inspect-selection", kind: "container", nodes })
+    const model = inspectModel({ type: "inspect-selection", kind: "container", nodes, truncated: false })
     expect(model).toEqual({
       kind: "keys",
+      truncated: false,
       keys: [
         { keyId: keyId(1), keyName: "checkout_pay_button", projectId: PROJECT_ID, layerText: "Pay now", layers: 2, state: "ok" },
         { keyId: keyId(2), keyName: "checkout_cancel", projectId: PROJECT_ID, layerText: "Cancel", layers: 1, state: "copied" },
@@ -182,10 +183,15 @@ describe("inspectModel", () => {
     expect(projectKeyIds(model, PROJECT_ID)).toEqual([keyId(1), keyId(2)])
   })
 
+  it("passes on that main left linked layers out (more than 50)", () => {
+    const nodes = [linkedNode("1:1", "Pay now", { keyId: keyId(1), keyName: "pay", syncedText: "Pay now" })]
+    expect(inspectModel({ type: "inspect-selection", kind: "container", nodes, truncated: true })).toMatchObject({ kind: "keys", truncated: true })
+  })
+
   it("shows the original text of a previewing layer and shortens long text", () => {
     const previewing = linkedNode("1:1", "Jetzt zahlen", { keyId: keyId(1), keyName: "pay", syncedText: "Pay now" }, { originalCharacters: "Pay now" })
     const long = linkedNode("1:2", "x".repeat(200), { keyId: keyId(2), keyName: "long", syncedText: "x" })
-    const keys = inspectModel({ type: "inspect-selection", kind: "container", nodes: [previewing, long] }).keys
+    const keys = inspectModel({ type: "inspect-selection", kind: "container", nodes: [previewing, long], truncated: false }).keys
     expect(keys[0].layerText).toBe("Pay now")
     expect(keys[1].layerText).toHaveLength(80)
     expect(keys[1].layerText.endsWith("…")).toBe(true)

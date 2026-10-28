@@ -96,9 +96,11 @@ export interface InspectKey { keyId: string; keyName: string; projectId: string;
 export type InspectModel =
   | { kind: "empty"; keys: [] }
   | { kind: "unlinked"; keys: [] }
-  | { kind: "keys"; keys: InspectKey[] }
+  | { kind: "keys"; keys: InspectKey[]; truncated: boolean }
 
 const LINKED: readonly LinkState[] = ["ok", "inherited", "copied"]
+// Main lists at most 50 linked layers of a container, one per key first (§7.17); past that it says so.
+export const INSPECT_TRUNCATED_NOTE = "More keys or layers not shown. Select a smaller part of the frame to see them all."
 const TEXT_PREVIEW_CHARS = 80
 
 function preview(text: string): string {
@@ -133,7 +135,7 @@ export function inspectModel(selection: InspectSelection | null): InspectModel {
   if (keys.size === 0) {
     return selection.kind === "text" ? { kind: "unlinked", keys: [] } : { kind: "empty", keys: [] }
   }
-  return { kind: "keys", keys: [...keys.values()] }
+  return { kind: "keys", keys: [...keys.values()], truncated: selection.truncated }
 }
 
 // Keys E12 can resolve: links of the file's project (key IDs are project-scoped).

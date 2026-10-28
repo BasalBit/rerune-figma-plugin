@@ -156,7 +156,7 @@ describe("TESTING.md", () => {
       expect([inspectScreen, inspectApp, inspectState].join("\n")).toContain(label)
       expect(testing).toContain(label)
     }
-    for (const name of ["INSPECT_DESCRIPTION", "NOT_CONNECTED_MESSAGE", "MISSING_KEY_NOTE", "OTHER_PROJECT_NOTE", "NOT_PUBLISHED_NOTE"]) {
+    for (const name of ["INSPECT_DESCRIPTION", "NOT_CONNECTED_MESSAGE", "MISSING_KEY_NOTE", "OTHER_PROJECT_NOTE", "NOT_PUBLISHED_NOTE", "INSPECT_TRUNCATED_NOTE"]) {
       const match = inspectState.match(new RegExp("export const " + name + ' = "([^"]+)"'))
       expect(match).not.toBeNull()
       expect(testing).toContain(match?.[1] ?? "")

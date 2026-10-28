@@ -99,7 +99,8 @@ export type MainToUi =
   | { type: "frame-image"; requestId: RequestId; frameId: string; frameName: string; pageId: string; pageName: string
       format: "JPG" | "PNG"; bytes: Uint8Array; width: number; height: number; boxes: Box[] }
   | { type: "frame-images-done"; requestId: RequestId; exported: number; skipped: FrameSkip[] }
-  | { type: "inspect-selection"; kind: "text" | "container" | "none"; nodes: ScannedNode[] }
+  | { type: "inspect-selection"; kind: "text" | "container" | "none"; nodes: ScannedNode[]
+      truncated: boolean }                                                                // Phase 2 addition: linked layers left out (> 50)
   | { type: "overflow-result"; requestId: RequestId; items: { nodeId: string; kind: "clipped" | "truncated" | "exceeds_parent"; by: number }[] }
   | { type: "diagnostics-result"; requestId: RequestId; test: DiagnosticTest; report: unknown }
   | { type: "handler-error"; forType: UiToMain["type"]; requestId?: RequestId; message: string }

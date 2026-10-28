@@ -3,7 +3,7 @@ import { h, type JSX } from "preact"
 import { CODEGEN_PLATFORMS, type CodegenPlatform } from "../../codegen/snippets"
 import type { FigmaResolveSource } from "../../shared/api-types"
 import { Chip, ErrorNote, Loading, Note, Small, styles, TextButton } from "../components/ui"
-import { NO_LANGUAGES_NOTE, valueMarker, type InspectKeyView, type InspectLoadStatus, type InspectModel, type InspectValueView } from "../state/inspect"
+import { INSPECT_TRUNCATED_NOTE, NO_LANGUAGES_NOTE, valueMarker, type InspectKeyView, type InspectLoadStatus, type InspectModel, type InspectValueView } from "../state/inspect"
 
 // Dev Mode inspect panel (§7.17): per linked key its name with Copy, status, max length, values for every project
 // language (Draft/Published) with inherited/missing markers, the snippet for the chosen platform with Copy, and
@@ -148,6 +148,7 @@ export function InspectScreen(props: InspectScreenProps) {
         {props.views.map((view) => (
           <KeyCard key={view.keyId} view={view} copied={props.copied} onCopy={props.onCopy} onOpen={props.onOpen} />
         ))}
+        {model.kind === "keys" && model.truncated && <Small muted>{INSPECT_TRUNCATED_NOTE}</Small>}
       </div>
       <InspectFooter email={props.email} showDiagnostics={props.showDiagnostics} onSignOut={props.onSignOut} onOpenDiagnostics={props.onOpenDiagnostics} />
     </div>
