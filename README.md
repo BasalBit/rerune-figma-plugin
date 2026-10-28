@@ -13,7 +13,7 @@ No AI features run inside the plugin. Keys created from Figma count toward the R
 
 - A ReRune account. Designers join free on every ReRune plan.
 - Figma Design: a Full seat, or a Starter plan with edit access to the file. Everything except Dev Mode works on the free Starter plan.
-- Dev Mode features (the inspect panel, the Code section and Figma for VS Code) need a paid Figma plan with a Dev or Full seat. Testing them needs one too: the checks in [`TESTING.md`](TESTING.md) marked "needs a paid Figma plan" (§5.5 inspect panel, §5.6 codegen, Figma for VS Code in §7, the library-component fixture and spike S14). On the free plan, skip those checks and ship the design-only build (`npm run zip:design-only`).
+- Dev Mode features (the inspect panel, the Code section and Figma for VS Code) need a paid Figma plan with a Dev or Full seat. Testing them needs one too: the checks in [`TESTING.md`](TESTING.md) marked "needs a paid Figma plan" (§5.5 inspect panel, §5.6 codegen, Figma for VS Code in §7, the library-component fixture and spike S14). On the free plan, skip those checks and ship the design-only build (`npm run zip:design-only`). The branch checks in `TESTING.md` need a Figma Organization or Enterprise plan, the only plans with branching; the plugin itself needs no branching.
 
 ## Install
 
@@ -32,7 +32,7 @@ No AI features run inside the plugin. Keys created from Figma count toward the R
 
 The overflow report measures the layers in Figma, one language at a time; ReRune's server only adds the max length check. A text box of fixed size is **Clipped** when its text needs more than 1.5 px more height than the box (measured on a temporary copy whose height follows the text, removed at once), or when its rendered text reaches more than 1.5 px past the box's left or right edge (after what drop shadows, blurs and strokes can add on that side). Text with an ending ellipsis or a line limit is measured on a temporary copy without truncation, which is removed at once (**Truncated**). Text that sizes itself and reaches more than 1.5 px past its parent frame's inner box (the frame minus its auto-layout padding) on a side the frame cannot grow is **Outside its frame**. Linked layers without a value in a language keep their source text and are not measured. The report starts only when no layer in scope shows a preview ("Layers in scope show a preview. Reset previews first."), and resets exactly the layers it previewed when it ends, also when it stops early, after any reset that was already running.
 
-Language copies work on top-level frames and instances (a component or component set is refused, because copying it would create new components) and are refused while a layer in those frames shows a preview. Each copy is named "<frame> · <lang>", sits in the same parent as the original (also inside a section), is marked as a language copy and is left out of scans, pushes and link sync. Text without a value in that language and variable-bound text keep the source text. Undo removes the copies of one frame at a time.
+Language copies work on top-level frames and instances (a component or component set is refused, because copying it would create new components) and are refused while a layer in those frames shows a preview. Each copy is named "<frame> · <lang>", sits in the same parent as the original (also inside a section), is marked as a language copy and is left out of scans, pushes and link sync. Text without a value in that language and variable-bound text keep the source text, and so do layers the scan skips (hidden layers, also a hidden layer of a component in the frame, locked layers unless included, and `_` layers): show a hidden layer in a copy and it has the source text. Undo removes the copies of one frame at a time.
 
 Plural and ICU values are rendered with the sample values: without a sample a placeholder shows as `[name]`, and a plural message shows the form you picked or, by default, its `other` form, with `#` as a count of that form (formatted for the language). Plural categories follow the CLDR rules of the language as the browser knows them; a regional language such as `de-AT` uses the rules of `de`, as ReRune does. A `zero`, `one` or `two` form in a language whose rules lack that category stands for exactly 0, 1 or 2, as in Flutter and i18next (ReRune stores Flutter's `=0`, `=1` and `=2` this way): English `zero {No items} one {# item} other {# items}` shows "No items" for 0, the plural form list offers zero (0), one (1) and other (2), and the default `other` form uses a count that no such form claims ("2 items").
 
@@ -44,7 +44,9 @@ In Dev Mode the plugin is read-only. The inspect panel signs in like Figma Desig
 
 ## Development
 
-Requirements: Node 24 (see `.nvmrc`), npm, and the Figma desktop app (macOS or Windows). Plugins in development are imported in the desktop app.
+Requirements: Node 24 (see `.nvmrc`), npm, and the Figma desktop app (macOS or Windows). Plugins in development are imported in the desktop app; browser Figma runs only published plugins.
+
+**Windows:** the scripts set variables the POSIX way (`RERUNE_ENV=development build-figma-plugin`), which `cmd.exe` and PowerShell do not understand. Run them from Git Bash or WSL, or let npm use Git Bash for scripts once: `npm config set script-shell "C:\Program Files\Git\bin\bash.exe"`. The same goes for the design-only command below.
 
 ### Build
 
@@ -130,6 +132,8 @@ There are two release builds. Both use the plugin ID `1697181748239106841`, the 
 
 The plugin is built with [Create Figma Plugin](https://yuanqing.github.io/create-figma-plugin/) and Preact.
 
+Code comments that cite a section (`§7.14`), a decision (`D32`), a spike (`S5`) or the "tooling map" refer to ReRune's internal design notes for this integration, which are not part of this repository. The comment next to each reference says what the code does, and this README and [`TESTING.md`](TESTING.md) describe the behaviour without them.
+
 - `src/main` runs in Figma's main thread: canvas reads and writes, plugin data, `clientStorage`, frame exports. It targets ES2017 and has no DOM types.
 - `src/ui` runs in the plugin iframe: screens and every call to the ReRune API. `src/ui/api` is the fetch client and one function per endpoint, `src/ui/state` the framework-free screen logic (pairing poller, scans, push and preview orchestration, sample values, link sync, screenshot uploads, the inspect panel; unit-tested in node), `src/ui/screens` the Preact screens. `src/ui/app.tsx` renders the Design-mode app, or the Dev Mode inspect app (`src/ui/inspect-app.tsx`) in Dev Mode.
 - `src/shared` holds pure, unit-tested logic used by both: message types, wire types, plugin-data parsing, hashing, key-name suggestions, Figma URL parsing, sync state, the push plan, ICU sample rendering and pseudo-localization.
@@ -167,7 +171,7 @@ Main and UI talk only through typed messages (`src/shared/messages.ts`). Every U
 | `diagnostics-write` | `canvas` | no | `diagnostics-result` |
 | `diagnostics-devmode-probe` | `devprobe` | development builds only | `diagnostics-result` |
 
-Main also sends `selection-changed` (Design mode) and `inspect-selection` (Dev Mode) when the selection or page changes, and `handler-error` for a refused or failed message. `link-check` / `link-check-result` (link sync reads layers with hidden instance children included; with `inheritors`, as after a link, unlink or push, main also answers for the current page's instance sublayers that inherit from a checked text inside a component), the frame skip reason `preview_active` and `inspect-selection`'s `truncated` (a selected frame has more than 50 linked layers; the panel lists each key's first layer first and says that more are not shown) are additions to the spec's message list.
+Main also sends `selection-changed` (Design mode) and `inspect-selection` (Dev Mode) when the selection or page changes, and `handler-error` for a refused or failed message. Three details of the messages are easy to miss: `link-check` / `link-check-result` read layers with hidden instance children included, and with `inheritors` (as after a link, unlink or push) main also answers for the current page's instance sublayers that inherit from a checked text inside a component; screenshot export skips a frame that shows a preview with the reason `preview_active`; and `inspect-selection` sets `truncated` when a selected frame has more than 50 linked layers (the panel lists each key's first layer first and says that more are not shown).
 
 ### Data in the file
 
@@ -177,7 +181,7 @@ Everything the plugin stores in a file is shared plugin data in the namespace `r
 |---|---|---|
 | text layer | `link` | `{"v":1,"id":"<keyId>","k":"<keyName>","p":"<projectId>","src":"<hash>","nid":"<node id at link time>","t":1761550000000}`, or the tombstone `{"v":1,"none":true}` after an unlink that could not clear inherited data |
 | text layer | `preview` | the original text and styles while a preview is shown, with the `nid` it was written on |
-| text layer | `diag` | diagnostics marker (development tests only) |
+| text layer | `diag` | test marker `{"v":1,"nid":"<node id>","t":…}` written by **T1 Mark** under Settings → Advanced → Diagnostics (every build, only when you run that write test) |
 | frame | `langCopy` | marks a language copy of a frame: `{"v":1,"nid":"<the copy's id>","lang":"de","source":"draft","variationOptionId":null,"sourceFrameId":"<original frame id>","createdAt":…}`; a marker whose `nid` is another frame's (a duplicated copy) does not count |
 | document and each page | `file` | the file's settings: ReRune server, project, the pasted Figma file link (file key, canonical URL, file name, branch key), key template and scan options |
 
@@ -217,7 +221,7 @@ The plugin calls only these endpoints of the ReRune API (`/api` on rerune.io), w
 
 ## Privacy
 
-The plugin talks only to the ReRune API (the endpoints above), and only when you act: it sends the texts you search for, link or push (with the frame name as the new key's description), and the IDs of the keys it shows (the Dev Mode inspect panel loads the values of the selected layers' keys; the Code section sends nothing). When you paste the file's Figma link, it also sends the file's key, link and name, and for linked layers their layer IDs and the layer, frame and page names. With **Upload screenshots on push** on, a push also uploads an image of each frame it changed, with the frame and page names and the positions of the linked layers; ReRune stores these images in its EU image storage. Sandbox accounts never upload images. Sign-in pairs the plugin with your ReRune session in the browser; the plugin stores its token only in Figma's local plugin storage on your machine and sends it only to the ReRune API. See the [ReRune privacy policy](https://rerune.io/privacy).
+The plugin talks only to the ReRune API (the endpoints above), and only while it is open and you use it. It sends the texts you push (with the frame name as the new key's description) and the texts you search for. To find keys that already have a layer's text, it also sends texts it does not push: opening **Push** sends the text of every unlinked text layer in scope and the key names it suggests for them, and the Link dialog and **Link exact matches** send the text of the selected layers (the Link dialog also searches for the first 100 characters of the layer's text). These lookups create nothing in ReRune. The plugin also sends the IDs of the keys it shows (the Dev Mode inspect panel loads the values of the selected layers' keys; the Code section sends nothing). When you paste the file's Figma link, it also sends the file's key, link and name, and for linked layers their layer IDs and the layer, frame and page names. With **Upload screenshots on push** on, a push also uploads an image of each frame it changed, with the frame and page names and the positions of the linked layers; ReRune stores these images in its EU image storage. Sandbox accounts never upload images. Sign-in pairs the plugin with your ReRune session in the browser; the plugin stores its token only in Figma's local plugin storage on your machine and sends it only to the ReRune API. See the [ReRune privacy policy](https://rerune.io/privacy).
 
 ## Licence
 

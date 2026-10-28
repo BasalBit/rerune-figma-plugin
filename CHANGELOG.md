@@ -10,12 +10,12 @@ Nothing has been published to Figma Community yet. The first release will be `0.
 
 #### Added
 
-- **Sample values and plural forms** (Preview): sample values for placeholders, kept per project on your machine, and a plural-form selector limited to the CLDR categories of the previewed language. ICU messages render with them (`=N` forms, `#` with offsets, select and choice).
+- **Sample values and plural forms** (Preview and QA tabs): sample values for placeholders, kept per project on your machine, and a plural-form selector limited to the CLDR categories of the previewed language, each with the count it shows. ICU messages render with them (`=N` forms, `#` with offsets, select and choice). A `zero`, `one` or `two` form in a language without that category (Flutter's `=0`, `=1`, `=2` as ReRune stores them) shows for exactly 0, 1 or 2, as in Flutter and i18next.
 - **Pseudo-localization** (QA tab): accented, about 30–40% longer text on every text layer in scope, reset like any preview.
-- **Overflow report** (QA tab): previews each chosen language (and optionally pseudo text) in turn, lists clipped, truncated and outside-its-frame text and values over the key's max length, copies the table as CSV, and always resets the canvas.
+- **Overflow report** (QA tab): previews each chosen language (and optionally pseudo text) in turn, lists clipped, truncated and outside-its-frame text and values over the key's max length, copies the table as CSV, and always resets the canvas. It starts only when no layer in scope shows a preview.
 - **Language copies** (QA tab): duplicates each selected top-level frame or instance once per language, next to the original and in the same parent, with that language's text. Copies are left out of scans, pushes and link sync.
 - **max_length warnings** in Layers ("Over max length", filter **Too long**), Push (changes over the limit are held back) and Preview.
-- **Design-only build** (`npm run build:design-only`, `npm run zip:design-only`, `RERUNE_DEV_MODE=off`): a manifest with `editorType ["figma"]` and no Dev Mode capabilities or codegen languages, for releases on which Dev Mode was not tested.
+- **Design-only build** (`npm run build:design-only`, `npm run zip:design-only`, `RERUNE_DEV_MODE=off`): a manifest with `editorType ["figma"]` and no Dev Mode capabilities or codegen languages, for releases on which Dev Mode was not tested. It keeps no codegen cache.
 - Release tooling: GitHub Actions CI (typecheck, lint, tests, both release zips as artifacts, a release check of each manifest and bundle in `scripts/check-build.mjs`), `COMMUNITY_LISTING.md`, placeholder listing images in `listing/` (made by `scripts/listing-placeholders.mjs`), this changelog.
 
 #### Security

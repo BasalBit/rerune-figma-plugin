@@ -28,6 +28,9 @@ import samplesState from "../src/ui/state/samples.ts?raw"
 import layersState from "../src/ui/state/layers.ts?raw"
 import previewState from "../src/ui/state/preview.ts?raw"
 import testing from "../TESTING.md?raw"
+import listing from "../COMMUNITY_LISTING.md?raw"
+import pushState from "../src/ui/state/push.ts?raw"
+import { snippetLines } from "../src/codegen/snippets"
 
 // README and TESTING.md must match what the build and the plugin actually do (P1.5: "present and accurate").
 
@@ -121,6 +124,58 @@ function section(text: string, heading: string): string {
 }
 
 const PAID = /needs a paid Figma plan/i
+const BRANCHING = /needs a Figma Organization or Enterprise plan \(branching\)/i
+
+describe("public docs stand on their own", () => {
+  it("README's privacy summary names the texts sent for exact-text lookups, as preparePush sends them", () => {
+    const privacy = section(readme, "## Privacy")
+    expect(privacy).toContain("opening **Push** sends the text of every unlinked text layer in scope and the key names it suggests for them")
+    expect(privacy).toContain("the Link dialog and **Link exact matches** send the text of the selected layers")
+    expect(privacy).toContain("These lookups create nothing in ReRune.")
+    // The Push review posts every unlinked text in scope (E11 texts) and the suggested names (E11 names).
+    const prepare = pushState.slice(pushState.indexOf("export async function preparePush"))
+    expect(prepare).toMatch(/fetchTextMatches\(api, input\.projectId, unlinkedGroupTexts\(input\.nodes/)
+    expect(prepare).toMatch(/fetchTakenNames\(api, input\.projectId, toCheck\)/)
+    expect(listing).toContain("these lookups create nothing in ReRune")
+  })
+
+  it("lists every kind of plugin data the plugin writes in the data security answer", () => {
+    const answers = section(listing, "## Data security disclosure")
+    expect(answers).toContain("on language copies of frames, a marker with the language, source, variation and the original frame's ID")
+    expect(answers).toContain("only when the Diagnostics write test **T1 Mark** is run, a test marker")
+    expect(readme).toMatch(/\| text layer \| `diag` \| .*every build, only when you run that write test/)
+    for (const key of Object.values(DATA_KEYS)) {
+      expect(readme).toContain("`" + key + "`")
+    }
+  })
+
+  it("does not send readers to the internal design spec or plan", () => {
+    const note = readme.split("\n").find((line) => line.startsWith("Code comments that cite a section")) ?? ""
+    for (const [name, text] of [["README.md", readme.replace(note, "")], ["TESTING.md", testing], ["COMMUNITY_LISTING.md", listing]]) {
+      expect(text, name).not.toMatch(/\bspec(?:'s)? (?:§|message)|\bthe spec\b|plan §\d|tooling map/i)
+    }
+    expect(readme).toContain("refer to ReRune's internal design notes for this integration")
+  })
+
+  it("has the Dev Mode snippet table in TESTING.md, as the snippet builders write it", () => {
+    const rows = section(testing, "### 5.5 Dev Mode inspect panel").split("\n").filter((line) => /^ {2}\| (React|Flutter|Android|iOS|Angular)/.test(line))
+    expect(rows).toHaveLength(5)
+    const cells = (row: string) => row.split(/(?<!\\)\|/).slice(2, 4).map((cell) => [...cell.matchAll(/`([^`]+)`/g)].map((match) => match[1].replace(/\\\|/g, "|")))
+    const platforms = ["react-i18next", "flutter", "android", "ios", "angular"] as const
+    rows.forEach((row, index) => {
+      const [plain, withPlaceholders] = cells(row)
+      expect(plain, row).toEqual(snippetLines(platforms[index], { name: "checkout_pay_button", placeholders: [] }))
+      expect(withPlaceholders, row).toEqual(snippetLines(platforms[index], { name: "greeting", placeholders: ["a", "b"] }))
+    })
+  })
+
+  it("explains how to run the scripts on Windows", () => {
+    const development = section(readme, "## Development")
+    expect(development).toContain("**Windows:**")
+    expect(development).toContain("Git Bash or WSL")
+    expect(development).toContain("npm config set script-shell")
+  })
+})
 
 describe("README: Figma plans and release builds", () => {
   it("says which features need a paid Figma plan and what to do on the free plan", () => {
@@ -191,6 +246,38 @@ describe("TESTING.md", () => {
     expect(testing).toContain("**Do not submit the full build to Community until S14 is answered.**")
   })
 
+  it("marks every check that creates or merges a branch as needing an Organization or Enterprise plan", () => {
+    const intro = testing.slice(0, testing.indexOf("## 0. Setup"))
+    expect(intro).toMatch(BRANCHING)
+    expect(intro).toContain("Starter and Professional do not")
+    for (const check of ["§5.1 **Branch link**", "§5.2 **Branch safety**", "§5.3 **Off and blocked**", "T1", "T7", "S5"]) {
+      expect(intro).toContain(check)
+    }
+    expect(intro).toMatch(/\*\*Phase 1 is done when\*\*.*S5 stays open/)
+    const checks = testing.split("\n").filter((line) => /^(- \[ \] |- \*\*|\| [TS]\d+ )/.test(line))
+    const branchChecks = checks.filter((line) => /\bbranch(es)?\b/i.test(line.replace(/branch chosen|chosen branch/gi, "")))
+    expect(branchChecks.length).toBeGreaterThanOrEqual(6)
+    for (const line of branchChecks) {
+      expect(line).toMatch(BRANCHING)
+    }
+  })
+
+  it("runs unpublished builds in Figma desktop only and browser Figma after publishing", () => {
+    expect(testing.split("\n")[2]).toContain("only in the desktop app")
+    // §7 runs on the published build as a whole (its intro says so); §10 is the post-publish smoke test.
+    const beforePublish = testing.slice(0, testing.indexOf("## 10. Post-publish smoke test")).replace(section(testing, "## 7. Browser Figma and Figma for VS Code"), "")
+    const browserChecks = beforePublish.split("\n").filter((line) => /^- \[ \] /.test(line) && /browser Figma/i.test(line))
+    for (const line of browserChecks) {
+      expect(line).toMatch(/published build|§10/)
+    }
+    expect(section(testing, "## 7. Browser Figma and Figma for VS Code")).toContain("runs on the **published Community build**")
+    expect(section(testing, "## 9. Production acceptance")).not.toContain("and in browser Figma")
+    const smoke = section(testing, "## 10. Post-publish smoke test")
+    expect(smoke).toContain("Browser Figma has its own plugin storage")
+    expect(listing).toContain("`TESTING.md` §10")
+    expect(readme).toContain("browser Figma runs only published plugins")
+  })
+
   it("builds the variant that will be published for the production acceptance", () => {
     const production = section(testing, "## 9. Production acceptance")
     expect(production).toContain("`npm run build:design-only` for the design-only release, or `npm run build` for the full release")
@@ -199,7 +286,7 @@ describe("TESTING.md", () => {
   })
 
   it("has every section of §7.23 plus production acceptance", () => {
-    for (const section of ["0. Setup", "1. Sign-in", "2. Scan", "3. Link, create and push", "4. Preview", "5. Phase 2", "6. Phase 3", "7. Browser Figma and Figma for VS Code", "8. Spike questions", "9. Production acceptance"]) {
+    for (const section of ["0. Setup", "1. Sign-in", "2. Scan", "3. Link, create and push", "4. Preview", "5. Phase 2", "6. Phase 3", "7. Browser Figma and Figma for VS Code", "8. Spike questions", "9. Production acceptance", "10. Post-publish smoke test"]) {
       expect(testing).toContain("## " + section)
     }
   })

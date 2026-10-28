@@ -64,7 +64,7 @@ The two images in `listing/` are **placeholders**: they have the sizes Figma ask
 - [ ] Icon, 128 × 128 PNG: `listing/icon-128.png` (**placeholder**, replace)
 - [ ] Cover (thumbnail), 1920 × 1080 PNG: `listing/cover-1920x1080.png` (**placeholder**, replace)
 - [ ] Carousel, up to 9 images or videos (none yet). Suggested: Layers with linked keys and the **Create on push** names; the Push review with a conflict; Preview in German with the original next to it; the QA overflow report; language copies of a frame. Full build only: the Dev Mode inspect panel with snippets.
-- [ ] Optional playground file: the Chapter example design (plan §10; not in the repos yet).
+- [ ] Optional playground file: the Chapter example design (not made yet).
 
 ## Data security disclosure
 
@@ -80,7 +80,7 @@ Answers for Figma's data security disclosure (optional, reviewed by Figma, shown
 8. **What, how and where?**
    - In ReRune's database (Frankfurt, Germany): texts the user pushes (stored as drafts of translation keys, with the frame name as a new key's description), and, once the file's Figma link is saved, the file's key, link and name, who pushed last, and for linked layers their layer IDs and the layer, frame and page names.
    - In the bunny.net Storage zone (Falkenstein, Germany): with "Upload screenshots on push" on (the default) and the file's Figma link saved, one image per top-level frame changed by a push, with the positions of its linked layers. A newer push replaces the image. Sandbox accounts never upload images.
-   - In the Figma file (shared plugin data, stored by Figma): each linked layer's key ID, key name, project ID and a hash of its text; the original text and styles while a preview is shown; the file's ReRune server, project and Figma link.
+   - In the Figma file (shared plugin data, stored by Figma): each linked layer's key ID, key name, project ID and a hash of its text; the original text and styles while a preview is shown; the file's ReRune server, project and Figma link; on language copies of frames, a marker with the language, source, variation and the original frame's ID; and, only when the Diagnostics write test **T1 Mark** is run, a test marker with the layer's ID and the time on the selected layers.
    - On the device (Figma `clientStorage`): the plugin token with the account's name and email, preferences (including sample values for placeholders), and, in the full build only, a cache of key names, placeholders and up to 60 characters of source text for Dev Mode's Code section (the design-only build keeps no such cache).
    - Retention: Figma data stays with its ReRune project. Deleting a key removes its links, disconnecting a file in the project's Figma settings removes the file's links and screenshots, and deleting a project removes all of its Figma data; a background job deletes removed images from storage. Details: <https://rerune.io/privacy>.
 9. **Who can access it?** People who can open the ReRune project, according to their ReRune permissions (screenshots are shown in the dashboard through signed links that expire), and BasalBit for operating the service.
@@ -94,7 +94,7 @@ Answers for Figma's data security disclosure (optional, reviewed by Figma, shown
 > - **No AI:** the plugin has no AI features and does not generate or translate text. Previews show the project's own translations.
 > - **No MCP:** the plugin neither exposes nor connects to an MCP server. ReRune's MCP server is a separate, server-side product.
 > - **Writes only on user action:** scans only read. The plugin changes the file only when the user clicks: link and unlink (plugin data and relaunch data on the layers), push and "Update layers from ReRune", preview, pseudo-localization and reset, the overflow report (temporary previews and a temporary measuring copy, all reset when it ends), language copies, saving settings, and the write tests under Settings → Advanced → Diagnostics. Figma's Undo reverts these changes to the file.
-> - **Network:** only `https://rerune.io/api/`, only while the plugin is open. Screenshot upload happens only as part of a push the user starts, and can be turned off in Settings.
+> - **Network:** only `https://rerune.io/api/`, only while the plugin is open. Screenshot upload happens only as part of a push the user starts, and can be turned off in Settings. To find keys that already have a layer's text, opening **Push** sends the texts of the unlinked layers in scope (and the key names the plugin suggests for them), and the Link dialog and **Link exact matches** send the texts of the selected layers, for an exact-match lookup; these lookups create nothing in ReRune.
 > - **Publishing:** nothing is published from Figma; pushes create drafts that people with the publishing permission release in ReRune.
 >
 > Full build only: in Dev Mode the plugin is read-only (inspect panel and Code section); the Code section makes no network requests.
@@ -102,10 +102,10 @@ Answers for Figma's data security disclosure (optional, reviewed by Figma, shown
 ## Before you submit
 
 - [ ] https://github.com/BasalBit/rerune-figma-plugin is public (it was still private on 2026-10-28): the listing's source link and answer 10 point to it.
-- [ ] Production acceptance passed and recorded (`TESTING.md` §9, spec §8.5): server and dashboard deployed, Network check and pairing against production, a push, a preview and a screenshot upload.
+- [ ] Production acceptance passed and recorded (`TESTING.md` §9): server and dashboard deployed, Network check and pairing against production, a push, a preview and a screenshot upload, all in Figma desktop (it is the only place an unpublished build runs).
 - [ ] Build chosen (see [Which build to publish](#which-build-to-publish)). For the full build, S14 is answered in `TESTING.md` §8.2.
 - [ ] The release build is the CI artifact of the commit you publish (`rerune-figma-plugin-design-only` or `rerune-figma-plugin`) or the same command run locally, placed where Figma desktop imported the plugin from and checked with `node scripts/check-build.mjs` (README → Build and release, step 2).
 - [ ] Icon and cover replaced; carousel images taken from the build you publish.
 - [ ] https://rerune.io/privacy and https://rerune.io/docs/figma are live, and the data security answers above still match.
 - [ ] Decide how reviewers sign in (a free account as above, or a test account BasalBit creates; never commit its password).
-- [ ] After approval: set `figmaCommunityPluginUrl` in the dashboard, add the Community link to README → Install, and move the `CHANGELOG.md` entries under the released version.
+- [ ] After approval: run the post-publish smoke test (`TESTING.md` §10: the published build in browser Figma, and in Figma for VS Code for the full build), set `figmaCommunityPluginUrl` in the dashboard, add the Community link to README → Install, and move the `CHANGELOG.md` entries under the released version.

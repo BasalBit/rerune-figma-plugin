@@ -442,6 +442,24 @@ describe("language-copies (§7.18.4, D32)", () => {
     expect([visible.characters, hidden.characters]).toEqual(["Pay now", "Processing…"])
   })
 
+  it("leaves a hidden layer in the source text when the texts come from a page scan, as the UI sends them", async () => {
+    const visible = fakeText("5:2", "Pay now")
+    const hidden = fakeText("5:3", "Processing…")
+    hidden.visible = false
+    const frame = fakeFrame("1:1", "Checkout", [fakeComponent("5:1", "Button", [visible, hidden])], { x: 0, y: 0, width: 375, height: 812 })
+    onPage(figmaMock, [frame])
+    // The UI builds the copies' texts from a page scan (src/ui/state/qa.ts makeLanguageCopies); scans skip hidden layers.
+    const sent: MainToUi[] = []
+    await createScanner((message) => sent.push(message)).start("s1", "page")
+    const scanned = sent.flatMap((message) => (message.type === "scan-batch" ? message.nodes.map((node) => node.nodeId) : []))
+    expect(scanned).toEqual(["5:2"])
+    const values: Record<string, string> = { "5:2": "Jetzt zahlen", "5:3": "Wird bearbeitet…" }
+    const outcome = await makeLanguageCopies(["1:1"], [copyRequest("de", Object.fromEntries(scanned.map((id) => [id, values[id]])))], 1)
+    // The hidden layer still maps (no subtree mismatch) but keeps its source text in the copy.
+    expect(outcome).toEqual({ done: 1, errors: [] })
+    expect(textsOf(copiesOf(figmaMock.currentPage, frame)[0]).map((node) => node.characters)).toEqual(["Jetzt zahlen", "Processing…"])
+  })
+
   it("keeps the source text where a copy's subtree differs, and reports it", async () => {
     const original = fakeFrame("1:1", "Checkout", [fakeText("1:2", "Checkout"), fakeGroup("1:3", "Row", [fakeText("1:4", "Pay now")]), fakeFrame("1:5", "List", [fakeText("1:6", "A")])])
     const copy = fakeFrame("2:1", "Checkout · de", [fakeText("2:2", "Checkout"), fakeFrame("2:3", "Row", [fakeText("2:4", "Pay now")]), fakeFrame("2:5", "List", [])])
