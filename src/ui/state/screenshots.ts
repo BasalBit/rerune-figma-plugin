@@ -351,9 +351,12 @@ export interface ScreenshotDeps {
 
 export interface ScreenshotRunOptions {
   fileKey: string
-  stopped?(): boolean                         // "Stop": checked before each export result is uploaded
+  stopped?(): boolean                         // "Stop": checked before each upload and during a 429 wait
   onProgress?(run: ScreenshotRun): void
 }
+
+// A 429 wait (up to 60 s, twice per frame) is slept in steps, so Stop ends the queue within a step.
+export const STOP_POLL_MS = 250
 
 type Settled = { ok: true; result: FrameExportResult } | { ok: false; error: unknown }
 
@@ -443,7 +446,9 @@ async function handleFrame(deps: ScreenshotDeps, frame: ScreenshotFrame, settled
     } catch (error) {
       const action = uploadErrorAction(error, attempt)
       if (action.kind === "retry") {
-        await deps.sleep(action.waitMs)
+        if (!(await waitUnlessStopped(deps, action.waitMs, options.stopped))) {
+          return { kind: "stop", stop: "cancelled", message: null }
+        }
         continue
       }
       if (action.kind === "stop") {
@@ -452,6 +457,17 @@ async function handleFrame(deps: ScreenshotDeps, frame: ScreenshotFrame, settled
       return problem(action.message, name)
     }
   }
+}
+
+// Sleeps `ms` in steps of STOP_POLL_MS; false as soon as the designer pressed Stop (then the frame is not sent again).
+async function waitUnlessStopped(deps: Pick<ScreenshotDeps, "sleep">, ms: number, stopped: (() => boolean) | undefined): Promise<boolean> {
+  for (let left = ms; left > 0; left -= STOP_POLL_MS) {
+    if (stopped?.() === true) {
+      return false
+    }
+    await deps.sleep(Math.min(STOP_POLL_MS, left))
+  }
+  return stopped?.() !== true
 }
 
 export function screenshotDeps(input: {

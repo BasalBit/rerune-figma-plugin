@@ -29,6 +29,7 @@ import {
   screenshotSummary,
   SERVER_DISABLED_HINT,
   SKIP_MESSAGES,
+  STOP_POLL_MS,
   TOO_LARGE_MESSAGE,
   uploadErrorAction,
   uploadScreenshots,
@@ -355,6 +356,10 @@ function deps(overrides: Partial<ScreenshotDeps> = {}) {
   return { deps: { ...base, ...overrides }, log, uploads }
 }
 
+function slept(fake: ScreenshotDeps): number {
+  return vi.mocked(fake.sleep).mock.calls.reduce((sum, [ms]) => sum + ms, 0)
+}
+
 describe("uploadScreenshots (the upload queue, §7.16)", () => {
   it("uploads frame by frame, exporting the next frame while one uploads", async () => {
     const fake = deps()
@@ -452,7 +457,8 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
       }),
     })
     const run = await uploadScreenshots(fake.deps, FRAMES.slice(0, 2), { fileKey: FILE_KEY })
-    expect(fake.deps.sleep).toHaveBeenCalledWith(12000)
+    expect(slept(fake.deps)).toBe(12000)
+    expect(vi.mocked(fake.deps.sleep).mock.calls.every(([ms]) => ms <= STOP_POLL_MS)).toBe(true)
     expect(run).toMatchObject({ uploaded: 2, problems: [], stopped: null })
   })
 
@@ -460,8 +466,25 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
     const fake = deps({ upload: vi.fn(async () => Promise.reject(new ApiError(429, null, "slow down", 60))) })
     const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY })
     expect(fake.deps.upload).toHaveBeenCalledTimes(3)
-    expect(fake.deps.sleep).toHaveBeenCalledTimes(2)
+    expect(slept(fake.deps)).toBe(120000)
     expect(run).toMatchObject({ stopped: "rate_limited", stopMessage: RATE_LIMIT_MESSAGE, notUploaded: 3, done: 0 })
+  })
+
+  it("ends a 429 wait when the designer presses Stop, without sending the frame again", async () => {
+    let stop = false
+    let waited = 0
+    const fake = deps({
+      upload: vi.fn(async () => Promise.reject(new ApiError(429, null, "slow down", 60))),
+      sleep: vi.fn(async (ms: number) => {
+        waited += ms
+        if (waited >= 1000) stop = true
+      }),
+    })
+    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, stopped: () => stop })
+    expect(fake.deps.upload).toHaveBeenCalledTimes(1)
+    expect(waited).toBe(1000)
+    expect(run).toMatchObject({ uploaded: 0, done: 0, stopped: "cancelled", stopMessage: null, notUploaded: 3 })
+    expect(screenshotSummary(run)?.message).toBe("Screenshot upload stopped. 3 screenshots weren't uploaded.")
   })
 
   it("stops silently on 503 design_storage_disabled and switches screenshots off for the session", async () => {
