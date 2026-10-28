@@ -1,5 +1,5 @@
 import { Button, SearchTextbox, SegmentedControl } from "@create-figma-plugin/ui"
-import { h } from "preact"
+import { h, type ComponentChildren } from "preact"
 import { useEffect, useMemo, useState } from "preact/hooks"
 import type { FigmaLink } from "../../shared/api-types"
 import type { ScannedNode, Scope } from "../../shared/messages"
@@ -7,6 +7,7 @@ import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, Small, styles, TextButton } from "../components/ui"
+import { ScreenBody } from "../components/screen-body"
 import {
   BADGE_LABELS,
   FILTER_LABELS,
@@ -36,6 +37,7 @@ import type { Workspace, WorkspaceState } from "../state/workspace"
 // layers (§7.15).
 
 export interface LayersScreenProps {
+  notices: ComponentChildren               // the workspace notices, shown first in the scroll area (ScreenBody)
   workspace: Workspace
   state: WorkspaceState
   projectId: string
@@ -267,7 +269,7 @@ export function LayersScreen(props: LayersScreenProps) {
         {rows.length > 8 && <SearchTextbox value={query} placeholder="Search text or key" onValueInput={setQuery} />}
       </div>
 
-      <div style={styles.body}>
+      <ScreenBody notices={props.notices}>
         {props.readOnly && <Note tone="warning">This file is connected to a different ReRune server, so links can't be changed here.</Note>}
         <ErrorNote message={state.error} onRetry={() => scan(state.scope)} />
         <ErrorNote message={state.remoteError} onRetry={() => void workspace.refreshRemote()} />
@@ -331,7 +333,7 @@ export function LayersScreen(props: LayersScreenProps) {
             Show more ({visible.length - limit} left)
           </Button>
         )}
-      </div>
+      </ScreenBody>
 
       {(checkedRows.length > 0 || copiedItems.length > 0) && (
         <div style={styles.footer}>

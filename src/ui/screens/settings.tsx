@@ -1,5 +1,5 @@
 import { Button, Checkbox, Dropdown, Textbox, Toggle } from "@create-figma-plugin/ui"
-import { h } from "preact"
+import { h, type ComponentChildren } from "preact"
 import { useEffect, useState } from "preact/hooks"
 import { CASE_STYLES } from "../../shared/constants"
 import type { LinkSyncGate } from "../../shared/file-link"
@@ -8,6 +8,7 @@ import type { CaseStyle, FileSettings, StoredAuth } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import { DANGER_TEXT, FileLinkForm } from "../components/file-link"
 import { ErrorNote, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { ScreenBody } from "../components/screen-body"
 import { fileLinkStatus } from "../state/file-link"
 import { exampleKeyName, templateIssues } from "../state/naming"
 import type { ScreenshotSetting } from "../state/screenshots"
@@ -18,6 +19,7 @@ import { applyEdit, CASE_STYLE_LABELS, editOf, sameEdit, settingsOffer, type Pre
 // settings are written to the file (root + page mirror, §7.7); prefs stay on this machine.
 
 export interface SettingsScreenProps {
+  notices: ComponentChildren               // the workspace notices, shown first in the scroll area (ScreenBody)
   settings: FileSettings | null
   status: SettingsStatus | null
   sample: readonly string[]
@@ -94,7 +96,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
 
   return (
     <div style={styles.page}>
-      <div style={{ ...styles.body, ...styles.stack }}>
+      <ScreenBody notices={props.notices} stack>
         <ErrorNote message={error} />
         {props.settings !== null ? (
           <div style={styles.row}>
@@ -175,7 +177,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           <TextButton onClick={props.onSignOut}>Sign out</TextButton>
         </div>
         <Small muted>ReRune for Figma {props.version}</Small>
-      </div>
+      </ScreenBody>
     </div>
   )
 }

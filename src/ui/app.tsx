@@ -117,6 +117,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const rootNameRef = useRef(init.fileName)
   const [dismissedNotices, setDismissedNotices] = useState<LinkSyncBlock[]>([])
   const [noticeBusy, setNoticeBusy] = useState(false)
+  // The notices at the top of the open tab's scroll area (see `notices` below).
+  const noticesRef = useRef<HTMLDivElement>(null)
 
   const api = useMemo(() => createBrowserApi(init.apiBase, () => authRef.current?.token ?? null, () => signedOutRef.current()), [])
   // E1 screenshots_enabled and E8 sandbox_expires_at for screenshots on push (§7.16, D4), once per session.
@@ -331,6 +333,14 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       }
     }
   }, [space.resolved])
+
+  // The notices scroll with the tab, so a new result banner or edited-during-preview question is brought into view
+  // when the tab was scrolled down (e.g. Reset in the header while reading the Preview results).
+  useEffect(() => {
+    if (banner !== null || editedPrompt !== null) {
+      noticesRef.current?.scrollIntoView({ block: "nearest" })
+    }
+  }, [banner, editedPrompt])
 
   function updatePrefs(patch: Partial<Prefs>) {
     setPrefs((current) => ({ ...current, ...patch }))
@@ -659,26 +669,13 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     }
   }
 
-  return (
-    <div style={styles.page}>
-      <Nav
-        active={screen}
-        projectName={project.name}
-        selectionCount={selectionCount}
-        previewStatus={previewing}
-        onOpen={(next) => go({ type: "open", screen: next })}
-        onChangeProject={() => go({ type: "change-project" })}
-        lockedBy={workTask}
-        resetDisabled={editedPromptBusy}
-        onResetPreview={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}
-      />
-      {offer !== null && (
-        <div style={{ padding: "8px 12px 0" }}>
-          <SettingsOfferNote offer={offer} disabled={readOnly || offerSaving} onApply={() => void applyOffer()} onDismiss={() => setOfferDismissedOn(pageRef.current)} />
-        </div>
-      )}
-      {fileNotice !== null && (
-        <div style={{ padding: "8px 12px 0" }}>
+  // The notices about this file and the last action. Each tab shows them first in its scroll area (ScreenBody), in
+  // normal flow, so they take their own space above the tab's content and scroll with it.
+  const notices =
+    offer !== null || fileNotice !== null || editedPrompt !== null || leftover !== null || banner !== null ? (
+      <div ref={noticesRef} style={{ ...styles.stack, scrollMarginTop: styles.body.padding }}>
+        {offer !== null && <SettingsOfferNote offer={offer} disabled={readOnly || offerSaving} onApply={() => void applyOffer()} onDismiss={() => setOfferDismissedOn(pageRef.current)} />}
+        {fileNotice !== null && (
           <FileLinkNote
             notice={fileNotice}
             busy={noticeBusy}
@@ -686,10 +683,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onAction={(action) => void fileNoticeAction(action)}
             onDismiss={() => setDismissedNotices((current) => [...current, fileNotice.reason])}
           />
-        </div>
-      )}
-      {editedPrompt !== null && (
-        <div style={{ padding: "8px 12px 0" }}>
+        )}
+        {editedPrompt !== null && (
           <Note
             tone="warning"
             actions={
@@ -705,10 +700,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
           >
             {layerCount(editedPrompt.nodeIds.length)} {editedPrompt.nodeIds.length === 1 ? "was" : "were"} edited during preview.
           </Note>
-        </div>
-      )}
-      {leftover !== null && (
-        <div style={{ padding: "8px 12px 0" }}>
+        )}
+        {leftover !== null && (
           <Note
             tone="warning"
             actions={
@@ -722,19 +715,35 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
           >
             {leftover}
           </Note>
-        </div>
-      )}
-      {banner !== null && (
-        <div style={{ padding: "8px 12px 0", ...styles.tightStack }}>
-          <Note tone={banner.tone} actions={<TextButton onClick={() => setBanner(null)}>Dismiss</TextButton>}>
-            {banner.message}
-          </Note>
-          <ErrorGroups groups={banner.errors} onSelect={selectNodes} />
-        </div>
-      )}
+        )}
+        {banner !== null && (
+          <div style={styles.tightStack}>
+            <Note tone={banner.tone} actions={<TextButton onClick={() => setBanner(null)}>Dismiss</TextButton>}>
+              {banner.message}
+            </Note>
+            <ErrorGroups groups={banner.errors} onSelect={selectNodes} />
+          </div>
+        )}
+      </div>
+    ) : null
+
+  return (
+    <div style={styles.page}>
+      <Nav
+        active={screen}
+        projectName={project.name}
+        selectionCount={selectionCount}
+        previewStatus={previewing}
+        onOpen={(next) => go({ type: "open", screen: next })}
+        onChangeProject={() => go({ type: "change-project" })}
+        lockedBy={workTask}
+        resetDisabled={editedPromptBusy}
+        onResetPreview={() => void resetPreviews("page").catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))}
+      />
       <div style={{ flex: "1", minHeight: "0", display: "flex", flexDirection: "column" }}>
         {screen === "layers" && (
           <LayersScreen
+            notices={notices}
             workspace={workspace}
             state={space}
             projectId={project.id}
@@ -750,6 +759,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         )}
         {screen === "push" && (
           <PushScreen
+            notices={notices}
             workspace={workspace}
             state={space}
             project={project}
@@ -773,6 +783,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         )}
         {screen === "preview" && (
           <PreviewScreen
+            notices={notices}
             workspace={workspace}
             state={space}
             project={project}
@@ -792,6 +803,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         )}
         {screen === "qa" && (
           <QaScreen
+            notices={notices}
             workspace={workspace}
             state={space}
             project={project}
@@ -814,6 +826,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         )}
         {screen === "settings" && (
           <SettingsScreen
+            notices={notices}
             settings={usable}
             status={status}
             sample={project.key_name_sample}

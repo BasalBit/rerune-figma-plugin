@@ -1,5 +1,5 @@
 import { Button, Dropdown, SegmentedControl, Toggle } from "@create-figma-plugin/ui"
-import { h } from "preact"
+import { h, type ComponentChildren } from "preact"
 import { useMemo, useRef, useState } from "preact/hooks"
 import type { FigmaProjectDetail } from "../../shared/api-types"
 import type { ResolveSource, Scope } from "../../shared/messages"
@@ -10,6 +10,7 @@ import type { UiBus } from "../bus"
 import { copyText } from "../clipboard"
 import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
 import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { ScreenBody } from "../components/screen-body"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import { buildPseudoPreview, languageLabel, type PseudoBuild, type RenderChoices } from "../state/preview"
 import {
@@ -57,6 +58,7 @@ export interface QaSession {
 export const NEW_QA_SESSION: QaSession = { languages: [], withPseudo: false, report: null, copies: null }
 
 export interface QaScreenProps {
+  notices: ComponentChildren               // the workspace notices, shown first in the scroll area (ScreenBody)
   workspace: Workspace
   state: WorkspaceState
   project: FigmaProjectDetail
@@ -274,7 +276,7 @@ export function QaScreen(props: QaScreenProps) {
 
   return (
     <div style={styles.page}>
-      <div style={{ ...styles.body, ...styles.stack }}>
+      <ScreenBody notices={props.notices} stack>
         {props.readOnly && <Note tone="warning">This file is connected to a different ReRune server.</Note>}
         <div style={styles.tightStack}>
           <Small muted>Apply to</Small>
@@ -389,7 +391,7 @@ export function QaScreen(props: QaScreenProps) {
             <ErrorGroups groups={applied.errors} onSelect={props.onSelect} />
           </div>
         )}
-      </div>
+      </ScreenBody>
       <div style={{ ...styles.footer, justifyContent: "flex-end" }}>
         <Button secondary disabled={disabled} loading={busy === "reset"} onClick={() => void reset()}>
           Reset {scopeWord}

@@ -1,5 +1,5 @@
 import { Button, SegmentedControl, Textbox } from "@create-figma-plugin/ui"
-import { h } from "preact"
+import { h, type ComponentChildren } from "preact"
 import { useEffect, useRef, useState } from "preact/hooks"
 import type { FigmaKeyRef, FigmaProjectDetail } from "../../shared/api-types"
 import { keyNameWarnings } from "../../shared/key-names"
@@ -9,6 +9,7 @@ import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { ScreenBody } from "../components/screen-body"
 import { linkSyncWarning, type LinkSyncResult } from "../state/link-sync"
 import { groupErrors, type BatchOutcome } from "../state/ops"
 import {
@@ -46,6 +47,7 @@ import type { Workspace, WorkspaceState } from "../state/workspace"
 // uploaded when that is on and allowed (§7.13 rule 11, §7.16); the push stays locked until they are done or stopped.
 
 export interface PushScreenProps {
+  notices: ComponentChildren               // the workspace notices, shown first in the scroll area (ScreenBody)
   workspace: Workspace
   state: WorkspaceState
   project: FigmaProjectDetail
@@ -287,9 +289,9 @@ export function PushScreen(props: PushScreenProps) {
   if (phase === "preparing") {
     return (
       <div style={styles.page}>
-        <div style={styles.body}>
+        <ScreenBody notices={props.notices}>
           <Loading label="Comparing layers with ReRune…" />
-        </div>
+        </ScreenBody>
       </div>
     )
   }
@@ -297,9 +299,9 @@ export function PushScreen(props: PushScreenProps) {
   if (phase === "pushing") {
     return (
       <div style={styles.page}>
-        <div style={styles.body}>
+        <ScreenBody notices={props.notices}>
           <Loading label="Pushing drafts to ReRune…" />
-        </div>
+        </ScreenBody>
       </div>
     )
   }
@@ -307,11 +309,11 @@ export function PushScreen(props: PushScreenProps) {
   if (phase === "results") {
     return (
       <div style={styles.page}>
-        <div style={{ ...styles.body, ...styles.stack }}>
+        <ScreenBody notices={props.notices} stack>
           <ErrorNote message={error} />
           {run !== null && <Results run={run} props={props} resolved={resolved} busy={busy} onResolve={resolveConflict} nodesOf={nodesOf} />}
           {shots !== null && <ScreenshotStatus state={shots} stopping={stopping} onStop={stopScreenshots} onSelect={props.onSelect} />}
-        </div>
+        </ScreenBody>
         <div style={{ ...styles.footer, justifyContent: "flex-end" }}>
           <Button disabled={busy} onClick={() => void review()}>
             Review again
@@ -338,7 +340,7 @@ export function PushScreen(props: PushScreenProps) {
           }}
         />
       </div>
-      <div style={styles.body}>
+      <ScreenBody notices={props.notices}>
         <ErrorNote message={error} onRetry={() => void review()} />
         {props.readOnly && <Note tone="warning">This file is connected to a different ReRune server, so nothing can be pushed from here.</Note>}
         {!editKeys && <Note tone="warning">You can view this project but not edit its keys, so you can't push. Ask an organisation administrator for the Edit keys permission.</Note>}
@@ -525,7 +527,7 @@ export function PushScreen(props: PushScreenProps) {
             <Counts plan={plan} />
           </div>
         )}
-      </div>
+      </ScreenBody>
       <div style={styles.footer}>
         <TextButton disabled={busy} onClick={() => void review()}>
           Review again

@@ -1,5 +1,5 @@
 import { Button, Dropdown, SegmentedControl, Toggle } from "@create-figma-plugin/ui"
-import { h } from "preact"
+import { h, type ComponentChildren } from "preact"
 import { useMemo, useState } from "preact/hooks"
 import type { FigmaProjectDetail } from "../../shared/api-types"
 import type { ResolveSource, Scope } from "../../shared/messages"
@@ -8,6 +8,7 @@ import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
 import { ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { ScreenBody } from "../components/screen-body"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import {
   buildPreview,
@@ -28,6 +29,7 @@ import type { Workspace, WorkspaceState } from "../state/workspace"
 // the values longer than their key's max length (§7.18.3).
 
 export interface PreviewScreenProps {
+  notices: ComponentChildren               // the workspace notices, shown first in the scroll area (ScreenBody)
   workspace: Workspace
   state: WorkspaceState
   project: FigmaProjectDetail
@@ -141,7 +143,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
 
   return (
     <div style={styles.page}>
-      <div style={{ ...styles.body, ...styles.stack }}>
+      <ScreenBody notices={props.notices} stack>
         {props.readOnly && <Note tone="warning">This file is connected to a different ReRune server.</Note>}
         <div style={styles.tightStack}>
           <Small muted>Language</Small>
@@ -248,7 +250,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
             )}
           </div>
         )}
-      </div>
+      </ScreenBody>
       <div style={{ ...styles.footer, justifyContent: "flex-end" }}>
         <Button secondary disabled={disabled} loading={busy === "reset"} onClick={() => void reset()}>
           Reset {scope === "page" ? "page" : "selection"}
