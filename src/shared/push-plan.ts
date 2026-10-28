@@ -25,11 +25,16 @@ export interface PlanCreate {
   origin: CreateOrigin
 }
 export interface PlanUpdate { ref: string; keyId: string; keyName: string; nodeIds: string[]; text: string; expectedText: string; origin: UpdateOrigin }
+// `maxLength` (the key's max_length from E12) lets the Push screen warn before a variant or an Overwrite is chosen
+// that the push would then block (rule 9).
 export interface PlanDivergent {
-  keyId: string; keyName: string; remoteText: string
+  keyId: string; keyName: string; remoteText: string; maxLength: number | null
   variants: { text: string; nodeIds: string[]; decision: "winner" | "new_key" | "leave" | null }[]
 }
-export interface PlanConflict { keyId: string; keyName: string; nodeIds: string[]; figmaText: string; remoteText: string; decision: "skip" | "overwrite" | "take_rerune" }
+export interface PlanConflict {
+  keyId: string; keyName: string; nodeIds: string[]; figmaText: string; remoteText: string; maxLength: number | null
+  decision: "skip" | "overwrite" | "take_rerune"
+}
 export interface PlanPull { keyId: string; keyName: string; nodeIds: string[]; remoteText: string }
 export interface PlanCopied { nodeId: string; keyId: string; keyName: string; decision: "keep" | "new_key" | null }
 export interface PlanMissing { keyId: string; keyName: string; nodeIds: string[]; text: string; decision: "skip" | "recreate" | "unlink" }
@@ -99,6 +104,22 @@ export const PUSH_REASON_MESSAGES: Record<PushItemReason, string> = {
   structured_source: "This key uses a plural or ICU message. Edit it in ReRune.",
   source_changed: "The source text changed in ReRune.",
   internal_error: "ReRune had a problem. Try again.",
+}
+
+export interface MaxLengthCheck { length: number; maxLength: number }
+
+// The server's rule for authored values (translation_max_length.go): messageformat.ContentLength, which counts
+// UTF-16 code units of a plain value, must not exceed the key's max_length. Creates send max_length null, so only
+// updates can break it.
+export function maxLengthCheck(text: string, maxLength: number | null): MaxLengthCheck | null {
+  const length = utf16Length(text)
+  return maxLength !== null && length > maxLength ? { length, maxLength } : null
+}
+
+// Layers of the updates rule 9 holds back (for "Select" on the Push screen).
+export function blockedUpdateNodeIds(plan: PushPlan): string[] {
+  const blocked = new Set(plan.maxLengthViolations.map((violation) => violation.ref))
+  return plan.updates.filter((update) => blocked.has(update.ref)).flatMap((update) => update.nodeIds)
 }
 
 export function nodeText(node: Pick<ScannedNode, "characters" | "originalCharacters">): string {
@@ -268,6 +289,7 @@ export function buildPushPlan(input: PushPlanInput): PushPlan {
         keyId,
         keyName,
         remoteText,
+        maxLength: input.remote.get(keyId)?.maxLength ?? null,
         variants: variants.map((variant) => ({ text: variant.text, nodeIds: ids(variant.nodes), decision: null })),
       })
     } else if (changedKeys.has(keyId)) {
@@ -285,6 +307,7 @@ export function buildPushPlan(input: PushPlanInput): PushPlan {
       nodeIds: ids(group),
       figmaText: nodeText(group[0]),
       remoteText: input.remote.get(keyId)?.mainText ?? "",
+      maxLength: input.remote.get(keyId)?.maxLength ?? null,
       decision: "skip",
     })
   }
@@ -326,10 +349,9 @@ export function withNameIssues(plan: PushPlan, isTaken: (name: string) => boolea
 export function withMaxLengthViolations(plan: PushPlan, remote: Map<string, RemoteWithMaxLength>): PushPlan {
   const violations: PushPlan["maxLengthViolations"] = []
   for (const update of plan.updates) {
-    const maxLength = remote.get(update.keyId)?.maxLength ?? null
-    const length = utf16Length(update.text)
-    if (maxLength !== null && length > maxLength) {
-      violations.push({ ref: update.ref, length, maxLength })
+    const check = maxLengthCheck(update.text, remote.get(update.keyId)?.maxLength ?? null)
+    if (check !== null) {
+      violations.push({ ref: update.ref, ...check })
     }
   }
   return { ...plan, maxLengthViolations: violations }

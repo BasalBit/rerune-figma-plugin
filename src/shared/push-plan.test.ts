@@ -8,7 +8,9 @@ import {
   applyDecision,
   buildPushPlan,
   canPush,
+  blockedUpdateNodeIds,
   failureMessage,
+  maxLengthCheck,
   planLinkApplies,
   planPullApplies,
   planTextApplies,
@@ -204,6 +206,7 @@ describe("rule 3: changed and synced layers grouped by key", () => {
         keyId: K1,
         keyName: "checkout_pay_button",
         remoteText: "Pay now",
+        maxLength: null,
         variants: [
           { text: "Pay now", nodeIds: ["1:1"], decision: null },
           { text: "Pay securely", nodeIds: ["1:2"], decision: null },
@@ -244,7 +247,7 @@ describe("rule 4: conflicts", () => {
 
   it("skips by default", () => {
     const { plan } = setup(nodes, { remote })
-    expect(plan.conflicts).toEqual([{ keyId: K1, keyName: "k", nodeIds: ["1:1"], figmaText: "Pay securely", remoteText: "Pay safely", decision: "skip" }])
+    expect(plan.conflicts).toEqual([{ keyId: K1, keyName: "k", nodeIds: ["1:1"], figmaText: "Pay securely", remoteText: "Pay safely", maxLength: null, decision: "skip" }])
     expect(planToRequests(plan)).toEqual([])
   })
 
@@ -366,6 +369,7 @@ describe("rule 9: client-side checks", () => {
   it("blocks updates longer than max_length", () => {
     const { plan } = setup([linked("1:1", "Pay securely now", K1, "Pay now")], { remote: [[K1, remoteState("k", "Pay now", { maxLength: 10 })]] })
     expect(plan.maxLengthViolations).toEqual([{ ref: "u" + K1, length: 16, maxLength: 10 }])
+    expect(blockedUpdateNodeIds(plan)).toEqual(["1:1"])
     expect(planToRequests(plan)).toEqual([])
   })
 
@@ -505,5 +509,77 @@ describe("plan shape", () => {
       maxLengthViolations: [],
     }
     expect(plan).toEqual(empty)
+  })
+})
+
+describe("P3.5: max_length warnings", () => {
+  it("counts UTF-16 code units like the server's ContentLength and allows exactly max_length", () => {
+    expect(maxLengthCheck("Pay now", 7)).toBeNull()
+    expect(maxLengthCheck("Pay now!", 7)).toEqual({ length: 8, maxLength: 7 })
+    expect(maxLengthCheck("Pay 😀", 5)).toEqual({ length: 6, maxLength: 5 })
+    expect(maxLengthCheck("Hi {{name}}", 10)).toEqual({ length: 11, maxLength: 10 })
+    expect(maxLengthCheck("A very long text that has no limit", null)).toBeNull()
+  })
+
+  it("measures the normalised text that is pushed, not the layer's trailing whitespace", () => {
+    const { plan } = setup([linked("1:1", "Pay today  \n", K1, "Pay now")], { remote: [[K1, remoteState("k", "Pay now", { maxLength: 9 })]] })
+    expect(plan.updates.map((update) => update.text)).toEqual(["Pay today"])
+    expect(plan.maxLengthViolations).toEqual([])
+    expect(planToRequests(plan)[0].items.map((item) => item.client_ref)).toEqual(["u" + K1])
+  })
+
+  it("holds back only the updates that are too long and pushes the rest", () => {
+    const nodes = [
+      linked("1:1", "Pay securely now", K1, "Pay now"),
+      linked("1:2", "Cancel order", K2, "Cancel"),
+      scannedNode("1:3", "A brand new text that is longer than any max length"),
+    ]
+    const { plan } = setup(nodes, {
+      remote: [
+        [K1, remoteState("pay", "Pay now", { maxLength: 10 })],
+        [K2, remoteState("cancel", "Cancel", { maxLength: 20 })],
+      ],
+    })
+    expect(plan.maxLengthViolations).toEqual([{ ref: "u" + K1, length: 16, maxLength: 10 }])
+    expect(blockedUpdateNodeIds(plan)).toEqual(["1:1"])
+    // Creates are sent with max_length null, so no limit applies to them.
+    expect(planToRequests(plan)[0].items.map((item) => item.client_ref)).toEqual(["c0", "u" + K2])
+  })
+
+  it("carries the key's max length on divergent texts and blocks a winner that is too long", () => {
+    const nodes = [linked("1:1", "Pay now please", K1, "Pay now"), linked("1:2", "Pay", K1, "Pay now")]
+    const { plan, context } = setup(nodes, { remote: [[K1, remoteState("pay", "Pay now", { maxLength: 8 })]] })
+    expect(plan.divergent[0].maxLength).toBe(8)
+    expect(plan.divergent[0].variants.map((variant) => maxLengthCheck(variant.text, plan.divergent[0].maxLength))).toEqual([{ length: 14, maxLength: 8 }, null])
+
+    const long = applyDecision(plan, { kind: "divergent", keyId: K1, variant: 0, decision: "winner" }, context)
+    expect(long.maxLengthViolations).toEqual([{ ref: "u" + K1, length: 14, maxLength: 8 }])
+    expect(planToRequests(long)).toEqual([])
+
+    const short = applyDecision(long, { kind: "divergent", keyId: K1, variant: 1, decision: "winner" }, context)
+    expect(short.maxLengthViolations).toEqual([])
+    expect(planToRequests(short)[0].items).toEqual([{ client_ref: "u" + K1, op: "update", key_id: K1, text: "Pay", expected_text: "Pay now" }])
+  })
+
+  it("carries the key's max length on conflicts and blocks an Overwrite that is too long, not Take ReRune text", () => {
+    const nodes = [linked("1:1", "Pay securely today", K1, "Pay now")]
+    const { plan, context } = setup(nodes, { remote: [[K1, remoteState("pay", "Pay safely", { maxLength: 12 })]] })
+    expect(plan.conflicts[0].maxLength).toBe(12)
+
+    const overwrite = applyDecision(plan, { kind: "conflict", keyId: K1, figmaText: "Pay securely today", decision: "overwrite" }, context)
+    expect(overwrite.maxLengthViolations).toEqual([{ ref: "u" + K1, length: 18, maxLength: 12 }])
+    expect(planToRequests(overwrite)).toEqual([])
+    expect(blockedUpdateNodeIds(overwrite)).toEqual(["1:1"])
+
+    const take = applyDecision(overwrite, { kind: "conflict", keyId: K1, figmaText: "Pay securely today", decision: "take_rerune" }, context)
+    expect(take.maxLengthViolations).toEqual([])
+    expect(planTextApplies(take, context).map((item) => item.text)).toEqual(["Pay safely"])
+  })
+
+  it("has no warnings for keys without a max length or without a loaded remote state", () => {
+    const nodes = [linked("1:1", "Pay securely now", K1, "Pay now"), linked("1:2", "Cancel order now", K2, "Cancel")]
+    const { plan } = setup(nodes, { remote: [[K1, remoteState("pay", "Pay now")]] })
+    expect(plan.maxLengthViolations).toEqual([])
+    expect(plan.unknown).toBe(1)
   })
 })
