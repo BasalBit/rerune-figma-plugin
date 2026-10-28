@@ -11,7 +11,7 @@ import {
 } from "../../shared/constants"
 import { EDIT_KEYS_PERMISSION, syncPauseOf, type SyncPauseReason } from "../../shared/file-link"
 import type { Box, FileSettings, FrameSkipReason, MainToUiOf, ScannedNode } from "../../shared/messages"
-import { firstRunes } from "../../shared/text"
+import { firstRunes, trimSpace } from "../../shared/text"
 import { ApiError, RATE_LIMIT_DEFAULT_SECONDS, RATE_LIMIT_MESSAGE, REASON_MESSAGES, userMessage } from "../api/client"
 import type { FigmaApi, ScreenshotUpload } from "../api/figma-api"
 import { RequestTimeoutError, type UiBus } from "../bus"
@@ -227,8 +227,9 @@ export function imageFileName(frameId: string, format: FrameImage["format"]): st
   return frameId.replace(/[:;]/g, "_") + (format === "JPG" ? ".jpg" : ".png")
 }
 
+// A name as the server stores it (strings.TrimSpace, cut to 200 runes, §4.0).
 function cleanName(name: string): string {
-  return firstRunes(name.trim(), SCREENSHOT_NAME_MAX_RUNES)
+  return firstRunes(trimSpace(name), SCREENSHOT_NAME_MAX_RUNES)
 }
 
 // The E19 `meta` part: the decoded size and the fitted boxes (at most 500).

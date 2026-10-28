@@ -4,7 +4,7 @@ import { renderContent } from "../../shared/icu"
 import type { CodegenCacheEntry, ScannedNode } from "../../shared/messages"
 import type { RemoteWithMaxLength } from "../../shared/push-plan"
 import { missingRemoteState, remoteStateFromResolved } from "../../shared/sync-state"
-import { truncateUtf16, utf16Length } from "../../shared/text"
+import { trimSpace, truncateUtf16, utf16Length } from "../../shared/text"
 import type { FigmaApi } from "../api/figma-api"
 import { chunk } from "./ops"
 
@@ -103,9 +103,10 @@ export async function fetchTextMatches(api: Pick<FigmaApi, "keysByName">, projec
 
 export interface TakenName { id: string; key: string; type: "key" | "object" | "array" }
 
-// E11 name lookup, chunks of 100: names that already exist in the project.
+// E11 name lookup, chunks of 100: names that already exist in the project. A name the server would reject (empty
+// after strings.TrimSpace, so also one of only U+0085) is left out, as it would fail its whole batch with a 400.
 export async function fetchTakenNames(api: Pick<FigmaApi, "keysByName">, projectId: string, names: readonly string[]): Promise<Map<string, TakenName>> {
-  const unique = [...new Set(names.map((name) => name.trim()))].filter((name) => name !== "" && name.length <= 200)
+  const unique = [...new Set(names.map((name) => name.trim()))].filter((name) => trimSpace(name) !== "" && name.length <= 200)
   const taken = new Map<string, TakenName>()
   await mapPool(chunk(unique, MAX_BATCH_SIZE), MAX_REQUESTS_IN_FLIGHT, async (batch) => {
     const response = await api.keysByName(projectId, { names: batch })

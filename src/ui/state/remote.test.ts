@@ -110,6 +110,12 @@ describe("E11 lookups", () => {
     expect(keysByName.mock.calls[0][1]).toEqual({ names: ["taken_a", "free_b"] })
     expect([...taken.keys()]).toEqual(["taken_a"])
   })
+
+  it("leaves out names the server reads as empty after strings.TrimSpace (U+0085), which would fail the batch", async () => {
+    const keysByName = byName(() => ({ keys: [], missing: [], text_matches: [] }))
+    await fetchTakenNames({ keysByName }, PROJECT_ID, ["free_b", String.fromCharCode(0x85), String.fromCharCode(0x85, 0x20, 0x3000)])
+    expect(keysByName.mock.calls[0][1]).toEqual({ names: ["free_b"] })
+  })
 })
 
 describe("mapPool", () => {

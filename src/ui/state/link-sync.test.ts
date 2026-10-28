@@ -103,6 +103,15 @@ describe("upsertOf", () => {
     expect(cleanLinkName("  x  ")).toBe("x")
   })
 
+  it("trims names as the server's strings.TrimSpace does: U+0085 yes, U+FEFF no", () => {
+    const nel = String.fromCharCode(0x85)
+    const bom = String.fromCharCode(0xfeff)
+    expect(cleanLinkName("Checkout" + nel)).toBe("Checkout")
+    expect(cleanLinkName(nel + String.fromCharCode(0xa0) + "Pay button" + String.fromCharCode(0x3000))).toBe("Pay button")
+    expect(cleanLinkName(bom + "Checkout")).toBe(bom + "Checkout")
+    expect(cleanLinkName(nel + "a".repeat(250))).toBe("a".repeat(200))
+  })
+
   it("sends an empty frame for layers outside a frame and drops layers with invalid identifiers", () => {
     expect(upsertOf(check("12:345", { frameId: null, frameName: null }))).toMatchObject({ frame_id: "", frame_name: "" })
     expect(upsertOf(check("12:345", { pageId: "" }))).toBeNull()
@@ -201,6 +210,17 @@ describe("planPageSync (§7.15 page link sync)", () => {
     expect(plan.upserts).toEqual([upsertFor("I12:34;5:67")])
     expect(plan.removals).toEqual([])
     expect(plan.unresolved).toEqual([])
+  })
+
+  it("leaves a link alone whose names differ from ReRune's only by what the server trims (U+0085)", () => {
+    const nel = String.fromCharCode(0x85)
+    const bom = String.fromCharCode(0xfeff)
+    const scanned = [
+      linkedNode("12:345", "Pay now", { keyId: K1, keyName: "k", syncedText: "Pay now" }, { name: "Pay button" + nel, frameName: "Checkout" + nel, pageName: nel + "Mobile" }),
+      linkedNode("12:346", "Pay now", { keyId: K1, keyName: "k", syncedText: "Pay now" }, { name: bom + "Pay button" }),
+    ]
+    const server = [serverLink("12:345"), serverLink("12:346", { node_name: bom + "Pay button" })]
+    expect(planPageSync({ ...base, scanned, server, checks: withScanned(new Map(), scanned) })).toEqual({ upserts: [], removals: [], unresolved: [] })
   })
 
   it("refreshes moved or renamed layers that keep their key, also when only link-check found them", () => {

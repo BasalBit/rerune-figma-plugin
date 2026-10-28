@@ -2,7 +2,7 @@ import type { FigmaFile, FigmaRegisterFileRequest } from "../../shared/api-types
 import { EDIT_KEYS_PERMISSION, isPossibleCopy, type LinkSyncBlock, type LinkSyncGate } from "../../shared/file-link"
 import { canonicalFileUrl, fileKeyUrl, isFigmaFileKey, parseFigmaUrl, type ParsedFigmaUrl } from "../../shared/figma-url"
 import type { FileSettings } from "../../shared/messages"
-import { firstRunes } from "../../shared/text"
+import { firstRunes, trimSpace } from "../../shared/text"
 import { REASON_MESSAGES, userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 
@@ -15,7 +15,7 @@ export const FILE_NAME_MAX_RUNES = 200
 export type FileLinkInput = { kind: "empty" } | { kind: "invalid"; message: string } | { kind: "valid"; link: ParsedFigmaUrl }
 
 export function readFileLinkInput(text: string): FileLinkInput {
-  if (text.trim() === "") {
+  if (trimSpace(text) === "") {
     return { kind: "empty" }
   }
   const link = parseFigmaUrl(text)
@@ -91,7 +91,7 @@ export function fileRegistration(settings: FileLinkFields, rootName: string): Fi
     return { url: fileKeyUrl(settings.fileKey) }
   }
   const url = settings.fileUrl ?? canonicalFileUrl(settings.fileKey, rootName)
-  const name = firstRunes(rootName.trim(), FILE_NAME_MAX_RUNES)
+  const name = firstRunes(trimSpace(rootName), FILE_NAME_MAX_RUNES)
   return name === "" ? { url } : { url, file_name: name }
 }
 

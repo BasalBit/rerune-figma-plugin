@@ -46,6 +46,20 @@ describe("parseFigmaUrl (Appendix A.2)", () => {
     expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter#frame")?.slug).toBe("Chapter")
   })
 
+  it("trims the link and the slug as the server's strings.TrimSpace does: U+0085 yes, U+FEFF no", () => {
+    const nel = String.fromCharCode(0x85)
+    const bom = String.fromCharCode(0xfeff)
+    const chapter = { fileKey: "AbCdEf1234567890XyZ", branchKey: null, nodeId: null, slug: "Chapter" }
+    expect(parseFigmaUrl(bom + "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter")).toBeNull()
+    expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter" + nel)).toEqual(chapter)
+    expect(parseFigmaUrl(nel + "https://www.figma.com/design/AbCdEf1234567890XyZ" + nel)).toEqual({ ...chapter, slug: "" })
+    expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter%C2%85")).toEqual(chapter)
+    expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/%C2%85Chapter-")).toEqual(chapter)
+    expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/%C2%85")).toEqual({ ...chapter, slug: "" })
+    expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/%EF%BB%BFChapter")).toEqual({ ...chapter, slug: bom + "Chapter" })
+    expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter" + bom)).toEqual({ ...chapter, slug: "Chapter" + bom })
+  })
+
   it("treats a malformed node-id as absent, not as an invalid link", () => {
     expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/x?node-id=abc")?.nodeId).toBeNull()
     expect(parseFigmaUrl("https://www.figma.com/design/AbCdEf1234567890XyZ/x?node-id=%E0%A4%A")?.nodeId).toBeNull()

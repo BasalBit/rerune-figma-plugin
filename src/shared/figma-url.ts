@@ -1,11 +1,13 @@
 // Figma URLs (Appendix A.2, identical to the server's figma_url.go). Hand-written instead of `URL`, because the
 // main thread has no URL API; the UI uses it for the pasted file link (§7.7) and for deep links.
 
+import { trimSpace } from "./text"
+
 export interface ParsedFigmaUrl {
   fileKey: string                 // the first key: the file's identity, also in a branch URL
   branchKey: string | null        // the branch key of a branch URL (FileSettings.branchKey, D43)
   nodeId: string | null           // `node-id` as a Figma node id, or null when absent or malformed
-  slug: string                    // URL-decoded, `-` → space, trimmed
+  slug: string                    // URL-decoded, `-` → space, trimmed as Go's strings.TrimSpace does
 }
 
 export const FIGMA_FILE_KEY_PATTERN = /^[A-Za-z0-9]{6,128}$/
@@ -61,7 +63,7 @@ function nodeIdOf(query: string): string | null {
 // https://(www.)figma.com/(design|file|proto|board|slides)/<key>[/branch/<branchKey>][/<slug>]; null when the
 // text is not such a link.
 export function parseFigmaUrl(input: string): ParsedFigmaUrl | null {
-  let rest = input.trim()
+  let rest = trimSpace(input)
   if (rest.slice(0, SCHEME.length).toLowerCase() !== SCHEME) {
     return null
   }
@@ -111,7 +113,7 @@ export function parseFigmaUrl(input: string): ParsedFigmaUrl | null {
     fileKey: segments[1],
     branchKey,
     nodeId: nodeIdOf(query),
-    slug: tail.length === 0 ? "" : tail[0].replace(/-/g, " ").trim(),
+    slug: tail.length === 0 ? "" : trimSpace(tail[0].replace(/-/g, " ")),
   }
 }
 

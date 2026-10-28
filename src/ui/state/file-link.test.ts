@@ -52,6 +52,15 @@ describe("readFileLinkInput (§7.7, Appendix A.2)", () => {
     expect(readFileLinkInput("https://www.figma.com/community/file/1234567890/x")).toEqual({ kind: "invalid", message: FILE_LINK_INVALID })
     expect(FILE_LINK_INVALID).toBe("Paste a Figma file link (Share → Copy link).")
   })
+
+  it("trims a pasted link as the server does: U+0085 is space, U+FEFF is not", () => {
+    const nel = String.fromCharCode(0x85)
+    const bom = String.fromCharCode(0xfeff)
+    expect(readFileLinkInput(nel + " ")).toEqual({ kind: "empty" })
+    expect(readFileLinkInput(bom)).toEqual({ kind: "invalid", message: FILE_LINK_INVALID })
+    expect(readFileLinkInput(bom + "https://www.figma.com/design/" + FILE_KEY + "/Chapter")).toEqual({ kind: "invalid", message: FILE_LINK_INVALID })
+    expect(readFileLinkInput("https://www.figma.com/design/" + FILE_KEY + "/Chapter" + nel)).toMatchObject({ kind: "valid", link: { fileKey: FILE_KEY, slug: "Chapter" } })
+  })
 })
 
 describe("fileLinkNotice and fileLinkStatus (§7.7, §7.11 banners)", () => {
@@ -88,6 +97,14 @@ describe("fileRegistration and registerFile (E14)", () => {
     expect(fileRegistration({ ...linked, fileName: long }, long)).toEqual({ url: linked.fileUrl, file_name: "é".repeat(200) })
     expect(fileRegistration({ ...linked, fileUrl: null, fileName: null }, "Renamed")).toEqual({ url: "https://www.figma.com/design/" + FILE_KEY + "/Renamed", file_name: "Renamed" })
     expect(fileRegistration({ ...linked, fileName: "  " }, "  ")).toEqual({ url: linked.fileUrl })
+  })
+
+  it("trims the file's name as the server's strings.TrimSpace does: U+0085 yes, U+FEFF no", () => {
+    const nel = String.fromCharCode(0x85)
+    const bom = String.fromCharCode(0xfeff)
+    expect(fileRegistration({ ...linked, fileName: "Chapter App" + nel }, "Chapter App" + nel)).toEqual({ url: linked.fileUrl, file_name: "Chapter App" })
+    expect(fileRegistration({ ...linked, fileName: bom + "Chapter App" }, bom + "Chapter App")).toEqual({ url: linked.fileUrl, file_name: bom + "Chapter App" })
+    expect(fileRegistration({ ...linked, fileName: nel }, nel)).toEqual({ url: linked.fileUrl })
   })
 
   it("does not register without a link or for a suspected copy", () => {

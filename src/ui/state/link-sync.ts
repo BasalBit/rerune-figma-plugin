@@ -3,7 +3,7 @@ import { OBJECT_ID_PATTERN } from "../../shared/constants"
 import type { LinkSyncGate } from "../../shared/file-link"
 import { isFigmaNodeId, isFigmaPageId } from "../../shared/figma-url"
 import type { LinkCheck, RequestId, ScannedNode } from "../../shared/messages"
-import { firstRunes } from "../../shared/text"
+import { firstRunes, trimSpace } from "../../shared/text"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
@@ -19,7 +19,7 @@ import { chunk } from "./ops"
 
 export const LINKS_BATCH_SIZE = 500          // E17: ≤ 500 upserts and ≤ 500 removals per request; E18 page size
 export const LINK_CHECK_BATCH_SIZE = 500     // node ids per link-check message
-export const LINK_NAME_MAX_RUNES = 200       // names are trimmed and cut to 200 runes on the server (§4.0)
+export const LINK_NAME_MAX_RUNES = 200       // names are trimmed (strings.TrimSpace) and cut to 200 runes on the server (§4.0)
 export const LINKS_MAX_PAGES = 200           // E18 pages read for one page sync (100,000 links)
 
 export interface LinkSyncPlan { upserts: FigmaLinkUpsert[]; removals: string[] }
@@ -43,8 +43,9 @@ export function emptyResult(): LinkSyncResult {
   return { upserted: 0, removed: 0, rejected: [], error: null }
 }
 
+// A name as the server stores it (§4.0), so sameUpsert sees an unchanged layer as unchanged.
 export function cleanLinkName(name: string): string {
-  return firstRunes(name.trim(), LINK_NAME_MAX_RUNES)
+  return firstRunes(trimSpace(name), LINK_NAME_MAX_RUNES)
 }
 
 // A scanned layer exists by definition: its scan state is as good as a link-check.

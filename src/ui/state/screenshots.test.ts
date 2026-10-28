@@ -260,6 +260,14 @@ describe("E19 parts", () => {
     expect(meta.boxes).toHaveLength(500)
     expect(meta.frame_name).toBe("😀".repeat(200))
   })
+
+  it("trims names as the server's strings.TrimSpace does: U+0085 yes, U+FEFF no", () => {
+    const nel = String.fromCharCode(0x85)
+    const bom = String.fromCharCode(0xfeff)
+    const meta = screenshotMeta({ ...IMAGE, frameName: "Checkout" + nel, pageName: bom + "Mobile" }, FILE_KEY, { width: 400, height: 800 }, [])
+    expect(meta.frame_name).toBe("Checkout")
+    expect(meta.page_name).toBe(bom + "Mobile")
+  })
 })
 
 describe("requestFrameImage (screenshots-export, one frame per request)", () => {
