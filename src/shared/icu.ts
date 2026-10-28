@@ -16,6 +16,16 @@ export interface RenderOptions {
 // CLDR category order (the server's pluralSelectorOrder); the only selectors the server stores in a plural block.
 export const PLURAL_CATEGORY_ORDER: readonly string[] = ["zero", "one", "two", "few", "many", "other"]
 
+// The server stores Flutter's exact forms =0, =1 and =2 as zero, one and two (a plural block holds only CLDR
+// categories), and Flutter (Dart intl) and i18next (`_zero`) show such a form for exactly 0, 1 or 2 in every
+// language. So in a language whose CLDR rules lack the category, a zero, one or two form is the exact form =0, =1
+// or =2; in a language that has the category it keeps its CLDR meaning.
+const EXACT_CATEGORY_COUNTS: ReadonlyMap<string, number> = new Map([["zero", 0], ["one", 1], ["two", 2]])
+
+export function isExactCategoryName(category: string): boolean {
+  return EXACT_CATEGORY_COUNTS.has(category)
+}
+
 const PLACEHOLDER = /\{\{([^{}]+)\}\}/g
 
 // Counts tried for a category: 0–200 (§7.18.5), then round numbers (French, Spanish, Italian, Portuguese and
@@ -212,14 +222,44 @@ function formBySelector(forms: readonly VariantForm[], selector: string): Varian
   return forms.find((form) => form.selector === selector)
 }
 
-function exactForm(forms: readonly VariantForm[], count: number): VariantForm | undefined {
-  return forms.find((form) => form.selector.charAt(0) === "=" && form.selector.length > 1 && Number(form.selector.slice(1)) === count)
+// The count a selector matches exactly: `=N`, or zero / one / two in a language without that category; null for
+// any other selector.
+export function exactCountOf(selector: string, lang: string): number | null {
+  if (selector.charAt(0) === "=") {
+    const count = selector.length > 1 ? Number(selector.slice(1)) : NaN
+    return isFinite(count) ? count : null
+  }
+  const count = EXACT_CATEGORY_COUNTS.get(selector)
+  return count !== undefined && !pluralCategories(lang).includes(selector) ? count : null
 }
 
-// The value of each plural variable (`count`), set by its first plural block. A category picked with the plural
-// selector wins when the language has it; else a numeric sample; else `other`. For a category the count is its
-// smallest count that no exact `=N` form of that block claims, so the preview shows the category's form whenever the
-// language has a count for it. With an offset the category is chosen on count − offset, as ICU does.
+// An `=N` form matching the count wins over a zero / one / two form that stands for the same count.
+function exactForm(forms: readonly VariantForm[], count: number, lang: string): VariantForm | undefined {
+  const matches = (form: VariantForm) => exactCountOf(form.selector, lang) === count
+  return forms.find((form) => form.selector.charAt(0) === "=" && matches(form)) ?? forms.find(matches)
+}
+
+// What the plural selector needs to know about a plural variable: the selectors of its forms and its offset.
+export interface PluralShape { selectors: readonly string[]; offset: number }
+
+export const NO_PLURAL_SHAPE: PluralShape = { selectors: [], offset: 0 }
+
+// The count a plural block shows for a category picked with the plural selector, or null when it can't show it.
+// A category of the language: its smallest count that no exact form of the block claims (so the category's own form
+// shows; when exact forms claim every count, its smallest count), plus the offset (the category is chosen on
+// count − offset, as ICU does). A zero / one / two form of a language without that category: its exact count.
+export function choiceCount(lang: string, shape: PluralShape, category: string): number | null {
+  if (!pluralCategories(lang).includes(category)) {
+    return shape.selectors.includes(category) ? exactCountOf(category, lang) : null
+  }
+  const claimed = (count: number) => shape.selectors.some((selector) => exactCountOf(selector, lang) === count)
+  const count = sampleCountFor(lang, category, (n) => claimed(n + shape.offset))
+  return count === null ? null : count + shape.offset
+}
+
+// The value of each plural variable (`count`), set by its first plural block: a category picked with the plural
+// selector when this block can show it (choiceCount); else a numeric sample; else the count choiceCount gives for
+// `other`.
 interface Counts { values: Map<string, number>; fromSample: Set<string> }
 
 function collectCounts(parts: readonly MessagePart[], options: RenderOptions, counts: Counts): void {
@@ -230,16 +270,15 @@ function collectCounts(parts: readonly MessagePart[], options: RenderOptions, co
     }
     const forms = sortedForms(block)
     if (block.kind === "plural" && !counts.values.has(block.variable)) {
-      const offset = block.offset ?? 0
+      const shape: PluralShape = { selectors: forms.map((form) => form.selector), offset: block.offset ?? 0 }
       const chosen = options.plural?.variable === block.variable ? options.plural.category : null
-      const category = chosen !== null && pluralCategories(options.lang).includes(chosen) ? chosen : null
+      const chosenCount = chosen === null ? null : choiceCount(options.lang, shape, chosen)
       const sample = numericSample(block.variable, options)
-      if (category === null && sample !== null) {
+      if (chosenCount === null && sample !== null) {
         counts.values.set(block.variable, sample)
         counts.fromSample.add(block.variable)
       } else {
-        const count = sampleCountFor(options.lang, category ?? "other", (n) => exactForm(forms, n + offset) !== undefined)
-        counts.values.set(block.variable, (count ?? 0) + offset)
+        counts.values.set(block.variable, chosenCount ?? choiceCount(options.lang, shape, "other") ?? shape.offset)
       }
     }
     for (const form of forms) {
@@ -279,8 +318,8 @@ function renderVariant(block: VariantBlock, options: RenderOptions, counts: Coun
   }
   const offset = block.offset ?? 0
   const count = counts.values.get(block.variable) ?? offset
-  // An exact =N form matching the count wins (compared before the offset), else the count's category, else
-  // `other`, else the first form; `#` inside the form is count − offset.
-  const form = exactForm(forms, count) ?? formBySelector(forms, pluralCategory(options.lang, count - offset)) ?? formBySelector(forms, "other") ?? forms[0]
+  // An exact form matching the count wins (=N, or zero / one / two the language lacks; compared before the offset),
+  // else the count's category, else `other`, else the first form; `#` inside the form is count − offset.
+  const form = exactForm(forms, count, options.lang) ?? formBySelector(forms, pluralCategory(options.lang, count - offset)) ?? formBySelector(forms, "other") ?? forms[0]
   return renderParts(form.parts, options, counts, formatCount(options.lang, count - offset))
 }

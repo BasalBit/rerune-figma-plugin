@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { keyId, linkedNode, OTHER_PROJECT_ID, PROJECT_ID, scannedNode } from "../../../test/fixtures"
 import type { FigmaResolvedKey, TranslationContent } from "../../shared/api-types"
-import { formatCount } from "../../shared/icu"
+import { formatCount, renderContent } from "../../shared/icu"
 import {
   activePluralChoice,
   AUTOMATIC,
   categoryOptions,
+  chosenCategory,
   projectSamples,
   SAMPLE_VALUE_MAX,
   sameSamples,
@@ -81,11 +82,11 @@ describe("samplePlaceholders", () => {
       [keyId(4), key(keyId(4), { value: "{{overridden}}" }, ["overridden"])],
     ])
     expect(samplePlaceholders(nodes, PROJECT_ID, resolved, "en")).toEqual([
-      { name: "user", kind: "text", options: [] },
-      { name: "extra", kind: "text", options: [] },
-      { name: "name", kind: "text", options: [] },
-      { name: "count", kind: "plural", options: [] },
-      { name: "gender", kind: "select", options: ["female", "other"] },
+      { name: "user", kind: "text", options: [], plural: null },
+      { name: "extra", kind: "text", options: [], plural: null },
+      { name: "name", kind: "text", options: [], plural: null },
+      { name: "count", kind: "plural", options: [], plural: { selectors: ["one", "other"], offset: 0 } },
+      { name: "gender", kind: "select", options: ["female", "other"], plural: null },
     ])
   })
 
@@ -99,7 +100,28 @@ describe("samplePlaceholders", () => {
       [keyId(2), key(keyId(2), null, ["from_catalog"])],
       [keyId(3), key(keyId(3), { value: "{{x}}" }, ["x"], "object")],
     ])
-    expect(samplePlaceholders(nodes, PROJECT_ID, resolved, "en")).toEqual([{ name: "from_catalog", kind: "text", options: [] }])
+    expect(samplePlaceholders(nodes, PROJECT_ID, resolved, "en")).toEqual([{ name: "from_catalog", kind: "text", options: [], plural: null }])
+  })
+
+  it("collects every form selector of a plural variable across keys, with the first block's offset", () => {
+    const zeroForms: TranslationContent = {
+      value: "",
+      message: { parts: [{ variant: { kind: "plural", variable: "count", offset: 1, forms: [{ selector: "zero", parts: [{ text: "No items" }], order: 0 }, { selector: "other", parts: [{ text: "# items" }], order: 1 }] } }] },
+    }
+    const nodes = [
+      linkedNode("1:1", "a", { keyId: keyId(1), keyName: "a", syncedText: "a" }),
+      linkedNode("1:2", "b", { keyId: keyId(2), keyName: "b", syncedText: "b" }),
+    ]
+    const resolved = new Map([
+      [keyId(1), key(keyId(1), cartMessage, ["count"])],
+      [keyId(2), key(keyId(2), zeroForms, ["count"])],
+    ])
+    expect(samplePlaceholders(nodes, PROJECT_ID, resolved, "en").find((placeholder) => placeholder.name === "count")).toEqual({
+      name: "count",
+      kind: "plural",
+      options: [],
+      plural: { selectors: ["one", "other", "zero"], offset: 0 },
+    })
   })
 })
 
@@ -138,25 +160,66 @@ describe("plural selector", () => {
     expect(categoryOptions("xx").map((option) => option.value)).toEqual([AUTOMATIC, "other"])
   })
 
-  it("applies a choice only in its project and in languages that have the category", () => {
+  it("offers a zero / one / two form the language lacks as its exact count, and labels each option with the count it shows", () => {
+    const stored = { selectors: ["zero", "one", "other"], offset: 0 }
+    // Flutter =0 / =1 stored as zero / one: "other" skips 0, which the zero form claims.
+    expect(categoryOptions("en", stored)).toEqual([
+      { value: AUTOMATIC, text: "Automatic" },
+      { value: "zero", text: "zero (0)" },
+      { value: "one", text: "one (1)" },
+      { value: "other", text: "other (2)" },
+    ])
+    expect(categoryOptions("ja", { selectors: ["one", "other"], offset: 0 }).map((option) => option.text)).toEqual(["Automatic", "one (1)", "other (0)"])
+    // Arabic has a zero category of its own.
+    expect(categoryOptions("ar", stored).map((option) => option.value)).toEqual([AUTOMATIC, "zero", "one", "two", "few", "many", "other"])
+    expect(categoryOptions("en", { selectors: ["=0", "one", "other"], offset: 0 }).map((option) => option.text)).toEqual(["Automatic", "one (1)", "other (2)"])
+  })
+
+  it("keeps the label and the preview in step for every option", () => {
+    const content: TranslationContent = {
+      value: "",
+      message: { parts: [{ variant: { kind: "plural", variable: "count", forms: [{ selector: "zero", parts: [{ text: "none" }], order: 0 }, { selector: "one", parts: [{ text: "#:one" }], order: 1 }, { selector: "other", parts: [{ text: "#:other" }], order: 2 }] } }] },
+    }
+    for (const option of categoryOptions("en", { selectors: ["zero", "one", "other"], offset: 0 }).slice(1)) {
+      const count = option.text.match(/\((\d+)\)/)?.[1]
+      const rendered = renderContent(content, { lang: "en", plural: { variable: "count", category: option.value } })
+      expect(rendered === "none" ? "0" : rendered.split(":")[0], option.text).toBe(count)
+      expect(rendered === "none" ? "zero" : rendered.split(":")[1]).toBe(option.value)
+    }
+  })
+
+  it("applies a choice only in its project and in languages that have the category or the exact form", () => {
     const choice = { projectId: PROJECT_ID, variable: "count", category: "few" }
     expect(activePluralChoice(choice, PROJECT_ID, "pl")).toEqual({ variable: "count", category: "few" })
     expect(activePluralChoice(choice, PROJECT_ID, "en")).toBeNull()
     expect(activePluralChoice(choice, "other", "pl")).toBeNull()
     expect(activePluralChoice(choice, PROJECT_ID, null)).toBeNull()
     expect(activePluralChoice(null, PROJECT_ID, "pl")).toBeNull()
+    expect(activePluralChoice({ ...choice, category: "zero" }, PROJECT_ID, "en")).toEqual({ variable: "count", category: "zero" })
+  })
+
+  it("shows a picked form only where the placeholder's selector offers it", () => {
+    const count = { name: "count", kind: "plural" as const, options: [], plural: { selectors: ["zero", "one", "other"], offset: 0 } }
+    const files = { name: "count", kind: "plural" as const, options: [], plural: { selectors: ["one", "other"], offset: 0 } }
+    expect(chosenCategory(count, "en", { variable: "count", category: "zero" })).toBe("zero")
+    expect(chosenCategory(files, "en", { variable: "count", category: "zero" })).toBeNull()
+    expect(chosenCategory(count, "en", { variable: "n", category: "one" })).toBeNull()
+    expect(chosenCategory(count, null, { variable: "count", category: "one" })).toBeNull()
+    expect(chosenCategory({ ...count, kind: "text" }, "en", { variable: "count", category: "one" })).toBeNull()
   })
 
   it("summarises samples and the plural form, and hints per kind", () => {
     const placeholders = [
-      { name: "name", kind: "text" as const, options: [] },
-      { name: "count", kind: "plural" as const, options: [] },
-      { name: "gender", kind: "select" as const, options: ["female", "other"] },
+      { name: "name", kind: "text" as const, options: [], plural: null },
+      { name: "count", kind: "plural" as const, options: [], plural: { selectors: ["one", "other"], offset: 0 } },
+      { name: "gender", kind: "select" as const, options: ["female", "other"], plural: null },
     ]
-    expect(samplesSummary(placeholders, { name: "Ada", count: "5" }, { variable: "count", category: "one" })).toBe("name = Ada · count: one")
-    expect(samplesSummary(placeholders, { gender: "female", unused: "x" }, null)).toBe("gender = female")
-    expect(samplesSummary(placeholders, {}, null)).toBeNull()
+    expect(samplesSummary(placeholders, { name: "Ada", count: "5" }, { variable: "count", category: "one" }, "en")).toBe("name = Ada · count: one")
+    // A form the previewed language can't show leaves the typed sample in the summary.
+    expect(samplesSummary(placeholders, { count: "5" }, { variable: "count", category: "few" }, "en")).toBe("count = 5")
+    expect(samplesSummary(placeholders, { gender: "female", unused: "x" }, null, "en")).toBe("gender = female")
+    expect(samplesSummary(placeholders, {}, null, "en")).toBeNull()
     expect(placeholders.map(sampleHint)).toEqual(["Shown as [name] without a sample", "A number, or pick a plural form", "One of: female, other"])
-    expect(sampleHint({ name: "x", kind: "select", options: [] })).toBe("A select value")
+    expect(sampleHint({ name: "x", kind: "select", options: [], plural: null })).toBe("A select value")
   })
 })

@@ -1,5 +1,5 @@
 import type { FigmaResolvedKey, MessagePart } from "../../shared/api-types"
-import { formatCount, placeholderNames, pluralCategories, sampleCountFor, type PluralChoice } from "../../shared/icu"
+import { choiceCount, formatCount, isExactCategoryName, NO_PLURAL_SHAPE, PLURAL_CATEGORY_ORDER, placeholderNames, pluralCategories, type PluralChoice, type PluralShape } from "../../shared/icu"
 import type { ScannedNode } from "../../shared/messages"
 import { previewTargets } from "./preview"
 
@@ -12,6 +12,7 @@ export interface SamplePlaceholder {
   name: string
   kind: SampleKind      // plural: a plural variable; select: a select/choice variable; text: any other placeholder
   options: string[]     // select/choice selectors, for the hint
+  plural: PluralShape | null  // a plural variable's form selectors (all its blocks) and offset (its first block's)
 }
 
 // Plural choice of the session, remembered for the project it was made in.
@@ -39,17 +40,24 @@ export function samplePlaceholders(
   mainLanguage: string,
 ): SamplePlaceholder[] {
   const found = new Map<string, SamplePlaceholder>()
-  const add = (name: string, kind: SampleKind, options: readonly string[] = []) => {
-    const current = found.get(name)
+  const add = (name: string, kind: SampleKind, options: readonly string[] = [], plural: PluralShape | null = null) => {
+    let current = found.get(name)
     if (current === undefined) {
-      found.set(name, { name, kind, options: options.slice() })
-      return
+      current = { name, kind, options: [], plural: null }
+      found.set(name, current)
     }
     if (kind === "plural" || (kind === "select" && current.kind === "text")) {
       current.kind = kind
     }
     for (const option of options) {
       if (!current.options.includes(option)) current.options.push(option)
+    }
+    if (plural !== null) {
+      const selectors = current.plural === null ? [] : current.plural.selectors.slice()
+      for (const selector of plural.selectors) {
+        if (!selectors.includes(selector)) selectors.push(selector)
+      }
+      current.plural = { selectors, offset: current.plural === null ? plural.offset : current.plural.offset }
     }
   }
   const keyIds = [...new Set(previewTargets(nodes, projectId).map((node) => (node.link as NonNullable<ScannedNode["link"]>).id))]
@@ -66,7 +74,12 @@ export function samplePlaceholders(
           add(part.arg.name, "text")
         } else if (part.variant !== undefined) {
           const variant = part.variant
-          add(variant.variable, variant.kind === "plural" ? "plural" : "select", variant.kind === "plural" ? [] : variant.forms.map((form) => form.selector))
+          const selectors = variant.forms.slice().sort((a, b) => a.order - b.order).map((form) => form.selector)
+          if (variant.kind === "plural") {
+            add(variant.variable, "plural", [], { selectors, offset: variant.offset ?? 0 })
+          } else {
+            add(variant.variable, "select", selectors)
+          }
         }
       })
     } else if (content !== null) {
@@ -121,10 +134,11 @@ export function withoutSamples(samples: Record<string, Record<string, string>>, 
   return next
 }
 
-// The choice that applies to this project and language; a category the language doesn't have is ignored by the
-// renderer, so the selector shows "Automatic" for it.
+// The choice that applies to this project and language: a category of the language, or a zero / one / two form
+// that stands for an exact count in a language without that category. The renderer ignores a choice a message
+// can't show, and the selector shows "Automatic" for it (chosenCategory).
 export function activePluralChoice(choice: ProjectPluralChoice | null, projectId: string, lang: string | null): PluralChoice | null {
-  if (choice === null || choice.projectId !== projectId || lang === null || !pluralCategories(lang).includes(choice.category)) {
+  if (choice === null || choice.projectId !== projectId || lang === null || !(pluralCategories(lang).includes(choice.category) || isExactCategoryName(choice.category))) {
     return null
   }
   return { variable: choice.variable, category: choice.category }
@@ -132,15 +146,29 @@ export function activePluralChoice(choice: ProjectPluralChoice | null, projectId
 
 export const AUTOMATIC = "__automatic__"
 
-// Options of the plural selector: Automatic, then the language's categories with the count each one shows.
-export function categoryOptions(lang: string): { value: string; text: string }[] {
+// Options of the plural selector for a plural variable: Automatic, then in CLDR order the language's categories
+// and the variable's zero / one / two forms the language lacks (they stand for exactly 0, 1 and 2), each with the
+// count the preview shows for it (counts an exact form claims are skipped, so "other" shows the other form).
+export function categoryOptions(lang: string, shape: PluralShape | null = null): { value: string; text: string }[] {
+  const forms = shape ?? NO_PLURAL_SHAPE
+  const languageCategories = pluralCategories(lang)
+  const exact = forms.selectors.filter((selector) => isExactCategoryName(selector) && !languageCategories.includes(selector))
+  const categories = [...languageCategories, ...new Set(exact)].sort((a, b) => PLURAL_CATEGORY_ORDER.indexOf(a) - PLURAL_CATEGORY_ORDER.indexOf(b))
   return [
     { value: AUTOMATIC, text: "Automatic" },
-    ...pluralCategories(lang).map((category) => {
-      const count = sampleCountFor(lang, category)
+    ...categories.map((category) => {
+      const count = choiceCount(lang, forms, category)
       return { value: category, text: count === null ? category : category + " (" + formatCount(lang, count) + ")" }
     }),
   ]
+}
+
+// The plural form picked for this placeholder, when its selector offers it in this language; null shows Automatic.
+export function chosenCategory(placeholder: SamplePlaceholder, lang: string | null, plural: PluralChoice | null): string | null {
+  if (plural === null || lang === null || placeholder.kind !== "plural" || plural.variable !== placeholder.name) {
+    return null
+  }
+  return categoryOptions(lang, placeholder.plural).some((option) => option.value === plural.category) ? plural.category : null
 }
 
 export function sampleHint(placeholder: SamplePlaceholder): string {
@@ -155,11 +183,12 @@ export function sampleHint(placeholder: SamplePlaceholder): string {
 }
 
 // One line for the Preview screen when samples or a plural form are set: "name = Ada · count: few".
-export function samplesSummary(placeholders: readonly SamplePlaceholder[], samples: Record<string, string>, plural: PluralChoice | null): string | null {
+export function samplesSummary(placeholders: readonly SamplePlaceholder[], samples: Record<string, string>, plural: PluralChoice | null, lang: string | null): string | null {
   const parts: string[] = []
   for (const placeholder of placeholders) {
-    if (plural !== null && plural.variable === placeholder.name) {
-      parts.push(placeholder.name + ": " + plural.category)
+    const category = chosenCategory(placeholder, lang, plural)
+    if (category !== null) {
+      parts.push(placeholder.name + ": " + category)
     } else if (samples[placeholder.name] !== undefined) {
       parts.push(placeholder.name + " = " + samples[placeholder.name])
     }

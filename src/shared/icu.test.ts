@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest"
 import { SERVER_PLURAL_SAMPLES, SERVER_PLURAL_VECTORS } from "../../test/server-plural-vectors"
 import type { MessagePart, TranslationContent, VariantBlock } from "./api-types"
 import {
+  choiceCount,
+  exactCountOf,
   formatCount,
   languageLookupTags,
+  NO_PLURAL_SHAPE,
   PLURAL_CATEGORY_ORDER,
   placeholderNames,
   pluralCategories,
@@ -158,6 +161,84 @@ describe("renderContent: plural category selector", () => {
   })
 })
 
+// Flutter "{count, plural, =0{No items} =1{# item} other{# items}}" as ReRune stores it (=0 → zero, =1 → one).
+const storedZeroMessage = message(
+  plural("count", [
+    ["zero", [{ text: "No items" }]],
+    ["one", [{ text: "# item" }]],
+    ["other", [{ text: "# items" }]],
+  ]),
+)
+
+describe("renderContent: zero, one and two forms of a language without that category", () => {
+  it("shows a zero form for exactly 0 in English (Flutter =0, i18next _zero), and never by default", () => {
+    expect(pluralCategories("en")).toEqual(["one", "other"])
+    expect(renderContent(storedZeroMessage, { lang: "en", samples: { count: "0" } })).toBe("No items")
+    expect(renderContent(storedZeroMessage, { lang: "en", samples: { count: "1" } })).toBe("1 item")
+    expect(renderContent(storedZeroMessage, { lang: "en", samples: { count: "7" } })).toBe("7 items")
+    // Automatic shows the other form with a count the app shows it for.
+    expect(renderContent(storedZeroMessage, { lang: "en" })).toBe("2 items")
+    expect(renderContent(storedZeroMessage, { lang: "en", plural: { variable: "count", category: "other" } })).toBe("2 items")
+    expect(renderContent(storedZeroMessage, { lang: "en", plural: { variable: "count", category: "zero" } })).toBe("No items")
+    expect(renderContent(storedZeroMessage, { lang: "en", plural: { variable: "count", category: "one" } })).toBe("1 item")
+  })
+
+  it("keeps the CLDR meaning in a language that has the category", () => {
+    // Arabic zero is 0; Latvian zero is 0, 10–20, 30, …; French one is 0 and 1, but French has no zero.
+    expect(renderContent(storedZeroMessage, { lang: "ar", samples: { count: "0" } })).toBe("No items")
+    expect(renderContent(storedZeroMessage, { lang: "lv", samples: { count: "11" } })).toBe("No items")
+    expect(renderContent(storedZeroMessage, { lang: "lv", plural: { variable: "count", category: "zero" } })).toBe("No items")
+    expect(renderContent(storedZeroMessage, { lang: "fr", samples: { count: "0" } })).toBe("No items")
+    const files = message(plural("n", [["one", [{ text: "# fichier" }]], ["other", [{ text: "# fichiers" }]]]))
+    expect(renderContent(files, { lang: "fr", samples: { n: "0" } })).toBe("0 fichier")
+  })
+
+  it("treats a two form as =2 and lets an =N form win over the zero form for the same count", () => {
+    const twos = message(plural("n", [["two", [{ text: "a pair" }]], ["other", [{ text: "# shoes" }]]]))
+    expect(renderContent(twos, { lang: "de", samples: { n: "2" } })).toBe("a pair")
+    expect(renderContent(twos, { lang: "de", plural: { variable: "n", category: "two" } })).toBe("a pair")
+    expect(renderContent(twos, { lang: "de" })).toBe("0 shoes")
+    const both = message(plural("n", [["zero", [{ text: "zero form" }]], ["=0", [{ text: "exact form" }]], ["other", [{ text: "#" }]]]))
+    expect(renderContent(both, { lang: "en", samples: { n: "0" } })).toBe("exact form")
+  })
+
+  it("ignores a picked zero form the block doesn't have", () => {
+    const files = message(plural("n", [["one", [{ text: "# file" }]], ["other", [{ text: "# files" }]]]))
+    expect(renderContent(files, { lang: "en", plural: { variable: "n", category: "zero" } })).toBe("0 files")
+    expect(renderContent(files, { lang: "en", samples: { n: "4" }, plural: { variable: "n", category: "zero" } })).toBe("4 files")
+  })
+})
+
+describe("exactCountOf and choiceCount", () => {
+  it("reads =N selectors and zero / one / two the language lacks", () => {
+    expect(exactCountOf("=0", "en")).toBe(0)
+    expect(exactCountOf("=12", "pl")).toBe(12)
+    expect(exactCountOf("=", "en")).toBeNull()
+    expect(exactCountOf("=x", "en")).toBeNull()
+    expect(exactCountOf("zero", "en")).toBe(0)
+    expect(exactCountOf("one", "ja")).toBe(1)
+    expect(exactCountOf("two", "de")).toBe(2)
+    expect(exactCountOf("zero", "ar")).toBeNull()
+    expect(exactCountOf("one", "en")).toBeNull()
+    expect(exactCountOf("few", "en")).toBeNull()
+    expect(exactCountOf("other", "en")).toBeNull()
+    expect(exactCountOf("constructor", "en")).toBeNull()
+  })
+
+  it("gives the count each pick shows, skipping counts an exact form claims", () => {
+    const shape = { selectors: ["zero", "one", "other"], offset: 0 }
+    expect(choiceCount("en", shape, "zero")).toBe(0)
+    expect(choiceCount("en", shape, "one")).toBe(1)
+    expect(choiceCount("en", shape, "other")).toBe(2)
+    expect(choiceCount("en", shape, "few")).toBeNull()
+    expect(choiceCount("en", { selectors: ["one", "other"], offset: 0 }, "zero")).toBeNull()
+    expect(choiceCount("en", NO_PLURAL_SHAPE, "other")).toBe(0)
+    // With an offset the category is chosen on count − offset; exact forms compare the count.
+    expect(choiceCount("en", { selectors: ["=0", "=1", "one", "other"], offset: 1 }, "one")).toBe(2)
+    expect(choiceCount("en", { selectors: ["=0", "=1", "one", "other"], offset: 1 }, "other")).toBe(3)
+  })
+})
+
 describe("renderContent: numeric samples", () => {
   it("lets an exact =N selector matching the sample win, else the sample's category", () => {
     expect(renderContent(itemsMessage, { lang: "en", samples: { count: "0" } })).toBe("You have no items")
@@ -225,9 +306,13 @@ describe("renderContent: language lookup", () => {
     expect(renderContent(itemsMessage, { lang: "de-AT", plural: { variable: "count", category: "one" } })).toBe("You have 1 item")
   })
 
-  it("has only the other form for a language without rules", () => {
-    expect(renderContent(itemsMessage, { lang: "xx", plural: { variable: "count", category: "one" } })).toBe("You have 1 items")
-    expect(renderContent(itemsMessage, { lang: "xx", samples: { count: "1" } })).toBe("You have 1 items")
+  it("has only the other form for a language without rules, where a one form stands for exactly 1", () => {
+    expect(renderContent(itemsMessage, { lang: "xx", samples: { count: "3" } })).toBe("You have 3 items")
+    expect(renderContent(itemsMessage, { lang: "xx", samples: { count: "1" } })).toBe("You have 1 item")
+    expect(renderContent(itemsMessage, { lang: "xx", plural: { variable: "count", category: "one" } })).toBe("You have 1 item")
+    expect(renderContent(itemsMessage, { lang: "xx" })).toBe("You have 2 items")
+    const files = message(plural("n", [["one", [{ text: "# file" }]], ["other", [{ text: "# files" }]]]))
+    expect(renderContent(files, { lang: "xx", plural: { variable: "n", category: "few" } })).toBe("0 files")
   })
 })
 

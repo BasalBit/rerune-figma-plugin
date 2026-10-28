@@ -196,7 +196,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
                 }}
               />
             ) : (
-              <Small muted>{samplesSummary(placeholders, saved, activePlural) ?? "Placeholders show as [name]; plural messages show their other form."}</Small>
+              <Small muted>{samplesSummary(placeholders, saved, activePlural, lang) ?? "Placeholders show as [name]; plural messages show their other form."}</Small>
             )}
           </div>
         )}
