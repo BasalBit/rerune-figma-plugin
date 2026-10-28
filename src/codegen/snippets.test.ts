@@ -154,6 +154,21 @@ describe("Android resource names", () => {
   it("escapes the key inside the comment", () => {
     expect(snippetLines("android", { name: 'a"b\\c\nd', placeholders: [] })).toEqual(['// "a\\"b\\\\c\\nd" is not a valid Android resource name'])
   })
+
+  it.each(["continue", "new", "default", "class", "switch", "return", "int", "true", "null", "_", "__", "_.__"])(
+    "says the Java keyword, literal or underscore name %j is not a valid resource name (aapt2 refuses it)",
+    (name) => {
+      expect(androidResourceName(name)).toBeNull()
+      expect(snippetLines("android", { name, placeholders: [] })).toEqual(['// "' + name + '" is not a valid Android resource name'])
+    },
+  )
+
+  it("escapes Kotlin keywords that Java allows with backticks", () => {
+    expect(androidResourceName("fun")).toBe("fun")
+    expect(snippetLines("android", { name: "fun", placeholders: [] })).toEqual(["stringResource(R.string.`fun`)", "// Views: getString(R.string.`fun`)"])
+    expect(snippetText("android", { name: "when", placeholders: ["in"] })).toBe("stringResource(R.string.`when`, in_)")
+    expect(snippetText("android", { name: "continue_button", placeholders: [] })).toBe("stringResource(R.string.continue_button)\n// Views: getString(R.string.continue_button)")
+  })
 })
 
 describe("Flutter identifiers", () => {
@@ -169,6 +184,16 @@ describe("Flutter identifiers", () => {
 
   it("escapes the key inside the comment", () => {
     expect(snippetText("flutter", { name: 'a"b', placeholders: [] })).toBe('// "a\\"b" is not a valid Dart identifier; rename the key for Flutter')
+  })
+
+  it.each(["continue", "new", "default", "class", "switch", "return", "null", "true"])("says the reserved word %j is not a valid Dart identifier", (name) => {
+    expect(isDartIdentifier(name)).toBe(false)
+    expect(snippetLines("flutter", { name, placeholders: [] })).toEqual(['// "' + name + '" is not a valid Dart identifier; rename the key for Flutter'])
+  })
+
+  it("keeps keys that only contain a reserved word", () => {
+    expect(snippetText("flutter", { name: "continue_button", placeholders: [] })).toBe("AppLocalizations.of(context)!.continue_button")
+    expect(snippetText("flutter", { name: "newItems", placeholders: ["count"] })).toBe("AppLocalizations.of(context)!.newItems(count)")
   })
 })
 

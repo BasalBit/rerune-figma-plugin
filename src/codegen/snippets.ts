@@ -90,19 +90,9 @@ export function escapeJs(text: string): string {
   return escapeQuoted(text, "'", (code) => "\\u" + hex(code, 4))
 }
 
-// Android: R.string names are the key with "." → "_" (aapt does the same); anything else must be a Java identifier.
-export function androidResourceName(key: string): string | null {
-  const name = key.replace(/\./g, "_")
-  return ANDROID_RESOURCE_NAME.test(name) ? name : null
-}
-
-// Flutter gen-l10n uses the key verbatim as the AppLocalizations getter (D21).
-export function isDartIdentifier(key: string): boolean {
-  return DART_IDENTIFIER.test(key)
-}
-
 // Words a placeholder variable cannot be called in each target language (reserved words, literals and, for Angular
-// templates, the expression keywords). ReRune allows them as placeholder names (`class`, `default`, `in`, `is`).
+// templates, the expression keywords). ReRune allows them as placeholder names (`class`, `default`, `in`, `is`) and
+// as key names, which are the getter (Flutter) or R.string field (Android) on two platforms.
 const JS_RESERVED = [
   "await", "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "enum",
   "export", "extends", "false", "finally", "for", "function", "if", "implements", "import", "in", "instanceof",
@@ -126,6 +116,16 @@ const DART_RESERVED = [
   "this", "throw", "true", "try", "var", "void", "while", "with", "yield",
 ]
 
+// Java keywords and literals (plus `_`): aapt2 refuses them as resource names, since R would get a field Java can't
+// declare.
+const JAVA_RESERVED = new Set([
+  "_", "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const", "continue", "default",
+  "do", "double", "else", "enum", "extends", "false", "final", "finally", "float", "for", "goto", "if", "implements",
+  "import", "instanceof", "int", "interface", "long", "native", "new", "null", "package", "private", "protected",
+  "public", "return", "short", "static", "strictfp", "super", "switch", "synchronized", "this", "throw", "throws",
+  "transient", "true", "try", "void", "volatile", "while",
+])
+
 const RESERVED: Record<CodegenPlatform, ReadonlySet<string>> = {
   "react-i18next": new Set(JS_RESERVED),
   angular: new Set(JS_RESERVED.concat(["as", "undefined"])),
@@ -137,6 +137,24 @@ const RESERVED: Record<CodegenPlatform, ReadonlySet<string>> = {
 // Kotlin also reserves every name made only of underscores.
 function isReserved(platform: CodegenPlatform, name: string): boolean {
   return RESERVED[platform].has(name) || (platform === "android" && /^_+$/.test(name))
+}
+
+// Android: R.string names are the key with "." → "_" (aapt does the same); anything else must be a Java identifier
+// that is not a Java keyword or literal, and not only underscores (Kotlin can't name those).
+export function androidResourceName(key: string): string | null {
+  const name = key.replace(/\./g, "_")
+  return ANDROID_RESOURCE_NAME.test(name) && !JAVA_RESERVED.has(name) && !/^_+$/.test(name) ? name : null
+}
+
+// The R.string field in Kotlin: a Kotlin keyword that Java allows (`fun`, `when`, `object`…) is escaped with backticks.
+function kotlinResourceField(name: string): string {
+  return RESERVED.android.has(name) ? "`" + name + "`" : name
+}
+
+// Flutter gen-l10n uses the key verbatim as the AppLocalizations getter (D21), so it must be a Dart identifier that
+// is not a reserved word (`continue`, `new`, `default`…).
+export function isDartIdentifier(key: string): boolean {
+  return DART_IDENTIFIER.test(key) && !RESERVED.flutter.has(key)
 }
 
 // Variable names for the placeholders, in ReRune order. ReRune names are identifiers already; anything else (an
@@ -214,10 +232,11 @@ export function snippetLines(platform: CodegenPlatform, key: SnippetKey): string
       return [args.length === 0 ? getter : getter + "(" + list + ")"]
     }
     case "android": {
-      const resource = androidResourceName(key.name)
-      if (resource === null) {
+      const name = androidResourceName(key.name)
+      if (name === null) {
         return ['// "' + escapeKotlin(key.name) + '" is not a valid Android resource name']
       }
+      const resource = kotlinResourceField(name)
       if (args.length > 0) {
         return ["stringResource(R.string." + resource + ", " + list + ")"]
       }
