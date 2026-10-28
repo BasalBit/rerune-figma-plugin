@@ -1,6 +1,6 @@
 import type { FigmaLanguage } from "../../shared/api-types"
 import type { NodeError, PreviewInfo, ResolveSource, ScannedNode, Scope } from "../../shared/messages"
-import { isWarning, LANGUAGE_COPY_MESSAGES } from "../../shared/node-errors"
+import { isWarning, LANGUAGE_COPY_PER_LANGUAGE } from "../../shared/node-errors"
 import type { OverflowItem, OverflowKind } from "../../shared/overflow"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
@@ -360,11 +360,12 @@ export function selectedFrames(nodes: readonly ScannedNode[]): { id: string; nam
 }
 
 // Copies of a frame made by one language-copies message: none when the frame was refused as a whole (any error on
-// the frame's id other than "Figma couldn't copy this frame."), else one per language minus the languages whose
-// copy Figma refused.
+// the frame's id other than a per-language one), else one per language minus the languages that got no copy (Figma
+// refused it: "Figma couldn't copy this frame."; the frame was deleted during the run: "The frame was deleted before
+// this copy was made.", one per language left).
 export function copiesMade(frameId: string, languages: number, errors: readonly NodeError[]): number {
   const own = errors.filter((error) => error.nodeId === frameId)
-  if (own.some((error) => error.message !== LANGUAGE_COPY_MESSAGES.failed)) {
+  if (own.some((error) => !LANGUAGE_COPY_PER_LANGUAGE.includes(error.message))) {
     return 0
   }
   return Math.max(0, languages - own.length)

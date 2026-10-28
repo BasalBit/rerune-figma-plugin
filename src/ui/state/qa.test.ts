@@ -449,6 +449,21 @@ describe("makeLanguageCopies (§7.18.4)", () => {
     expect(result.errors.map((error) => error.nodeId)).toEqual(["8001:1", "20:1"])
   })
 
+  it("counts only the copies made when a frame is deleted during the run", async () => {
+    const removed = { code: "node_not_found" as const, message: LANGUAGE_COPY_MESSAGES.removed }
+    const main = fakeMain({
+      copies: (message) =>
+        message.frameIds[0] === "10:1"
+          ? { done: 2, errors: [{ nodeId: "10:1", ...removed }] }
+          : { done: 0, errors: [{ nodeId: "20:1", ...removed }, { nodeId: "20:1", ...removed }] },
+    })
+    const result = await makeLanguageCopies(copiesDeps(main, fakeApi(CATALOG), [PAGE[0], PAGE[3]]), COPIES_REQUEST)
+    // Checkout got its de copy before it was deleted; Profile was deleted before any copy.
+    expect([result.made, result.framesCopied]).toEqual([1, 1])
+    expect(result.errors).toEqual([{ nodeId: "10:1", ...removed }])
+    expect(result.refused).toEqual([{ nodeId: "20:1", ...removed }, { nodeId: "20:1", ...removed }])
+  })
+
   it("refuses a frame whose every language failed, and one whose page couldn't be loaded", async () => {
     const failed = { code: "write_failed" as const, message: LANGUAGE_COPY_MESSAGES.failed }
     const main = fakeMain({
@@ -489,6 +504,13 @@ describe("makeLanguageCopies (§7.18.4)", () => {
     ])
     expect(copiesMade("10:1", 3, [])).toBe(3)
     expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "write_failed", message: LANGUAGE_COPY_MESSAGES.failed }])).toBe(2)
+    // The frame was deleted during the run: one error per language left, the copies made before still count.
+    const removed = { nodeId: "10:1", code: "node_not_found" as const, message: LANGUAGE_COPY_MESSAGES.removed }
+    expect(copiesMade("10:1", 3, [removed, removed])).toBe(1)
+    expect(copiesMade("10:1", 3, [removed, removed, removed])).toBe(0)
+    expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "write_failed", message: LANGUAGE_COPY_MESSAGES.failed }, removed])).toBe(1)
+    // A frame not found when the run started is refused as a whole.
+    expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "node_not_found", message: "Layer not found. It may be hidden or deleted." }])).toBe(0)
     expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "preview_active", message: LANGUAGE_COPY_MESSAGES.previewing }])).toBe(0)
     expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "node_not_found", message: "Layer not found." }])).toBe(0)
     expect(copiesMade("10:1", 3, [{ nodeId: "10:1", code: "write_failed", message: LANGUAGE_COPY_MESSAGES.pageNotLoaded }])).toBe(0)

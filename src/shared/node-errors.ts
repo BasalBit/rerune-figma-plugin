@@ -20,16 +20,21 @@ export const NODE_ERROR_MESSAGES: Record<NodeErrorCode, string> = {
 }
 
 // language-copies (§7.18.4, D32): why a frame got no copies (NodeError on the frame's id) and which part of a copy
-// kept the source text (on the copy's layer). They travel as NodeError messages with the closest code.
+// kept the source text (on the copy's layer). They travel as NodeError messages with the closest code. `failed` and
+// `removed` are sent once per language that got no copy (LANGUAGE_COPY_PER_LANGUAGE); the others refuse the frame.
 export const LANGUAGE_COPY_MESSAGES = {
   component: "Language copies work on frames; place an instance in a frame first.",
   notFrame: "Language copies work on top-level frames and instances.",
   alreadyCopy: "This frame is already a language copy.",
   previewing: "Reset previews first.",
   failed: "Figma couldn't copy this frame.",
+  removed: "The frame was deleted before this copy was made.",
   pageNotLoaded: "Figma couldn't load this frame's page.",
   mismatch: "This part of the copy differs from the original, so it kept the source text.",
 } as const
+
+// Messages on a frame's id that stand for one language without a copy (the frame's other languages may have one).
+export const LANGUAGE_COPY_PER_LANGUAGE: readonly string[] = [LANGUAGE_COPY_MESSAGES.failed, LANGUAGE_COPY_MESSAGES.removed]
 
 // Warnings: the write happened, but the result is not exact. They do not make an op-result fail.
 export const NODE_WARNING_CODES: readonly NodeErrorCode[] = ["mixed_styles_flattened", "override_kept"]

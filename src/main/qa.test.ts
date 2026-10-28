@@ -527,6 +527,38 @@ describe("language-copies (§7.18.4, D32)", () => {
     }
   })
 
+  it("reports each language left without a copy when the frame is deleted during the run", async () => {
+    const { frame } = checkoutFrame()
+    const page = figmaMock.currentPage
+    onPage(figmaMock, [frame])
+    const load = figmaMock.loadFontAsync.getMockImplementation() as (font: unknown) => Promise<void>
+    // The user deletes the frame while the first copy's text is written (the run yields to the canvas).
+    figmaMock.loadFontAsync.mockImplementationOnce(async (font: unknown) => {
+      frame.remove()
+      return load(font)
+    })
+    const requests = [copyRequest("de", { "1:2": "Kasse" }), copyRequest("it", { "1:2": "Cassa" }), copyRequest("fr", { "1:2": "Caisse" })]
+    const outcome = await makeLanguageCopies(["1:1"], requests, 1)
+    const removed = { nodeId: "1:1", code: "node_not_found", message: LANGUAGE_COPY_MESSAGES.removed }
+    expect(outcome).toEqual({ done: 1, errors: [removed, removed] })
+    expect(page.allChildren.map((node) => node.name)).toEqual(["Checkout · de"])
+  })
+
+  it("reports every language when the frame is deleted before its first copy", async () => {
+    const { frame } = checkoutFrame()
+    onPage(figmaMock, [frame])
+    // Deleted while main checked the frames for previews.
+    const texts = vi.spyOn(frame, "findAllWithCriteria").mockImplementation(() => {
+      frame.remove()
+      return []
+    })
+    const outcome = await makeLanguageCopies(["1:1"], [copyRequest("de", { "1:2": "Kasse" }), copyRequest("it", { "1:2": "Cassa" })], 1)
+    texts.mockRestore()
+    const removed = { nodeId: "1:1", code: "node_not_found", message: LANGUAGE_COPY_MESSAGES.removed }
+    expect(outcome).toEqual({ done: 0, errors: [removed, removed] })
+    expect(figmaMock.currentPage.allChildren).toEqual([])
+  })
+
   it("leaves no half-made copy when Figma refuses to place it", async () => {
     const { frame } = checkoutFrame()
     const page = figmaMock.currentPage

@@ -386,17 +386,19 @@ async function writeCopyText(node: TextNode, text: string): Promise<"written" | 
 }
 
 // One copy of `frame` for language number `index` (0-based): inserted right after the original (and the copies made
-// before it) in the same parent, so a frame inside a section stays in it; placed to the right of the original.
-async function copyFrame(frame: CopySource, request: LanguageCopyRequest, index: number, now: number): Promise<OpOutcome> {
-  const parent = frame.parent
+// before it) in the same parent, so a frame inside a section stays in it; placed to the right of the original. A frame
+// deleted meanwhile (the canvas stays usable during the run) gets no copy and `removed` on its id (`frameId`, read
+// before the run: a removed node's properties may not be readable).
+async function copyFrame(frameId: string, frame: CopySource, request: LanguageCopyRequest, index: number, now: number): Promise<OpOutcome> {
+  const parent = frame.removed ? null : frame.parent
   if (parent === null) {
-    return { done: 0, errors: [nodeError(frame.id, "node_not_found")] }
+    return { done: 0, errors: [nodeError(frameId, "node_not_found", LANGUAGE_COPY_MESSAGES.removed)] }
   }
   let copy: CopySource
   try {
     copy = frame.clone()
   } catch {
-    return { done: 0, errors: [nodeError(frame.id, "write_failed", LANGUAGE_COPY_MESSAGES.failed)] }
+    return { done: 0, errors: [nodeError(frameId, "write_failed", LANGUAGE_COPY_MESSAGES.failed)] }
   }
   try {
     parent.insertChild(parent.children.indexOf(frame) + 1 + index, copy)
@@ -406,7 +408,7 @@ async function copyFrame(frame: CopySource, request: LanguageCopyRequest, index:
     copy.setSharedPluginData(
       PLUGIN_DATA_NAMESPACE,
       DATA_KEYS.langCopy,
-      serializeLangCopy({ v: 1, nid: copy.id, lang: request.lang, source: request.source, variationOptionId: request.variationOptionId, sourceFrameId: frame.id, createdAt: now }),
+      serializeLangCopy({ v: 1, nid: copy.id, lang: request.lang, source: request.source, variationOptionId: request.variationOptionId, sourceFrameId: frameId, createdAt: now }),
     )
   } catch {
     try {
@@ -414,7 +416,7 @@ async function copyFrame(frame: CopySource, request: LanguageCopyRequest, index:
     } catch {
       // Nothing more to undo.
     }
-    return { done: 0, errors: [nodeError(frame.id, "write_failed", LANGUAGE_COPY_MESSAGES.failed)] }
+    return { done: 0, errors: [nodeError(frameId, "write_failed", LANGUAGE_COPY_MESSAGES.failed)] }
   }
   const errors: NodeError[] = []
   const mapping = await mapCopyTexts(frame, copy)
@@ -452,7 +454,7 @@ async function copyFrame(frame: CopySource, request: LanguageCopyRequest, index:
 export function makeLanguageCopies(frameIds: readonly string[], copies: readonly LanguageCopyRequest[], now: number): Promise<OpOutcome> {
   return withInvisibleInstanceChildren(async () => {
     const errors: NodeError[] = []
-    const frames: CopySource[] = []
+    const frames: { id: string; node: CopySource }[] = []
     const seen = new Set<string>()
     for (const frameId of frameIds) {
       if (seen.has(frameId)) {
@@ -463,13 +465,13 @@ export function makeLanguageCopies(frameIds: readonly string[], copies: readonly
       if ("error" in checked) {
         errors.push(checked.error)
       } else {
-        frames.push(checked.frame)
+        frames.push({ id: frameId, node: checked.frame })
       }
     }
     const caches = createNodeCaches()
     const previewing: NodeError[] = []
     for (const frame of frames) {
-      if (await showsPreview(frame, caches)) {
+      if (!frame.node.removed && (await showsPreview(frame.node, caches))) {
         previewing.push(nodeError(frame.id, "preview_active", LANGUAGE_COPY_MESSAGES.previewing))
       }
     }
@@ -479,10 +481,9 @@ export function makeLanguageCopies(frameIds: readonly string[], copies: readonly
     let done = 0
     for (const frame of frames) {
       for (let index = 0; index < copies.length; index++) {
-        if (frame.removed) {
-          break
-        }
-        const outcome = await copyFrame(frame, copies[index], index, now)
+        // The canvas stays usable while copies are written, so the frame can be deleted (or undone) meanwhile: each
+        // language left without a copy is reported (`removed`), so the UI counts only the copies made.
+        const outcome = await copyFrame(frame.id, frame.node, copies[index], index, now)
         done += outcome.done
         errors.push(...outcome.errors)
       }
