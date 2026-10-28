@@ -12,12 +12,12 @@ import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural
 import { linkSyncWarning, type LinkSyncResult } from "../state/link-sync"
 import { groupErrors, type BatchOutcome } from "../state/ops"
 import {
-  applyTakeReRune,
   canPull,
   canSubmit,
   executeOverwrite,
   executePulls,
   executePush,
+  executeTakeReRune,
   lookUpNames,
   preparePush,
   pushCounts,
@@ -264,9 +264,11 @@ export function PushScreen(props: PushScreenProps) {
           await uploadScreenshots(affectedFrames(next.affectedNodeIds, prepared.context.nodes))
           return
         }
-        const written = await applyTakeReRune({ api: props.api, bus: props.bus }, conflict, prepared.context.nodes)
-        merge({ writeErrors: written.errors })
+        // Take ReRune text changes the layers as it does in the plan: link sync and screenshots (§7.13 rule 11).
+        const taken = await executeTakeReRune(pushDeps(), conflict, prepared.context)
+        merge({ writeErrors: taken.errors, linkSync: taken.linkSync })
         setResolved((current) => ({ ...current, [conflict.ref]: "done" }))
+        await uploadScreenshots(affectedFrames(taken.affectedNodeIds, prepared.context.nodes))
       } catch (caught) {
         setError(userMessage(caught))
         setResolved((current) => {

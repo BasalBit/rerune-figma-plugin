@@ -13,6 +13,7 @@ import {
   executeOverwrite,
   executePulls,
   executePush,
+  executeTakeReRune,
   mergeLinkSync,
   overwriteChunk,
   preparePush,
@@ -395,6 +396,45 @@ describe("after-push choices and pulls", () => {
       { nodeId: "1:3", text: "Checkout!", src: src("Checkout!") },
       { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!") },
     ])
+  })
+
+  it("Take ReRune text after a push link-syncs the layers it changed, for their screenshots too (§7.13 rule 11)", async () => {
+    const conflictNodes = ["1:3", "I7:1;1:5", "I8:1;1:5", "1:9"]
+    const nodes = new Map([
+      ["1:3", linkedNode("1:3", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout" })],
+      ["I7:1;1:5", linkedNode("I7:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
+      ["I8:1;1:5", linkedNode("I8:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
+      ["1:9", linkedNode("1:9", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout" })],
+    ])
+    const taken = { ...conflict, nodeIds: conflictNodes }
+    const syncLinks = vi.fn(async (nodeIds: readonly string[]) => ({ upserted: nodeIds.length, removed: 0, rejected: [], error: null }))
+    const main = fakeMain()
+    const run = await executeTakeReRune({ api: { push: vi.fn() }, bus: main.bus, syncLinks }, taken, { nodes })
+    expect(main.writes).toEqual([
+      {
+        type: "text-apply",
+        requestId: expect.any(String),
+        items: [
+          { nodeId: "1:3", text: "Checkout!", src: src("Checkout!") },
+          { nodeId: "1:9", text: "Checkout!", src: src("Checkout!") },
+          { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!") },
+        ],
+      },
+    ])
+    expect(run.affectedNodeIds).toEqual(["1:3", "I7:1;1:5", "1:5", "I8:1;1:5", "1:9"])
+    expect(syncLinks).toHaveBeenCalledWith(run.affectedNodeIds)
+    expect(run.linkSync).toEqual({ upserted: 5, removed: 0, rejected: [], error: null })
+
+    // A failed write on the inherited representative leaves its whole group (both instances, the main) unchanged;
+    // a warning still counts as written.
+    const failing = fakeMain(() => [
+      { nodeId: "I7:1;1:5", code: "remote_component", message: "Update this text in the library file." },
+      { nodeId: "1:9", code: "mixed_styles_flattened", message: "Some text styles couldn't be kept." },
+    ])
+    const partial = await executeTakeReRune({ api: { push: vi.fn() }, bus: failing.bus }, taken, { nodes })
+    expect(partial.affectedNodeIds).toEqual(["1:3", "1:9"])
+    expect(partial.errors.map((error) => error.code)).toEqual(["remote_component", "mixed_styles_flattened"])
+    expect(partial.linkSync).toBeNull()
   })
 
   it("pulls ReRune text and refreshes renamed key names only where the write worked", async () => {

@@ -500,8 +500,40 @@ export function takeReRuneItems(conflict: PushFollowUp["conflicts"][number], nod
   return writeTargets(targets).map((nodeId) => ({ nodeId, text: conflict.currentText, src: src(conflict.currentText) }))
 }
 
-export async function applyTakeReRune(deps: PushDeps, conflict: PushFollowUp["conflicts"][number], nodes: Map<string, ScannedNode>): Promise<BatchOutcome> {
-  return textApply(deps, takeReRuneItems(conflict, nodes))
+export interface TakeReRuneRun {
+  errors: NodeError[]
+  linkSync: LinkSyncResult | null
+  // Layers that now show ReRune's text (and the local main component nodes written for inherited ones).
+  affectedNodeIds: string[]
+}
+
+// "Take ReRune text" on a conflict the push reported (§7.13 rules 10 and 11). As in the plan (executePush), the
+// layers given ReRune's text count as affected: they are link-synced, and the caller uploads the screenshots of
+// their frames. A layer whose write failed, or whose main component's write failed, changed nothing and is left out.
+export async function executeTakeReRune(deps: PushDeps, conflict: PushFollowUp["conflicts"][number], context: Pick<PlanContext, "nodes">): Promise<TakeReRuneRun> {
+  const written = await textApply(deps, takeReRuneItems(conflict, context.nodes))
+  const writeGroup = (node: ScannedNode) => (node.linkState === "inherited" && node.link !== null ? node.link.nid : node.nodeId)
+  const failed = new Set<string>()
+  for (const error of written.errors) {
+    if (!isWarning(error)) {
+      const node = context.nodes.get(error.nodeId)
+      failed.add(node === undefined ? error.nodeId : writeGroup(node))
+    }
+  }
+  const affected = new Set<string>()
+  for (const nodeId of conflict.nodeIds) {
+    const node = context.nodes.get(nodeId)
+    if (node === undefined || failed.has(writeGroup(node))) {
+      continue
+    }
+    affected.add(nodeId)
+    // An inherited layer's text is written on its local main component's node (§7.13 rule 5).
+    if (node.linkState === "inherited" && node.link !== null) {
+      affected.add(node.link.nid)
+    }
+  }
+  const affectedNodeIds = [...affected]
+  return { errors: written.errors, linkSync: await syncPushedLinks(deps, affectedNodeIds), affectedNodeIds }
 }
 
 // Pulls wait for previews to be reset, like the push (§7.13 rules 1 and 5, §7.14 pull): a layer that previews
