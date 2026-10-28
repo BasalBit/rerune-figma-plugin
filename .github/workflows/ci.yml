@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Check, test and pack both release variants
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+      # Release with Dev Mode (editorType figma + dev, inspect, codegen, vscode).
+      - run: npm run zip
+      - run: node scripts/check-build.mjs full
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rerune-figma-plugin
+          path: rerune-figma-plugin.zip
+          if-no-files-found: error
+
+      # Design-only release (editorType figma only): the one to ship until Dev Mode is tested on a paid Figma plan.
+      - run: npm run zip:design-only
+      - run: node scripts/check-build.mjs design-only
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rerune-figma-plugin-design-only
+          path: rerune-figma-plugin-design-only.zip
+          if-no-files-found: error
+
+      # The development build must compile too (it adds the ReRune diagnostics codegen language).
+      - run: npm run build:dev
