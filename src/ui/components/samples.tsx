@@ -1,8 +1,26 @@
 import { Dropdown, Textbox } from "@create-figma-plugin/ui"
 import { h } from "preact"
-import { useEffect, useRef, useState } from "preact/hooks"
-import type { PluralChoice } from "../../shared/icu"
-import { AUTOMATIC, categoryOptions, chosenCategory, projectSamples, sameSamples, sampleHint, samplesSummary, withDrafts, type SamplePlaceholder } from "../state/samples"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
+import type { FigmaResolvedKey } from "../../shared/api-types"
+import type { PluralChoice, PluralShape } from "../../shared/icu"
+import type { ScannedNode } from "../../shared/messages"
+import type { FigmaApi } from "../api/figma-api"
+import {
+  AUTOMATIC,
+  categoryOptions,
+  chosenCategory,
+  knownPluralShapes,
+  loadPluralShapes,
+  pluralKeyIds,
+  projectSamples,
+  sameSamples,
+  sampleHint,
+  samplesSummary,
+  shapesKey,
+  withDrafts,
+  type SamplePlaceholder,
+  type ShapeRequest,
+} from "../state/samples"
 import type { Prefs } from "../state/settings"
 import { Small, styles, TextButton } from "./ui"
 
@@ -48,6 +66,53 @@ export function useSampleDrafts(projectId: string, prefs: Prefs, onPrefs: (patch
       commit()
     },
   }
+}
+
+export interface PluralShapesInput {
+  api: Pick<FigmaApi, "resolveKeys">
+  projectId: string
+  nodes: readonly ScannedNode[]
+  resolved: ReadonlyMap<string, FigmaResolvedKey>   // the workspace's main-language draft values
+  mainLanguage: string
+  request: ShapeRequest | null                        // the language the preview renders; null: none picked
+}
+
+// The plural forms of the language the preview renders (§7.18.5), per plural variable of the keys in scope, so the
+// selector offers that language's own forms with the counts they render: the main language's draft comes from the
+// workspace, any other language, source or variation from one E12 resolve, kept while the screen is open. null while
+// loading, after a failed load and without a language: the selector then lists the category names without counts.
+export function usePluralShapes(input: PluralShapesInput): ReadonlyMap<string, PluralShape> | null {
+  const { api, projectId, nodes, resolved, mainLanguage, request } = input
+  const loaded = useRef(new Map<string, ReadonlyMap<string, PluralShape>>())
+  const [, setLoads] = useState(0)
+  const known = useMemo(
+    () => (request === null ? null : knownPluralShapes(nodes, projectId, resolved, mainLanguage, request)),
+    [nodes, projectId, resolved, mainLanguage, request?.lang, request?.source, request?.variationOptionId],
+  )
+  const keyIds = useMemo(() => pluralKeyIds(nodes, projectId, resolved, mainLanguage), [nodes, projectId, resolved, mainLanguage])
+  const key = request === null || known !== null ? null : shapesKey(request, keyIds)
+  useEffect(() => {
+    if (key === null || request === null || loaded.current.has(key)) {
+      return
+    }
+    let live = true
+    loadPluralShapes(api, nodes, projectId, resolved, mainLanguage, request).then(
+      (shapes) => {
+        loaded.current.set(key, shapes)
+        if (live) setLoads((count) => count + 1)
+      },
+      () => {
+        // The selector keeps the category names; the next change of language, source or variation tries again.
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [key])
+  if (known !== null) {
+    return known
+  }
+  return key === null ? null : loaded.current.get(key) ?? null
 }
 
 export interface SamplesSectionProps {

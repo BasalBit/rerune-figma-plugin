@@ -6,7 +6,7 @@ import type { ResolveSource, Scope } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
-import { SamplesSection, useSampleDrafts } from "../components/samples"
+import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
 import { ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import {
@@ -73,9 +73,19 @@ export function PreviewScreen(props: PreviewScreenProps) {
   const [applied, setApplied] = useState<Applied | null>(null)
   const [showInherited, setShowInherited] = useState(false)
   const sampleDrafts = useSampleDrafts(project.id, prefs, props.onPrefs)
+  const nodes = useMemo(() => props.state.result?.nodes ?? [], [props.state.result])
+  // The plural selector lists the forms of the language previewed, with the counts they render (§7.18.5).
+  const shapes = usePluralShapes({
+    api: props.api,
+    projectId: project.id,
+    nodes,
+    resolved: props.state.resolved,
+    mainLanguage: project.main_language,
+    request: lang === null || keysMode ? null : { lang, source, variationOptionId: variation },
+  })
   const placeholders = useMemo(
-    () => samplePlaceholders(props.state.result?.nodes ?? [], project.id, props.state.resolved, project.main_language),
-    [props.state.result, props.state.resolved, project.id, project.main_language],
+    () => samplePlaceholders(nodes, project.id, props.state.resolved, project.main_language, shapes),
+    [nodes, props.state.resolved, project.id, project.main_language, shapes],
   )
   const activePlural = activePluralChoice(props.pluralChoice, project.id, lang)
 

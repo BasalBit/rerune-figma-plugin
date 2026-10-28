@@ -1,7 +1,8 @@
-import type { FigmaResolvedKey, MessagePart } from "../../shared/api-types"
+import type { FigmaApi } from "../api/figma-api"
+import type { FigmaResolvedKey, MessagePart, TranslationContent } from "../../shared/api-types"
 import { choiceCount, formatCount, isExactCategoryName, NO_PLURAL_SHAPE, PLURAL_CATEGORY_ORDER, placeholderNames, pluralCategories, type PluralChoice, type PluralShape } from "../../shared/icu"
-import type { ScannedNode } from "../../shared/messages"
-import { previewTargets } from "./preview"
+import type { ResolveSource, ScannedNode } from "../../shared/messages"
+import { previewTargets, resolveForPreview } from "./preview"
 
 // Sample values and the plural category selector (§7.18.5). Samples are kept per project in prefs
 // (`samples: { [projectId]: { [placeholder]: string } }`, §7.19); the plural choice is kept for the session.
@@ -12,7 +13,9 @@ export interface SamplePlaceholder {
   name: string
   kind: SampleKind      // plural: a plural variable; select: a select/choice variable; text: any other placeholder
   options: string[]     // select/choice selectors, for the hint
-  plural: PluralShape | null  // a plural variable's form selectors (all its blocks) and offset (its first block's)
+  // A plural variable's form selectors (all its blocks) and offset (its first block's) in the language the preview
+  // renders (pluralShapes); null for other kinds, and while that language's forms are not known.
+  plural: PluralShape | null
 }
 
 // Plural choice of the session, remembered for the project it was made in.
@@ -31,13 +34,54 @@ function walk(parts: readonly MessagePart[], visit: (part: MessagePart) => void)
   }
 }
 
+function keyIdsInScope(nodes: readonly ScannedNode[], projectId: string): string[] {
+  return [...new Set(previewTargets(nodes, projectId).map((node) => (node.link as NonNullable<ScannedNode["link"]>).id))]
+}
+
+function contentIn(key: FigmaResolvedKey | undefined, lang: string): TranslationContent | null {
+  if (key === undefined || key.type !== "key") {
+    return null
+  }
+  const value = key.values.find((entry) => entry.lang === lang)
+  return value !== undefined && value.present ? value.content : null
+}
+
+// The plural variables of the keys in scope as `lang` writes them (§7.18.5): per variable, the selectors of all its
+// plural blocks in that language's values and the offset of the first. The selector offers and counts what this
+// language's own forms render (a translation may have an exact `zero` form the main language lacks, or none).
+export function pluralShapes(nodes: readonly ScannedNode[], projectId: string, resolved: ReadonlyMap<string, FigmaResolvedKey>, lang: string): Map<string, PluralShape> {
+  const shapes = new Map<string, PluralShape>()
+  for (const keyId of keyIdsInScope(nodes, projectId)) {
+    const content = contentIn(resolved.get(keyId), lang)
+    if (content === null || content.message === undefined || content.message === null) {
+      continue
+    }
+    walk(content.message.parts, (part) => {
+      const variant = part.variant
+      if (variant === undefined || variant === null || variant.kind !== "plural") {
+        return
+      }
+      const current = shapes.get(variant.variable)
+      const selectors = current === undefined ? [] : current.selectors.slice()
+      for (const form of variant.forms.slice().sort((a, b) => a.order - b.order)) {
+        if (!selectors.includes(form.selector)) selectors.push(form.selector)
+      }
+      shapes.set(variant.variable, { selectors, offset: current === undefined ? variant.offset ?? 0 : current.offset })
+    })
+  }
+  return shapes
+}
+
 // The placeholders of the keys linked in the scanned layers, in layer order: the key's catalog (E12) plus the
 // variables of its main-language message (a plural or select variable is in the catalog too; the walk tells which).
+// A plural variable's shape comes from `rendered` (pluralShapes of the language the preview renders; a variable it
+// lacks has no forms there), is unknown with `rendered` null (still loading), and is the main language's without it.
 export function samplePlaceholders(
   nodes: readonly ScannedNode[],
   projectId: string,
   resolved: ReadonlyMap<string, FigmaResolvedKey>,
   mainLanguage: string,
+  rendered?: ReadonlyMap<string, PluralShape> | null,
 ): SamplePlaceholder[] {
   const found = new Map<string, SamplePlaceholder>()
   const add = (name: string, kind: SampleKind, options: readonly string[] = [], plural: PluralShape | null = null) => {
@@ -60,14 +104,12 @@ export function samplePlaceholders(
       current.plural = { selectors, offset: current.plural === null ? plural.offset : current.plural.offset }
     }
   }
-  const keyIds = [...new Set(previewTargets(nodes, projectId).map((node) => (node.link as NonNullable<ScannedNode["link"]>).id))]
-  for (const keyId of keyIds) {
+  for (const keyId of keyIdsInScope(nodes, projectId)) {
     const key = resolved.get(keyId)
     if (key === undefined || key.type !== "key") {
       continue
     }
-    const main = key.values.find((value) => value.lang === mainLanguage)
-    const content = main !== undefined && main.present ? main.content : null
+    const content = contentIn(key, mainLanguage)
     if (content !== null && content.message !== undefined && content.message !== null) {
       walk(content.message.parts, (part) => {
         if (part.arg !== undefined) {
@@ -89,7 +131,71 @@ export function samplePlaceholders(
       add(placeholder.name, "text")
     }
   }
-  return [...found.values()]
+  const placeholders = [...found.values()]
+  if (rendered === undefined) {
+    return placeholders
+  }
+  return placeholders.map((placeholder) =>
+    placeholder.kind !== "plural" ? placeholder : { ...placeholder, plural: rendered === null ? null : rendered.get(placeholder.name) ?? NO_PLURAL_SHAPE },
+  )
+}
+
+// What the plural selector renders with (§7.18.5): the language, source and variation of the preview.
+export interface ShapeRequest { lang: string; source: ResolveSource; variationOptionId: string | null }
+
+// The keys in scope whose main-language message has a plural block: the only ones whose forms the selector needs.
+export function pluralKeyIds(nodes: readonly ScannedNode[], projectId: string, resolved: ReadonlyMap<string, FigmaResolvedKey>, mainLanguage: string): string[] {
+  return keyIdsInScope(nodes, projectId).filter((keyId) => {
+    const content = contentIn(resolved.get(keyId), mainLanguage)
+    let plural = false
+    if (content !== null && content.message !== undefined && content.message !== null) {
+      walk(content.message.parts, (part) => {
+        plural = plural || part.variant?.kind === "plural"
+      })
+    }
+    return plural
+  })
+}
+
+// Identifies one load of a language's plural forms (the keys, language, source and variation).
+export function shapesKey(request: ShapeRequest, keyIds: readonly string[]): string {
+  return [request.lang, request.source, request.variationOptionId ?? "", keyIds.slice().sort().join(",")].join("\u0000")
+}
+
+// The plural forms of `request.lang` for the keys in scope, without a request when they are already loaded: the main
+// language's draft without a variation is what the workspace resolved. null when they must be loaded (loadPluralShapes).
+export function knownPluralShapes(
+  nodes: readonly ScannedNode[],
+  projectId: string,
+  resolved: ReadonlyMap<string, FigmaResolvedKey>,
+  mainLanguage: string,
+  request: ShapeRequest,
+): Map<string, PluralShape> | null {
+  if (pluralKeyIds(nodes, projectId, resolved, mainLanguage).length === 0) {
+    return new Map()
+  }
+  if (request.lang === mainLanguage && request.source === "draft" && request.variationOptionId === null) {
+    return pluralShapes(nodes, projectId, resolved, mainLanguage)
+  }
+  return null
+}
+
+// Loads the plural forms of `request.lang` with one E12 resolve of the keys in scope that have a plural variable.
+export async function loadPluralShapes(
+  api: Pick<FigmaApi, "resolveKeys">,
+  nodes: readonly ScannedNode[],
+  projectId: string,
+  resolved: ReadonlyMap<string, FigmaResolvedKey>,
+  mainLanguage: string,
+  request: ShapeRequest,
+): Promise<Map<string, PluralShape>> {
+  const known = knownPluralShapes(nodes, projectId, resolved, mainLanguage, request)
+  if (known !== null) {
+    return known
+  }
+  const keyIds = pluralKeyIds(nodes, projectId, resolved, mainLanguage)
+  const values = await resolveForPreview(api, projectId, keyIds, { lang: request.lang, mode: request.source, variationOptionId: request.variationOptionId })
+  return pluralShapes(nodes, projectId, values, request.lang)
 }
 
 export function projectSamples(samples: Record<string, Record<string, string>>, projectId: string): Record<string, string> {
@@ -148,10 +254,15 @@ export const AUTOMATIC = "__automatic__"
 
 // Options of the plural selector for a plural variable: Automatic, then in CLDR order the language's categories
 // and the variable's zero / one / two forms the language lacks (they stand for exactly 0, 1 and 2), each with the
-// count the preview shows for it (counts an exact form claims are skipped, so "other" shows the other form).
-export function categoryOptions(lang: string, shape: PluralShape | null = null): { value: string; text: string }[] {
-  const forms = shape ?? NO_PLURAL_SHAPE
+// count the preview shows for it (counts an exact form claims are skipped, so "other" shows the other form). `shape`
+// is the variable's forms in `lang` (the language rendered); null while they are not known: the language's
+// categories only, without counts.
+export function categoryOptions(lang: string, shape: PluralShape | null = NO_PLURAL_SHAPE): { value: string; text: string }[] {
   const languageCategories = pluralCategories(lang)
+  if (shape === null) {
+    return [{ value: AUTOMATIC, text: "Automatic" }, ...languageCategories.map((category) => ({ value: category, text: category }))]
+  }
+  const forms = shape
   const exact = forms.selectors.filter((selector) => isExactCategoryName(selector) && !languageCategories.includes(selector))
   const categories = [...languageCategories, ...new Set(exact)].sort((a, b) => PLURAL_CATEGORY_ORDER.indexOf(a) - PLURAL_CATEGORY_ORDER.indexOf(b))
   return [

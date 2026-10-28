@@ -1,18 +1,23 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { keyId, linkedNode, OTHER_PROJECT_ID, PROJECT_ID, scannedNode } from "../../../test/fixtures"
-import type { FigmaResolvedKey, TranslationContent } from "../../shared/api-types"
-import { formatCount, renderContent } from "../../shared/icu"
+import type { FigmaResolvedKey, FigmaResolveRequest, FigmaResolveResponse, TranslationContent, VariantForm } from "../../shared/api-types"
+import { formatCount, NO_PLURAL_SHAPE, renderContent } from "../../shared/icu"
 import {
   activePluralChoice,
   AUTOMATIC,
   categoryOptions,
   chosenCategory,
+  knownPluralShapes,
+  loadPluralShapes,
+  pluralKeyIds,
+  pluralShapes,
   projectSamples,
   SAMPLE_VALUE_MAX,
   sameSamples,
   sampleHint,
   samplePlaceholders,
   samplesSummary,
+  shapesKey,
   withDrafts,
   withoutSamples,
   withSample,
@@ -221,5 +226,98 @@ describe("plural selector", () => {
     expect(samplesSummary(placeholders, {}, null, "en")).toBeNull()
     expect(placeholders.map(sampleHint)).toEqual(["Shown as [name] without a sample", "A number, or pick a plural form", "One of: female, other"])
     expect(sampleHint({ name: "x", kind: "select", options: [], plural: null })).toBe("A select value")
+  })
+})
+
+// A plural message on `count` with these forms (`#` → the count).
+function pluralOn(forms: Record<string, string>): TranslationContent {
+  const list: VariantForm[] = Object.entries(forms).map(([selector, text], order) => ({ selector, parts: [{ text }], order }))
+  return { value: "", message: { parts: [{ variant: { kind: "plural", variable: "count", forms: list } }] } }
+}
+
+// A key with one value per language.
+function keyIn(id: string, values: Record<string, TranslationContent>): FigmaResolvedKey {
+  return {
+    ...key(id, null, ["count"]),
+    values: Object.entries(values).map(([lang, content]) => ({ lang, present: true, resolved_lang: lang, inherited: false, variation_applied: false, content, length: 0, exceeds_max_length: false })),
+  }
+}
+
+describe("plural selector of the rendered language (§7.18.5)", () => {
+  const nodes = [
+    linkedNode("1:1", "2 items", { keyId: keyId(1), keyName: "items", syncedText: "2 items" }),
+    linkedNode("1:2", "Hi", { keyId: keyId(2), keyName: "hi", syncedText: "Hi" }),
+  ]
+  const en = pluralOn({ one: "# item", other: "# items" })
+  const deZero = pluralOn({ zero: "Keine", one: "# Element", other: "# Elemente" })
+  const main = new Map([
+    [keyId(1), keyIn(keyId(1), { en })],
+    [keyId(2), keyIn(keyId(2), { en: { value: "Hi" } })],
+  ])
+
+  it("offers the target language's zero form the main language lacks, with the counts its forms render", () => {
+    const shapes = pluralShapes(nodes, PROJECT_ID, new Map([[keyId(1), keyIn(keyId(1), { de: deZero })]]), "de")
+    expect(shapes).toEqual(new Map([["count", { selectors: ["zero", "one", "other"], offset: 0 }]]))
+    const [placeholder] = samplePlaceholders(nodes, PROJECT_ID, main, "en", shapes)
+    expect(placeholder).toEqual({ name: "count", kind: "plural", options: [], plural: { selectors: ["zero", "one", "other"], offset: 0 } })
+    const options = categoryOptions("de", placeholder.plural)
+    expect(options.map((option) => option.text)).toEqual(["Automatic", "zero (0)", "one (1)", "other (2)"])
+    // Every option renders the count and the form it is labelled with.
+    const rendered = options.map((option) => renderContent(deZero, { lang: "de", plural: option.value === AUTOMATIC ? undefined : { variable: "count", category: option.value } }))
+    expect(rendered).toEqual(["2 Elemente", "Keine", "1 Element", "2 Elemente"])
+    expect(chosenCategory(placeholder, "de", { variable: "count", category: "zero" })).toBe("zero")
+    // The main language's shape (the former behaviour) offered no zero and labelled other with 0.
+    expect(categoryOptions("de", samplePlaceholders(nodes, PROJECT_ID, main, "en")[0].plural).map((option) => option.text)).toEqual(["Automatic", "one (1)", "other (0)"])
+  })
+
+  it("does not offer the main language's zero form in a language without it", () => {
+    const enZero = pluralOn({ zero: "No items", one: "# item", other: "# items" })
+    const de = pluralOn({ one: "# Element", other: "# Elemente" })
+    const withZero = new Map([[keyId(1), keyIn(keyId(1), { en: enZero })]])
+    const shapes = pluralShapes(nodes, PROJECT_ID, new Map([[keyId(1), keyIn(keyId(1), { de })]]), "de")
+    const [placeholder] = samplePlaceholders(nodes, PROJECT_ID, withZero, "en", shapes)
+    const options = categoryOptions("de", placeholder.plural)
+    expect(options.map((option) => option.text)).toEqual(["Automatic", "one (1)", "other (0)"])
+    expect(renderContent(de, { lang: "de", plural: { variable: "count", category: "other" } })).toBe("0 Elemente")
+    // A zero picked for English shows as Automatic here.
+    expect(chosenCategory(placeholder, "de", { variable: "count", category: "zero" })).toBeNull()
+  })
+
+  it("lists the category names without counts while the rendered language's forms are not known", () => {
+    const [placeholder] = samplePlaceholders(nodes, PROJECT_ID, main, "en", null)
+    expect(placeholder.plural).toBeNull()
+    expect(categoryOptions("pl", null)).toEqual([
+      { value: AUTOMATIC, text: "Automatic" },
+      { value: "one", text: "one" },
+      { value: "few", text: "few" },
+      { value: "many", text: "many" },
+      { value: "other", text: "other" },
+    ])
+    expect(chosenCategory(placeholder, "pl", { variable: "count", category: "few" })).toBe("few")
+    // A variable the rendered language does not write as a plural has no forms there.
+    expect(samplePlaceholders(nodes, PROJECT_ID, main, "en", new Map())[0].plural).toEqual(NO_PLURAL_SHAPE)
+  })
+
+  it("loads the forms with one resolve of the plural keys in scope, or takes the workspace's main draft", async () => {
+    expect(pluralKeyIds(nodes, PROJECT_ID, main, "en")).toEqual([keyId(1)])
+    const draft = { lang: "en", source: "draft" as const, variationOptionId: null }
+    expect(knownPluralShapes(nodes, PROJECT_ID, main, "en", draft)).toEqual(new Map([["count", { selectors: ["one", "other"], offset: 0 }]]))
+    expect(knownPluralShapes(nodes, PROJECT_ID, main, "en", { ...draft, source: "published" })).toBeNull()
+    expect(knownPluralShapes(nodes, PROJECT_ID, main, "en", { ...draft, lang: "de" })).toBeNull()
+    // No plural key in scope: nothing to load.
+    expect(knownPluralShapes([nodes[1]], PROJECT_ID, main, "en", { ...draft, lang: "de" })).toEqual(new Map())
+
+    const resolveKeys = vi.fn(async (_projectId: string, body: FigmaResolveRequest): Promise<FigmaResolveResponse> => ({
+      source: body.source,
+      variation_option: null,
+      missing_key_ids: [],
+      keys: body.key_ids.map((id) => keyIn(id, { de: deZero })),
+    }))
+    const request = { lang: "de", source: "published" as const, variationOptionId: "v1" }
+    const shapes = await loadPluralShapes({ resolveKeys }, nodes, PROJECT_ID, main, "en", request)
+    expect(resolveKeys).toHaveBeenCalledWith(PROJECT_ID, { key_ids: [keyId(1)], languages: ["de"], source: "published", variation_option_id: "v1" })
+    expect(shapes.get("count")?.selectors).toEqual(["zero", "one", "other"])
+    expect(shapesKey(request, [keyId(2), keyId(1)])).toBe(shapesKey(request, [keyId(1), keyId(2)]))
+    expect(shapesKey(request, [keyId(1)])).not.toBe(shapesKey({ ...request, lang: "it" }, [keyId(1)]))
   })
 })

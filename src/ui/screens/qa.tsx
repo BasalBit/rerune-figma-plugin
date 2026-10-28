@@ -8,7 +8,7 @@ import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { copyText } from "../clipboard"
-import { SamplesSection, useSampleDrafts } from "../components/samples"
+import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
 import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import { buildPseudoPreview, languageLabel, type PseudoBuild, type RenderChoices } from "../state/preview"
@@ -120,13 +120,22 @@ export function QaScreen(props: QaScreenProps) {
   const label = (lang: string) => reportLanguageLabel(lang, project.languages)
   const ordered = project.languages.map((language) => language.code).filter((code) => languages.includes(code))
   const sampleDrafts = useSampleDrafts(project.id, props.prefs, props.onPrefs)
-  const placeholders = useMemo(
-    () => samplePlaceholders(props.state.result?.nodes ?? [], project.id, props.state.resolved, project.main_language),
-    [props.state.result, props.state.resolved, project.id, project.main_language],
-  )
-  // The plural selector lists the forms of the first picked language; other languages use the same pick where they
-  // have that form.
+  // The plural selector lists the forms of the first picked language, with the counts they render there; other
+  // languages use the same pick where they have that form.
   const pluralLang = ordered.length > 0 ? ordered[0] : null
+  const nodes = useMemo(() => props.state.result?.nodes ?? [], [props.state.result])
+  const shapes = usePluralShapes({
+    api: props.api,
+    projectId: project.id,
+    nodes,
+    resolved: props.state.resolved,
+    mainLanguage: project.main_language,
+    request: pluralLang === null ? null : { lang: pluralLang, source, variationOptionId: variation },
+  })
+  const placeholders = useMemo(
+    () => samplePlaceholders(nodes, project.id, props.state.resolved, project.main_language, shapes),
+    [nodes, props.state.resolved, project.id, project.main_language, shapes],
+  )
 
   function toggleLanguage(code: string) {
     onSession({ languages: languages.includes(code) ? languages.filter((entry) => entry !== code) : [...languages, code] })
