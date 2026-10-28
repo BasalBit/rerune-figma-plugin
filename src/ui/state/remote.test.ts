@@ -31,7 +31,8 @@ describe("linkedKeyIds", () => {
 describe("loadRemoteStates", () => {
   it("resolves the main language in chunks of 100 with at most 4 requests in flight", async () => {
     const ids = Array.from({ length: 650 }, (_, i) => keyId(i))
-    const table = new Map(ids.slice(0, 640).map((id, i) => [id, resolvedKey(id, "k" + i, "Text " + i, { max_length: i === 3 ? 10 : null })]))
+    const placeholders = [{ name: "amount", type: "string", format: "" }, { name: "currency", type: "string", format: "" }]
+    const table = new Map(ids.slice(0, 640).map((id, i) => [id, resolvedKey(id, "k" + i, "Text " + i, { max_length: i === 3 ? 10 : null, placeholders: i === 3 ? placeholders : [] })]))
     let inFlight = 0
     let peak = 0
     const resolve = resolver(table)
@@ -49,7 +50,7 @@ describe("loadRemoteStates", () => {
     expect(resolve.mock.calls.every(([, request]) => request.key_ids.length <= 100 && request.source === "draft" && request.languages[0] === "en" && request.variation_option_id === null)).toBe(true)
     expect(peak).toBeLessThanOrEqual(4)
     expect(load.error).toBeNull()
-    expect(load.remote.get(ids[3])).toEqual({ found: true, key: "k3", type: "key", enabled: true, structured: false, mainText: "Text 3", maxLength: 10 })
+    expect(load.remote.get(ids[3])).toEqual({ found: true, key: "k3", type: "key", enabled: true, structured: false, mainText: "Text 3", maxLength: 10, placeholders: ["amount", "currency"] })
     expect(load.remote.get(ids[645])).toEqual({ found: false, key: null, type: "key", enabled: false, structured: false, mainText: null, maxLength: null })
     expect(load.resolved.get(ids[0])?.key).toBe("k0")
   })

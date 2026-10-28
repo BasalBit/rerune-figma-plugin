@@ -75,7 +75,11 @@ export async function loadRemoteStates(
   for (const response of responses) {
     for (const key of response.keys) {
       resolved.set(key.id, key)
-      remote.set(key.id, { ...remoteStateFromResolved(key, mainLanguage), maxLength: key.max_length })
+      remote.set(key.id, {
+        ...remoteStateFromResolved(key, mainLanguage),
+        maxLength: key.max_length,
+        placeholders: key.placeholders.map((placeholder) => placeholder.name),
+      })
     }
     for (const id of response.missing_key_ids) {
       remote.set(id, { ...missingRemoteState(), maxLength: null })

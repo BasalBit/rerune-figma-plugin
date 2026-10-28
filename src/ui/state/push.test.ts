@@ -7,6 +7,7 @@ import type { ScannedNode } from "../../shared/messages"
 import { applyDecision, type RemoteWithMaxLength } from "../../shared/push-plan"
 import { ApiError } from "../api/client"
 import {
+  cacheEntry,
   canPull,
   canSubmit,
   emptyRun,
@@ -31,7 +32,7 @@ import {
 import { fakeMain } from "./test-fakes"
 
 function remote(key: string, mainText: string, maxLength: number | null = null): RemoteWithMaxLength {
-  return { found: true, key, type: "key", enabled: true, structured: false, mainText, maxLength }
+  return { found: true, key, type: "key", enabled: true, structured: false, mainText, maxLength, placeholders: [] }
 }
 
 function byName(textMatches: Record<string, { id: string; key: string }[]>, taken: string[]) {
@@ -354,7 +355,7 @@ describe("after-push choices and pulls", () => {
       ["I7:1;1:5", linkedNode("I7:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
       ["I8:1;1:5", linkedNode("I8:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
     ])
-    const context = { projectId: PROJECT_ID, nodes, remote: new Map(), style: "snake" as const, isTaken: () => false, suggestName: () => "x" }
+    const context = { projectId: PROJECT_ID, nodes, remote: new Map([[keyId(1), remote("checkout_title", "Checkout!")]]), style: "snake" as const, isTaken: () => false, suggestName: () => "x" }
     const main = fakeMain()
     const push = vi.fn(async () => response([result("u1", "updated", { key_id: keyId(1), key: "checkout_title" })]))
     const syncLinks = vi.fn(async (nodeIds: readonly string[]) => ({ upserted: nodeIds.length, removed: 0, rejected: [], error: null }))
@@ -396,6 +397,30 @@ describe("after-push choices and pulls", () => {
       { nodeId: "1:3", text: "Checkout!", src: src("Checkout!") },
       { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!") },
     ])
+  })
+
+  it("caches an updated key's placeholders in ReRune order, whatever the pushed text uses (§7.17, D9)", async () => {
+    const remoteMap = new Map([[keyId(1), { ...remote("price_label", "{{amount}} {{currency}}"), placeholders: ["amount", "currency"] }]])
+    const nodes = new Map([["1:3", linkedNode("1:3", "{{currency}} {{amount}}", { keyId: keyId(1), keyName: "price_label", syncedText: "{{amount}} {{currency}}" })]])
+    const context = { projectId: PROJECT_ID, nodes, remote: remoteMap, style: "snake" as const, isTaken: () => false, suggestName: () => "x" }
+    const priceConflict = { ref: "u1", keyId: keyId(1), keyName: "price_label", nodeIds: ["1:3"], text: "{{currency}} {{amount}}", currentText: "{{amount}} {{currency}}!" }
+    const main = fakeMain()
+    const push = vi.fn(async () => response([result("u1", "updated", { key_id: keyId(1), key: "price_label" })]))
+    await executeOverwrite({ api: { push }, bus: main.bus }, priceConflict, context)
+    expect(main.posted.find((message) => message.type === "cache-save")).toEqual({
+      type: "cache-save",
+      projectId: PROJECT_ID,
+      entries: [{ keyId: keyId(1), k: "price_label", placeholders: ["amount", "currency"], sourceText: "{{currency}} {{amount}}" }],
+    })
+
+    const updated = result("u1", "updated", { key_id: keyId(1), key: "price_label" })
+    expect(cacheEntry(updated, "Total {{amount}}", remoteMap)?.placeholders).toEqual(["amount", "currency"])
+    expect(cacheEntry({ ...updated, status: "unchanged" }, "{{currency}}", remoteMap)?.placeholders).toEqual(["amount", "currency"])
+    // A created key's placeholders come from its text, in text order (D9).
+    expect(cacheEntry(result("c0", "created", { key_id: keyId(2), key: "greeting" }), "Hi {{name}}, {{count}} new", remoteMap)?.placeholders).toEqual(["name", "count"])
+    // Placeholders not loaded: no entry, so the cached one stays.
+    expect(cacheEntry(result("u3", "updated", { key_id: keyId(3), key: "other" }), "{{b}} {{a}}", remoteMap)).toBeNull()
+    expect(cacheEntry(result("u3", "updated", { key_id: keyId(3), key: "other" }), "{{b}} {{a}}", new Map([[keyId(3), {}]]))).toBeNull()
   })
 
   it("Take ReRune text after a push link-syncs the layers it changed, for their screenshots too (§7.13 rule 11)", async () => {

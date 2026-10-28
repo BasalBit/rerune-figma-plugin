@@ -345,11 +345,19 @@ function textApply(deps: PushDeps, items: readonly TextApplyItem[]): Promise<Bat
   return runBatched(deps.bus, mainsFirst(items), (requestId, batch) => ({ type: "text-apply", requestId, items: batch }))
 }
 
-function cacheEntry(result: FigmaPushResult, text: string): CodegenCacheEntry | null {
+// Codegen snippets pass the placeholders as positional arguments in ReRune order (§7.17). A created key got them
+// from its text, in text order (D9). An update cannot add or reorder them (D9: `{{name}}` must exist on the key), so
+// an updated or unchanged key keeps the ones E12 reported, whatever order or subset the pushed text uses. Without
+// them the entry is not sent and the cached one (from an E12 load) stays.
+export function cacheEntry(result: FigmaPushResult, text: string, remote: ReadonlyMap<string, Pick<RemoteWithMaxLength, "placeholders">>): CodegenCacheEntry | null {
   if (result.key_id === null || result.key === null) {
     return null
   }
-  return { keyId: result.key_id, k: result.key, placeholders: placeholderNames(text), sourceText: truncateUtf16(text, CODEGEN_SOURCE_TEXT_MAX_CHARS) }
+  const placeholders = result.status === "created" ? placeholderNames(text) : remote.get(result.key_id)?.placeholders
+  if (placeholders === undefined) {
+    return null
+  }
+  return { keyId: result.key_id, k: result.key, placeholders: placeholders.slice(), sourceText: truncateUtf16(text, CODEGEN_SOURCE_TEXT_MAX_CHARS) }
 }
 
 // Sends push chunks one by one (never retried) and writes every follow-up link (§7.13 rule 10).
@@ -398,7 +406,7 @@ export async function pushChunks(deps: PushDeps, chunks: readonly PushRequestChu
     for (const result of response.results) {
       if (result.status === "created" || result.status === "updated" || result.status === "unchanged") {
         run.affectedNodeIds.push(...(chunk.nodeIdsByRef.get(result.client_ref) ?? []))
-        const entry = cacheEntry(result, texts.get(result.client_ref) ?? "")
+        const entry = cacheEntry(result, texts.get(result.client_ref) ?? "", context.remote)
         if (entry !== null) {
           run.cacheEntries.push(entry)
         }

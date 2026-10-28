@@ -19,11 +19,15 @@ export function renderContent(content: TranslationContent | null, options: Rende
   return content.value.replace(PLACEHOLDER, (_match, name: string) => sampleOrLabel(name.trim(), options))
 }
 
+// The `{{name}}` references the server turns into placeholders when it creates a key (D9; messageformat
+// CollectPlainPlaceholderReferences), in text order without repeats. `{{ name }}` or `{{user.name}}` stay plain text.
+const PLACEHOLDER_REFERENCE = /\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g
+
 export function placeholderNames(text: string): string[] {
   const names: string[] = []
-  PLACEHOLDER.lastIndex = 0
-  for (let match = PLACEHOLDER.exec(text); match !== null; match = PLACEHOLDER.exec(text)) {
-    const name = match[1].trim()
+  PLACEHOLDER_REFERENCE.lastIndex = 0
+  for (let match = PLACEHOLDER_REFERENCE.exec(text); match !== null; match = PLACEHOLDER_REFERENCE.exec(text)) {
+    const name = match[1]
     if (!names.includes(name)) {
       names.push(name)
     }

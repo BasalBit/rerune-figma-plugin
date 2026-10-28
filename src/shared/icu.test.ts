@@ -150,7 +150,11 @@ describe("plural helpers", () => {
   })
 
   it("lists placeholder names once, in order", () => {
-    expect(placeholderNames("{{b}} and {{a}} and {{ b }}")).toEqual(["b", "a"])
+    expect(placeholderNames("{{b}} and {{a}} and {{b}}")).toEqual(["b", "a"])
     expect(placeholderNames("none")).toEqual([])
+  })
+
+  it("lists only the references the server creates placeholders for (D9)", () => {
+    expect(placeholderNames("{{ amount }} {{user.name}} {{2x}} {{_total}} {{a-b}}")).toEqual(["_total"])
   })
 })

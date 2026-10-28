@@ -6,7 +6,9 @@ import type { LinkApplyItem, ScannedNode, Scope, TextApplyItem } from "./message
 import { computeSyncState, layerText, type RemoteKeyState } from "./sync-state"
 import { normalizeDesignText, utf16Length } from "./text"
 
-export type RemoteWithMaxLength = RemoteKeyState & { maxLength: number | null }
+// E12 state of a linked key for the push plan: the sync state (§7.10), max_length, and the key's placeholder names in
+// ReRune order for the codegen cache (§7.17). `placeholders` is absent when the caller did not load them.
+export type RemoteWithMaxLength = RemoteKeyState & { maxLength: number | null; placeholders?: string[] }
 export type CreateOrigin =
   | { kind: "unlinked" }
   | { kind: "divergent"; keyId: string; variant: number }
