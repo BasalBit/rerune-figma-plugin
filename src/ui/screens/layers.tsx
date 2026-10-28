@@ -27,14 +27,16 @@ import {
   type LayerRow,
   type StateFilter,
 } from "../state/layers"
-import { linkSyncWarning, pageSyncSummary, rejectedWarning, unresolvedSummary, type LinkSyncer, type PageSyncResult } from "../state/link-sync"
+import { linkSyncWarning, pageSyncNote, unresolvedSummary, type LinkSyncer, type PageSync, type PageSyncResult } from "../state/link-sync"
 import { groupErrors, mainsFirst, removeLinksBatched, runBatched, type ErrorGroup } from "../state/ops"
 import { fetchTextMatches } from "../state/remote"
+import { useStore } from "../state/use-store"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // Layers (§7.8): scope, scan, list grouped by frame with state chips, filters, bulk actions and badges. Phase 2:
 // link changes are synced with ReRune, and "Sync links on this page" compares ReRune's links of the page with the
-// layers (§7.15).
+// layers (§7.15). Its automatic run after a saved file link (§7.7) belongs to the app: while any page sync runs,
+// the button, the scope, the write actions and the Link dialog wait.
 
 export interface LayersScreenProps {
   notices: ComponentChildren               // the workspace notices, shown first in the scroll area (ScreenBody)
@@ -49,6 +51,8 @@ export interface LayersScreenProps {
   linkSync: LinkSyncer
   syncEnabled: boolean           // link sync is on for this file and user (§7.11)
   pageId: string
+  pageSync: PageSync             // the app's page sync: one at a time, also the automatic run (§7.7)
+  onBusy(busy: boolean): void    // a Layers action runs (the automatic page sync waits for it)
 }
 
 interface ActionResult {
@@ -79,10 +83,17 @@ export function LayersScreen(props: LayersScreenProps) {
   const [result, setResult] = useState<ActionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pageSync, setPageSync] = useState<PageSyncResult | null>(null)
+  const syncing = useStore(props.pageSync.store).running !== null
 
   useEffect(() => {
     setPageSync(null)
   }, [props.pageId])
+
+  useEffect(() => {
+    props.onBusy(busy !== null)
+  }, [busy])
+
+  useEffect(() => () => props.onBusy(false), [])
 
   const rows = useMemo(
     () => layerRows(state.result?.nodes ?? [], props.projectId, state.remote, state.pending),
@@ -180,22 +191,22 @@ export function LayersScreen(props: LayersScreenProps) {
       }
     })
 
-  // §7.15 page link sync: a fresh page scan, then ReRune's links of this page compared with the layers.
+  // §7.15 page link sync: a fresh page scan, then ReRune's links of this page compared with the layers. One at a
+  // time in the app: a start during another page sync (the automatic one too) does nothing.
   async function syncPage() {
+    const run = props.pageSync.start(props.pageId)
+    if (run === null) {
+      return
+    }
     setBusy("sync")
     setError(null)
     setResult(null)
     setPageSync(null)
     setLimit(PAGE_SIZE)
     try {
-      const scanned = await workspace.scan("page")
-      if (scanned === null) {
-        setError(workspace.store.get().error ?? "The scan didn't finish. Try again.")
-        return
-      }
-      setPageSync(await props.linkSync.syncPage(props.pageId, scanned.nodes))
-    } catch (caught) {
-      setError(userMessage(caught))
+      const outcome = await run
+      setError(outcome.error)
+      setPageSync(outcome.result)
     } finally {
       setBusy(null)
     }
@@ -223,23 +234,23 @@ export function LayersScreen(props: LayersScreenProps) {
   const groups = groupByFrame(visible.slice(0, limit))
   const scanning = state.status === "scanning"
   const skipped = state.result !== null ? skippedSummary(state.result.skipped) : null
-  const writeDisabled = props.readOnly || busy !== null || scanning
+  const writeDisabled = props.readOnly || busy !== null || scanning || syncing
 
   return (
     <div style={styles.page}>
       <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: "8px", borderBottom: "1px solid var(--figma-color-border)" }}>
         <div style={styles.row}>
           <div style={styles.grow}>
-            <SegmentedControl value={state.scope} options={SCOPE_OPTIONS} onValueChange={(value) => scan(value as Scope)} />
+            <SegmentedControl value={state.scope} disabled={syncing} options={SCOPE_OPTIONS} onValueChange={(value) => scan(value as Scope)} />
           </div>
-          <Button secondary loading={scanning && busy !== "sync"} disabled={scanning || busy !== null} onClick={() => scan(state.scope)}>
+          <Button secondary loading={scanning && busy !== "sync"} disabled={scanning || busy !== null || syncing} onClick={() => scan(state.scope)}>
             Scan
           </Button>
         </div>
         {props.syncEnabled && (
           <div style={styles.row}>
-            <TextButton disabled={props.readOnly || busy !== null || scanning} onClick={() => void syncPage()}>
-              {busy === "sync" ? "Syncing links…" : "Sync links on this page"}
+            <TextButton disabled={props.readOnly || busy !== null || scanning || syncing} onClick={() => void syncPage()}>
+              {syncing ? "Syncing links…" : "Sync links on this page"}
             </TextButton>
           </div>
         )}
@@ -301,12 +312,11 @@ export function LayersScreen(props: LayersScreenProps) {
         {result !== null && result.syncWarning !== null && result.syncWarning !== undefined && <Note tone="warning">{result.syncWarning}</Note>}
         {pageSync !== null && (
           <Note tone={pageSync.error !== null ? "warning" : "good"} actions={<TextButton onClick={() => setPageSync(null)}>Dismiss</TextButton>}>
-            {pageSyncSummary(pageSync)}
-            {rejectedWarning(pageSync.rejected.length) !== null ? " " + rejectedWarning(pageSync.rejected.length) : ""}
+            {pageSyncNote(pageSync)}
           </Note>
         )}
         {pageSync !== null && pageSync.unresolved.length > 0 && (
-          <UnresolvedLinks links={pageSync.unresolved} disabled={props.readOnly || busy !== null} onRemove={(links) => void removeUnresolved(links)} />
+          <UnresolvedLinks links={pageSync.unresolved} disabled={props.readOnly || busy !== null || syncing} onRemove={(links) => void removeUnresolved(links)} />
         )}
 
         {visible.length > 0 && (
@@ -323,7 +333,7 @@ export function LayersScreen(props: LayersScreenProps) {
             <div style={{ ...styles.sectionTitle, margin: "8px 0 4px" }}>{group.title}</div>
             <div style={styles.tightStack}>
               {group.rows.map((row) => (
-                <LayerRowView key={row.node.nodeId} row={row} checked={checked.has(row.node.nodeId)} onToggle={() => toggle(row.node.nodeId)} onOpen={() => props.onOpenLink([row.node])} />
+                <LayerRowView key={row.node.nodeId} row={row} checked={checked.has(row.node.nodeId)} openDisabled={syncing} onToggle={() => toggle(row.node.nodeId)} onOpen={() => props.onOpenLink([row.node])} />
               ))}
             </div>
           </div>
@@ -371,15 +381,17 @@ export function LayersScreen(props: LayersScreenProps) {
   )
 }
 
-function LayerRowView(props: { row: LayerRow; checked: boolean; onToggle(): void; onOpen(): void }) {
+// `openDisabled`: a page sync runs; the Link dialog's rescan would cancel its scan.
+function LayerRowView(props: { row: LayerRow; checked: boolean; openDisabled: boolean; onToggle(): void; onOpen(): void }) {
   const { row } = props
   return (
     <div style={{ ...styles.row, alignItems: "flex-start", border: "1px solid var(--figma-color-border)", borderRadius: "6px", padding: "6px 8px" }}>
       <CheckInput checked={props.checked} onChange={props.onToggle} style={{ marginTop: "2px" }} label={"Select " + row.node.name} />
       <button
         type="button"
+        disabled={props.openDisabled}
         onClick={props.onOpen}
-        style={{ ...styles.grow, background: "none", border: "none", padding: "0", textAlign: "left", cursor: "pointer", color: "var(--figma-color-text)", font: "inherit" }}
+        style={{ ...styles.grow, background: "none", border: "none", padding: "0", textAlign: "left", cursor: props.openDisabled ? "default" : "pointer", color: "var(--figma-color-text)", font: "inherit" }}
       >
         <div style={{ ...styles.clamp, fontSize: "12px" }}>{preview(row.text, 160) || "(empty)"}</div>
         <div style={{ ...styles.wrapRow, marginTop: "2px" }}>

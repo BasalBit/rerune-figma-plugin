@@ -37,8 +37,8 @@ import {
   type NavEvent,
   type Screen,
 } from "./state/navigation"
-import { fileLinkNotice, registerFile, type FileLinkAction } from "./state/file-link"
-import { createLinkSyncer, linkSyncWarning } from "./state/link-sync"
+import { fileLinkNotice, registerFile, saveAndRegisterFile, type FileLinkAction } from "./state/file-link"
+import { AUTO_SYNC_RUNNING, autoPageSyncNote, createLinkSyncer, createPageSync, linkSyncWarning } from "./state/link-sync"
 import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, singleFlight, type ErrorGroup } from "./state/ops"
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
 import { leftoverPreviewNotice, previewStatus, resetOutcome } from "./state/preview"
@@ -119,6 +119,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [noticeBusy, setNoticeBusy] = useState(false)
   // The notices at the top of the open tab's scroll area (see `notices` below).
   const noticesRef = useRef<HTMLDivElement>(null)
+  // A Layers action (link, unlink, keep copied, remove, page sync) runs: the automatic page sync waits for it.
+  const [layersBusy, setLayersBusy] = useState(false)
 
   const api = useMemo(() => createBrowserApi(init.apiBase, () => authRef.current?.token ?? null, () => signedOutRef.current()), [])
   // E1 screenshots_enabled and E8 sandbox_expires_at for screenshots on push (§7.16, D4), once per session.
@@ -177,6 +179,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setAuth(null)
     setActiveProject(null)
     setLink(null)
+    pageSync.reset()
     workspace.clear(true)
     go({ type: "signed-out", notice: SESSION_ENDED_NOTICE })
   }
@@ -258,6 +261,19 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const gateRef = useRef(gate)
   gateRef.current = gate
   const linkSyncer = useMemo(() => createLinkSyncer({ api, bus, projectId: () => projectRef.current?.id ?? null, gate: () => gateRef.current }), [])
+  // "Sync links on this page" and its automatic run after a saved or confirmed file link (§7.7, §7.15): one at a
+  // time in the app, whichever tab is open.
+  const pageSync = useMemo(
+    () =>
+      createPageSync({
+        scanPage: () => workspace.scan("page"),
+        scanError: () => workspace.store.get().error,
+        scanPageDetached: () => workspace.scanDetached("page"),
+        syncPage: (pageId, scanned, options) => linkSyncer.syncPage(pageId, scanned, options),
+      }),
+    [],
+  )
+  const pageSyncState = useStore(pageSync.store)
   // The file's project (E9) loads only after "Signed in as" is confirmed: a 403/404 for the new account then
   // leads to the Project screen instead of skipping the confirmation (D34).
   const confirming = awaitingSignInConfirmation(view)
@@ -337,10 +353,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   // The notices scroll with the tab, so a new result banner or edited-during-preview question is brought into view
   // when the tab was scrolled down (e.g. Reset in the header while reading the Preview results).
   useEffect(() => {
-    if (banner !== null || editedPrompt !== null) {
+    if (banner !== null || editedPrompt !== null || pageSyncState.auto !== null) {
       noticesRef.current?.scrollIntoView({ block: "nearest" })
     }
-  }, [banner, editedPrompt])
+  }, [banner, editedPrompt, pageSyncState.auto])
 
   function updatePrefs(patch: Partial<Prefs>) {
     setPrefs((current) => ({ ...current, ...patch }))
@@ -367,6 +383,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     }
     const changed = settings?.projectId !== picked.id || settings?.apiBase !== init.apiBase
     await saveSettings(next)
+    pageSync.reset()
     contextRef.current = { apiBase: init.apiBase, settings: next, locked: workLocked }
     if (changed) {
       workspace.clear(true)
@@ -396,6 +413,16 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     }
   }
 
+  // Saves the settings with the file's link and registers the file (E14); when E14 worked and link sync is on, the
+  // links made while sync was off reach ReRune through the automatic page sync, on the open tab (no navigation).
+  // Returns a warning when E14 failed.
+  function saveAndRegister(next: FileSettings, active: FigmaProjectDetail): Promise<string | null> {
+    return saveAndRegisterFile(
+      { api, apiBase: init.apiBase, save: saveSettings, requestPageSync: () => pageSync.request() },
+      { projectId: active.id, permissions: active.permissions, settings: next, rootName: rootNameRef.current },
+    )
+  }
+
   // A pasted file link (§7.7): saved to the file, then registered (E14). Returns a warning when E14 failed.
   async function saveFileLink(link: ParsedFigmaUrl): Promise<string | null> {
     const fresh = await refreshStatus()
@@ -404,9 +431,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     if (current === null || active === null) {
       throw new Error("Connect this file to a ReRune project first.")
     }
-    const next = withFileLink(current, link, rootNameRef.current, Date.now())
-    await saveSettings(next)
-    return (await registerFile(api, active.id, next, rootNameRef.current, active.permissions)).error
+    return saveAndRegister(withFileLink(current, link, rootNameRef.current, Date.now()), active)
   }
 
   // "This is the same file" (§7.7): the stored name follows the file's current name, which resumes sync.
@@ -417,9 +442,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     if (current === null || active === null) {
       return null
     }
-    const next = confirmSameFile(current, rootNameRef.current, Date.now())
-    await saveSettings(next)
-    return (await registerFile(api, active.id, next, rootNameRef.current, active.permissions)).error
+    return saveAndRegister(confirmSameFile(current, rootNameRef.current, Date.now()), active)
   }
 
   async function fileNoticeAction(action: FileLinkAction): Promise<void> {
@@ -481,6 +504,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setAuth(null)
     setActiveProject(null)
     setLink(null)
+    pageSync.reset()
     workspace.clear(true)
     go(event === "not-me" ? { type: "not-me" } : { type: "signed-out", notice: null })
   }
@@ -536,6 +560,16 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
 
   const readOnly = settings !== null && settings.apiBase !== init.apiBase
   const screen = view.screen
+
+  // The automatic page sync (§7.7) starts once no canvas task, reset, scan, Link dialog or Layers action runs and a
+  // workspace tab is open; it is dropped when link sync is off by then (the project's permissions are loaded).
+  const autoSyncBusy = workLocked || resetting || layersBusy || link !== null || space.status === "scanning" || !isWorkspaceScreen(screen)
+  const projectLoaded = project !== null
+  useEffect(() => {
+    if (projectLoaded) {
+      pageSync.offer(pageRef.current, { syncEnabled: gate.enabled, readOnly, busy: autoSyncBusy })
+    }
+  }, [pageSyncState.requested, pageSyncState.running, gate.enabled, readOnly, autoSyncBusy, projectLoaded])
 
   if (screen === "diagnostics") {
     return (
@@ -656,6 +690,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   // Why link sync is off (§7.7, §7.11); Settings shows the same state in its Figma file section.
   const notice = screen !== "settings" ? fileLinkNotice(gate) : null
   const fileNotice = notice !== null && !(notice.dismissible && dismissedNotices.includes(notice.reason)) ? notice : null
+  // The automatic page sync's progress and result for the open page.
+  const autoSyncNote = pageSyncState.auto !== null && pageSyncState.auto.pageId === pageRef.current ? pageSyncState.auto : null
+  const autoSyncRunning = pageSyncState.running === "auto"
 
   async function applyOffer(): Promise<void> {
     if (offer === null) return
@@ -672,7 +709,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   // The notices about this file and the last action. Each tab shows them first in its scroll area (ScreenBody), in
   // normal flow, so they take their own space above the tab's content and scroll with it.
   const notices =
-    offer !== null || fileNotice !== null || editedPrompt !== null || leftover !== null || banner !== null ? (
+    offer !== null || fileNotice !== null || autoSyncRunning || autoSyncNote !== null || editedPrompt !== null || leftover !== null || banner !== null ? (
       <div ref={noticesRef} style={{ ...styles.stack, scrollMarginTop: styles.body.padding }}>
         {offer !== null && <SettingsOfferNote offer={offer} disabled={readOnly || offerSaving} onApply={() => void applyOffer()} onDismiss={() => setOfferDismissedOn(pageRef.current)} />}
         {fileNotice !== null && (
@@ -683,6 +720,15 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onAction={(action) => void fileNoticeAction(action)}
             onDismiss={() => setDismissedNotices((current) => [...current, fileNotice.reason])}
           />
+        )}
+        {autoSyncRunning && <Note tone="info">{AUTO_SYNC_RUNNING}</Note>}
+        {autoSyncNote !== null && (
+          <Note
+            tone={autoSyncNote.error !== null || (autoSyncNote.result !== null && autoSyncNote.result.error !== null) ? "warning" : "good"}
+            actions={<TextButton onClick={() => pageSync.dismiss()}>Dismiss</TextButton>}
+          >
+            {autoPageSyncNote(autoSyncNote)}
+          </Note>
         )}
         {editedPrompt !== null && (
           <Note
@@ -755,6 +801,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             linkSync={linkSyncer}
             syncEnabled={gate.enabled}
             pageId={pageRef.current}
+            pageSync={pageSync}
+            onBusy={setLayersBusy}
           />
         )}
         {screen === "push" && (

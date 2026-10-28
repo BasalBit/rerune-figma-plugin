@@ -7,12 +7,15 @@ import { firstRunes, trimSpace } from "../../shared/text"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
-import { chunk } from "./ops"
+import { chunk, type ScanResult } from "./ops"
+import { createStore, type Store } from "./store"
 
 // Link sync (§7.11, §7.15, D43): ReRune's copy of which layer of this file shows which key (E17/E18), so the
 // dashboard can show where a key is used and MCP can list a frame's keys. Two triggers:
 // - after link, unlink and push, the affected layers are upserted or removed (syncNodes);
-// - "Sync links on this page" compares ReRune's links of the current page with the layers (syncPage).
+// - "Sync links on this page" compares ReRune's links of the current page with the layers (syncPage). It also runs
+//   once by itself after the file's link is saved or confirmed (§7.7), for links made while sync was off; that run
+//   only adds and updates links (createPageSync).
 // A server link is removed only when its layer exists and carries no link or another key. A layer that resolves to
 // null (hidden, or a layer of another branch or file: they share node ids and the file key) is never removed
 // automatically: such links are listed and removed only through an explicit Remove.
@@ -35,7 +38,11 @@ export interface LinkSyncResult {
 export interface PageSyncResult extends LinkSyncResult {
   serverLinks: number
   unresolved: FigmaLink[]
+  heldBack: number               // removals and unresolved links a run without removals left for the button
 }
+
+// `removals: false`: send only the upserts; the removals and the unresolved links are counted in `heldBack`.
+export interface PageSyncOptions { removals: boolean }
 
 type CheckedNode = Pick<LinkCheck, "nodeId" | "status" | "linkState" | "link" | "name" | "pageId" | "pageName" | "frameId" | "frameName">
 
@@ -290,7 +297,7 @@ export interface LinkSyncer {
   gate(): LinkSyncGate
   // null: link sync is off for this file or user (§7.11: skipped silently, the banner explains).
   syncNodes(acted: readonly string[], known?: readonly ScannedNode[]): Promise<LinkSyncResult | null>
-  syncPage(pageId: string, scanned: readonly ScannedNode[]): Promise<PageSyncResult | null>
+  syncPage(pageId: string, scanned: readonly ScannedNode[], options?: PageSyncOptions): Promise<PageSyncResult | null>
   removeServerLinks(nodeIds: readonly string[]): Promise<LinkSyncResult | null>
 }
 
@@ -325,7 +332,7 @@ export function createLinkSyncer(deps: LinkSyncDeps): LinkSyncer {
       const plan = planNodeSync([...checks.values()], to.projectId)
       return sendLinkRequests(deps.api, to.projectId, linkRequests(to.fileKey, plan))
     },
-    async syncPage(pageId, scanned) {
+    async syncPage(pageId, scanned, options = { removals: true }) {
       const to = target()
       if (to === null) {
         return null
@@ -348,11 +355,15 @@ export function createLinkSyncer(deps: LinkSyncDeps): LinkSyncer {
           checks.set(nodeId, check)
         }
       } catch (error) {
-        return { ...errorResult(error), serverLinks: 0, unresolved: [] }
+        return { ...errorResult(error), serverLinks: 0, unresolved: [], heldBack: 0 }
       }
       const plan = planPageSync({ projectId: to.projectId, pageId, scanned, server, checks })
+      if (!options.removals) {
+        const sent = await sendLinkRequests(deps.api, to.projectId, linkRequests(to.fileKey, { upserts: plan.upserts, removals: [] }))
+        return { ...sent, serverLinks: server.length, unresolved: [], heldBack: plan.removals.length + plan.unresolved.length }
+      }
       const sent = await sendLinkRequests(deps.api, to.projectId, linkRequests(to.fileKey, plan))
-      return { ...sent, serverLinks: server.length, unresolved: plan.unresolved }
+      return { ...sent, serverLinks: server.length, unresolved: plan.unresolved, heldBack: 0 }
     },
     async removeServerLinks(nodeIds) {
       const to = target()
@@ -366,6 +377,140 @@ export function createLinkSyncer(deps: LinkSyncDeps): LinkSyncer {
       return sendLinkRequests(deps.api, to.projectId, linkRequests(to.fileKey, { upserts: [], removals: ids }))
     },
   }
+}
+
+// "Sync links on this page" (§7.15) and its automatic run after a saved or confirmed file link (§7.7). The app holds
+// one instance, so one page sync runs at a time and the running state, the waiting request and the automatic run's
+// note outlive the open tab. The button scans the page Layers lists. The automatic run scans the page without
+// changing what the tabs show, runs on the open tab once nothing else uses the canvas, and only adds and updates
+// links: a link pasted or confirmed by mistake in a copy of the file must not remove the original's links without a
+// click (D43). Removals and the unresolved list stay with the button.
+
+export const SCAN_UNFINISHED = "The scan didn't finish. Try again."
+
+export interface PageSyncRun {
+  result: PageSyncResult | null      // null: link sync is off (§7.11) or the scan failed
+  error: string | null               // the scan failed or threw
+}
+
+export interface AutoPageSyncNote {
+  pageId: string
+  result: PageSyncResult | null      // null: the scan failed (error)
+  error: string | null
+}
+
+export interface PageSyncState {
+  running: "button" | "auto" | null
+  requested: boolean                 // the automatic run waits for a free moment (autoPageSyncStep)
+  auto: AutoPageSyncNote | null      // the last automatic run, shown with the notices
+}
+
+export interface PageSyncDeps {
+  // The button's scan, which Layers lists: null when it failed (scanError) or was cancelled.
+  scanPage(): Promise<ScanResult | null>
+  scanError(): string | null
+  // The automatic run's scan; the tabs keep their scope and list. null when cancelled; throws when it failed.
+  scanPageDetached(): Promise<ScanResult | null>
+  syncPage(pageId: string, scanned: readonly ScannedNode[], options: PageSyncOptions): Promise<PageSyncResult | null>
+}
+
+export interface AutoPageSyncWhen {
+  syncEnabled: boolean               // the link sync gate (§7.11), as for the button
+  readOnly: boolean                  // the file belongs to another ReRune server
+  busy: boolean                      // a canvas task, reset, scan, Link dialog or Layers action runs
+}
+
+export interface PageSync {
+  store: Store<PageSyncState>
+  // The button: null while a page sync runs (a click during the automatic run starts nothing).
+  start(pageId: string): Promise<PageSyncRun> | null
+  // After a saved or confirmed file link: run the automatic sync once the app is free.
+  request(): void
+  // Runs, keeps or drops the request (autoPageSyncStep); the app calls it whenever what it waits for changes.
+  offer(pageId: string, when: AutoPageSyncWhen): AutoPageSyncStep | null
+  dismiss(): void                    // hides the automatic run's note
+  reset(): void                      // sign-out or another project: drops the request and the note
+}
+
+export function createPageSync(deps: PageSyncDeps): PageSync {
+  const store = createStore<PageSyncState>({ running: null, requested: false, auto: null })
+  let generation = 0
+
+  async function scanAndSync(pageId: string): Promise<PageSyncRun> {
+    try {
+      const scanned = await deps.scanPage()
+      if (scanned === null) {
+        return { result: null, error: deps.scanError() ?? SCAN_UNFINISHED }
+      }
+      return { result: await deps.syncPage(pageId, scanned.nodes, { removals: true }), error: null }
+    } catch (caught) {
+      return { result: null, error: userMessage(caught) }
+    }
+  }
+
+  // A cancelled scan (a newer scan, a page change) asks again, so the run is not lost; reset() discards the run.
+  async function runAuto(pageId: string, mine: number): Promise<void> {
+    let note: AutoPageSyncNote | null = null
+    let again = false
+    try {
+      const scanned = await deps.scanPageDetached()
+      if (scanned === null) {
+        again = true
+      } else {
+        const result = await deps.syncPage(pageId, scanned.nodes, { removals: false })
+        note = result === null ? null : { pageId, result, error: null }
+      }
+    } catch (caught) {
+      note = { pageId, result: null, error: userMessage(caught) }
+    }
+    store.set((state) => (mine === generation ? { ...state, running: null, requested: state.requested || again, auto: note } : { ...state, running: null }))
+  }
+
+  return {
+    store,
+    start(pageId) {
+      if (store.get().running !== null) {
+        return null
+      }
+      store.set((state) => ({ ...state, running: "button" }))
+      return scanAndSync(pageId).finally(() => store.set((state) => ({ ...state, running: null })))
+    },
+    request() {
+      store.set((state) => ({ ...state, requested: true }))
+    },
+    offer(pageId, when) {
+      const state = store.get()
+      if (!state.requested) {
+        return null
+      }
+      const step = autoPageSyncStep({ ...when, busy: when.busy || state.running !== null })
+      if (step === "drop") {
+        store.set((current) => ({ ...current, requested: false }))
+      } else if (step === "run") {
+        store.set((current) => ({ ...current, requested: false, running: "auto", auto: null }))
+        void runAuto(pageId, generation)
+      }
+      return step
+    },
+    dismiss() {
+      store.set((state) => ({ ...state, auto: null }))
+    },
+    reset() {
+      generation++
+      store.set((state) => ({ ...state, requested: false, auto: null }))
+    },
+  }
+}
+
+export type AutoPageSyncStep = "run" | "wait" | "drop"
+
+// The automatic page sync runs when the button could (link sync on, this build's server) once nothing else runs; it
+// is dropped when link sync is off by then.
+export function autoPageSyncStep(state: AutoPageSyncWhen): AutoPageSyncStep {
+  if (!state.syncEnabled || state.readOnly) {
+    return "drop"
+  }
+  return state.busy ? "wait" : "run"
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -398,6 +543,36 @@ export function pageSyncSummary(result: PageSyncResult): string {
     result.removed > 0 ? plural(result.removed, "link removed", "links removed") : null,
   ].filter((part): part is string => part !== null)
   return changes.length === 0 ? "ReRune's links match the layers on this page." : "Links on this page: " + changes.join(", ") + "."
+}
+
+// The note after "Sync links on this page": the summary and the links ReRune rejected.
+export function pageSyncNote(result: PageSyncResult): string {
+  return [pageSyncSummary(result), rejectedWarning(result.rejected.length)].filter((part): part is string => part !== null).join(" ")
+}
+
+// The automatic run's notes (§7.7). They show on whichever tab is open, so they name Layers.
+export const AUTO_SYNC_RUNNING = "Link sync is on. Syncing the links on this page…"
+export const RUN_ON_LAYERS_LATER = "Run Sync links on this page on Layers later."
+export const OTHER_PAGES_NOTE = "To share the links on other pages, open each page and run Sync links on this page on Layers."
+
+export function autoPageSyncNote(note: Pick<AutoPageSyncNote, "result" | "error">): string {
+  const error = note.error ?? note.result?.error ?? null
+  if (error !== null || note.result === null) {
+    return "Link sync is on, but the links on this page couldn't be shared: " + (error ?? SCAN_UNFINISHED) + " " + RUN_ON_LAYERS_LATER
+  }
+  const result = note.result
+  const parts = [
+    "Link sync is on.",
+    result.upserted > 0
+      ? "Links on this page: " + plural(result.upserted, "link added or updated", "links added or updated") + "."
+      : result.serverLinks === 0 ? "No layer on this page is linked yet." : "ReRune already has the links on this page.",
+    rejectedWarning(result.rejected.length),
+    result.heldBack > 0
+      ? "ReRune also has " + plural(result.heldBack, "link on this page that no longer matches its layer", "links on this page that no longer match their layers") + ". Run Sync links on this page on Layers to review " + (result.heldBack === 1 ? "it." : "them.")
+      : null,
+    OTHER_PAGES_NOTE,
+  ]
+  return parts.filter((part): part is string => part !== null).join(" ")
 }
 
 export function unresolvedSummary(count: number): string {

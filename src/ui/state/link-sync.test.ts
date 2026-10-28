@@ -1,29 +1,44 @@
+/// <reference types="vite/client" />
 import { describe, expect, it, vi } from "vitest"
 import { keyId, linkedNode, nodeLink, OTHER_PROJECT_ID, PROJECT_ID, scannedNode } from "../../../test/fixtures"
 import type { FigmaLink, FigmaLinksListResponse, FigmaLinksQuery, FigmaLinksRequest, FigmaLinksResponse } from "../../shared/api-types"
 import type { LinkSyncGate } from "../../shared/file-link"
 import type { LinkCheck, LinkState, UiToMain } from "../../shared/messages"
-import { ApiError } from "../api/client"
+import { ApiError, userMessage } from "../api/client"
 import { createUiBus } from "../bus"
 import {
   affectedNodeIds,
+  AUTO_SYNC_RUNNING,
+  autoPageSyncNote,
+  autoPageSyncStep,
   carriedKey,
   checkLinks,
   cleanLinkName,
   createLinkSyncer,
+  createPageSync,
   isUpsertable,
   linkRequests,
   linkSyncWarning,
   listPageLinks,
+  OTHER_PAGES_NOTE,
+  pageSyncNote,
   pageSyncSummary,
   planNodeSync,
   planPageSync,
   rejectedWarning,
+  RUN_ON_LAYERS_LATER,
+  SCAN_UNFINISHED,
   sendLinkRequests,
   unresolvedSummary,
   upsertOf,
+  type PageSync,
+  type PageSyncDeps,
+  type PageSyncResult,
 } from "./link-sync"
+import type { ScanResult } from "./ops"
 import { fakeBusEnvironment } from "./test-fakes"
+import appSource from "../app.tsx?raw"
+import layersSource from "../screens/layers.tsx?raw"
 
 const FILE_KEY = "AbCdEf1234567890XyZ"
 const K1 = keyId(1)
@@ -445,17 +460,32 @@ describe("createLinkSyncer", () => {
       upserts: [upsertFor("12:346", K2)],
       removed_node_ids: ["12:347", "12:901"],
     })
-    expect(result).toMatchObject({ upserted: 1, removed: 2, error: null, serverLinks: 5 })
+    expect(result).toMatchObject({ upserted: 1, removed: 2, error: null, serverLinks: 5, heldBack: 0 })
     expect(result?.unresolved.map((link) => link.node_id)).toEqual(["12:900"])
     expect(pageSyncSummary(result!)).toBe("Links on this page: 1 link added or updated, 2 links removed.")
     expect(unresolvedSummary(result!.unresolved.length)).toBe("1 link points to a layer not in this file")
+  })
+
+  it("syncs a page without removals for the automatic run: removals and unresolved links are only counted", async () => {
+    const scanned = [
+      linkedNode("12:345", "Pay now", { keyId: K1, keyName: "k", syncedText: "Pay now" }, { name: "Pay button" }),
+      linkedNode("12:346", "Cancel", { keyId: K2, keyName: "cancel", syncedText: "Cancel" }, { name: "Pay button" }),
+      scannedNode("12:347", "Plain", { name: "Pay button" }),
+    ]
+    const api = linksApi([{ links: [serverLink("12:345"), serverLink("12:347"), serverLink("12:900"), serverLink("12:901")], next_cursor: null, has_more: false }])
+    const { bus } = checkingBus({ "12:901": linkedCheck("12:901", "copied", K2) })
+    const syncer = createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => ON })
+    const result = await syncer.syncPage("0:1", scanned, { removals: false })
+    expect(api.upsertLinks).toHaveBeenCalledTimes(1)
+    expect(api.upsertLinks).toHaveBeenCalledWith(PROJECT_ID, { file_key: FILE_KEY, upserts: [upsertFor("12:346", K2)], removed_node_ids: [] })
+    expect(result).toEqual({ upserted: 1, removed: 0, rejected: [], error: null, serverLinks: 4, unresolved: [], heldBack: 3 })
   })
 
   it("reports a failed listing without writing anything", async () => {
     const api = { links: vi.fn(async () => Promise.reject(new ApiError(500, null, "boom"))), upsertLinks: vi.fn() }
     const { bus } = checkingBus({})
     const result = await createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => ON }).syncPage("0:1", [])
-    expect(result).toEqual({ upserted: 0, removed: 0, rejected: [], error: "ReRune had a problem. Try again.", serverLinks: 0, unresolved: [] })
+    expect(result).toEqual({ upserted: 0, removed: 0, rejected: [], error: "ReRune had a problem. Try again.", serverLinks: 0, unresolved: [], heldBack: 0 })
     expect(api.upsertLinks).not.toHaveBeenCalled()
     expect(pageSyncSummary(result!)).toBe("The links couldn't be synced: ReRune had a problem. Try again.")
   })
@@ -470,6 +500,307 @@ describe("createLinkSyncer", () => {
   })
 })
 
+describe("createPageSync (the button, and the automatic run after a saved or confirmed file link, §7.7)", () => {
+  const SKIPPED = { hidden: 0, locked: 0, empty: 0, numeric: 0, underscore: 0, languageCopy: 0, unavailable: 0 }
+  const LINKED = [
+    linkedNode("12:345", "Pay now", { keyId: K1, keyName: "k", syncedText: "Pay now" }, { name: "Pay button" }),
+    linkedNode("12:346", "Cancel", { keyId: K2, keyName: "cancel", syncedText: "Cancel" }, { name: "Pay button" }),
+  ]
+  const FREE = { syncEnabled: true, readOnly: false, busy: false }
+  const SYNCED: PageSyncResult = { upserted: 2, removed: 0, rejected: [], error: null, serverLinks: 0, unresolved: [], heldBack: 0 }
+
+  function page(nodes: ReturnType<typeof scannedNode>[]): ScanResult {
+    return { scope: "page", nodes, total: nodes.length, truncated: false, skipped: SKIPPED }
+  }
+
+  // Resolves once no page sync runs (the automatic run is started by offer() and not awaited by the app).
+  function idle(pageSync: PageSync): Promise<void> {
+    return new Promise((resolve) => {
+      if (pageSync.store.get().running === null) {
+        resolve()
+        return
+      }
+      const off = pageSync.store.subscribe((state) => {
+        if (state.running === null) {
+          off()
+          resolve()
+        }
+      })
+    })
+  }
+
+  // The scans answer from the queues (null: cancelled); syncPage answers SYNCED unless given.
+  function harness(overrides: Partial<PageSyncDeps> = {}) {
+    const deps = {
+      scanPage: vi.fn(async (): Promise<ScanResult | null> => page(LINKED)),
+      scanError: vi.fn((): string | null => null),
+      scanPageDetached: vi.fn(async (): Promise<ScanResult | null> => page(LINKED)),
+      syncPage: vi.fn(async (): Promise<PageSyncResult | null> => SYNCED),
+      ...overrides,
+    }
+    return { deps, pageSync: createPageSync(deps) }
+  }
+
+  it("sends the links made before the file had its link once link sync is on, without changing the tabs (§7.7)", async () => {
+    let gate: LinkSyncGate = { enabled: false, reason: "no_file", fileKey: null }
+    const api = linksApi()
+    const { bus } = checkingBus({})
+    const syncer = createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => gate })
+    // Linked without a file link: the layers keep their links, nothing reaches ReRune.
+    expect(await syncer.syncNodes(["12:345", "12:346"], LINKED)).toBeNull()
+    expect(api.upsertLinks).not.toHaveBeenCalled()
+
+    gate = ON
+    const { deps, pageSync } = harness({ syncPage: (pageId, scanned, options) => syncer.syncPage(pageId, scanned, options) })
+    pageSync.request()
+    expect(pageSync.offer("0:1", FREE)).toBe("run")
+    expect(pageSync.store.get()).toMatchObject({ running: "auto", requested: false })
+    await idle(pageSync)
+    expect(deps.scanPageDetached).toHaveBeenCalledTimes(1)
+    expect(deps.scanPage).not.toHaveBeenCalled()
+    expect(api.links).toHaveBeenCalledWith(PROJECT_ID, { file_key: FILE_KEY, page_id: "0:1", cursor: null, limit: 500 })
+    expect(api.upsertLinks).toHaveBeenCalledWith(PROJECT_ID, { file_key: FILE_KEY, upserts: [upsertFor("12:345"), upsertFor("12:346", K2)], removed_node_ids: [] })
+    const note = pageSync.store.get().auto
+    expect(note).toMatchObject({ pageId: "0:1", error: null, result: { upserted: 2, removed: 0, heldBack: 0 } })
+    expect(autoPageSyncNote(note!)).toBe("Link sync is on. Links on this page: 2 links added or updated. " + OTHER_PAGES_NOTE)
+  })
+
+  it("never removes links on its own and leaves the unresolved list to the button (D43, FIG-7)", async () => {
+    // As in a copy of the file whose original's link was pasted: 12:347 exists without a link, 12:900 is not found.
+    const listing = { links: [serverLink("12:345"), serverLink("12:347"), serverLink("12:900")], next_cursor: null, has_more: false }
+    const api = linksApi([listing, listing])
+    const { bus } = checkingBus({})
+    const syncer = createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => ON })
+    const scanned = [LINKED[0], scannedNode("12:347", "Plain", { name: "Pay button" })]
+    const { pageSync } = harness({
+      scanPage: async () => page(scanned),
+      scanPageDetached: async () => page(scanned),
+      syncPage: (pageId, nodes, options) => syncer.syncPage(pageId, nodes, options),
+    })
+    pageSync.request()
+    pageSync.offer("0:1", FREE)
+    await idle(pageSync)
+    expect(api.upsertLinks).not.toHaveBeenCalled()
+    const note = pageSync.store.get().auto
+    expect(note?.result).toMatchObject({ upserted: 0, removed: 0, unresolved: [], heldBack: 2 })
+    expect(autoPageSyncNote(note!)).toBe(
+      "Link sync is on. ReRune already has the links on this page. ReRune also has 2 links on this page that no longer match their layers. Run Sync links on this page on Layers to review them. " + OTHER_PAGES_NOTE,
+    )
+
+    // The button removes 12:347 and lists 12:900 with Remove.
+    const run = await pageSync.start("0:1")
+    expect(api.upsertLinks).toHaveBeenCalledWith(PROJECT_ID, { file_key: FILE_KEY, upserts: [], removed_node_ids: ["12:347"] })
+    expect(run?.result?.unresolved.map((link) => link.node_id)).toEqual(["12:900"])
+  })
+
+  it("waits while the app is busy, then runs once per request", async () => {
+    const { deps, pageSync } = harness()
+    expect(pageSync.offer("0:1", FREE)).toBeNull()
+    pageSync.request()
+    expect(pageSync.offer("0:1", { ...FREE, busy: true })).toBe("wait")
+    expect(pageSync.store.get().requested).toBe(true)
+    expect(deps.scanPageDetached).not.toHaveBeenCalled()
+    expect(pageSync.offer("0:1", FREE)).toBe("run")
+    expect(pageSync.offer("0:1", FREE)).toBeNull()
+    await idle(pageSync)
+    expect(pageSync.offer("0:1", FREE)).toBeNull()
+    expect(deps.scanPageDetached).toHaveBeenCalledTimes(1)
+    expect(deps.syncPage).toHaveBeenCalledTimes(1)
+    expect(deps.syncPage).toHaveBeenCalledWith("0:1", LINKED, { removals: false })
+  })
+
+  it("asks again when its scan is cancelled (a newer scan, a page change), so the links are not left behind", async () => {
+    const scanPageDetached = vi.fn<() => Promise<ScanResult | null>>().mockResolvedValueOnce(null).mockResolvedValue(page(LINKED))
+    const { deps, pageSync } = harness({ scanPageDetached })
+    pageSync.request()
+    pageSync.offer("0:1", FREE)
+    await idle(pageSync)
+    expect(pageSync.store.get()).toEqual({ running: null, requested: true, auto: null })
+    expect(deps.syncPage).not.toHaveBeenCalled()
+    expect(pageSync.offer("0:2", FREE)).toBe("run")
+    await idle(pageSync)
+    expect(scanPageDetached).toHaveBeenCalledTimes(2)
+    expect(deps.syncPage).toHaveBeenCalledWith("0:2", LINKED, { removals: false })
+    expect(pageSync.store.get()).toMatchObject({ requested: false, auto: { pageId: "0:2", result: SYNCED, error: null } })
+  })
+
+  it("runs one page sync at a time: a click during the automatic run starts nothing, a request waits for the button", async () => {
+    let finishScan: (result: ScanResult | null) => void = () => {}
+    const scanPageDetached = vi.fn(() => new Promise<ScanResult | null>((resolve) => (finishScan = resolve)))
+    const scanPage = vi.fn(async (): Promise<ScanResult | null> => page(LINKED))
+    const { deps, pageSync } = harness({ scanPage, scanPageDetached })
+    pageSync.request()
+    pageSync.offer("0:1", FREE)
+    expect(pageSync.start("0:1")).toBeNull()
+    expect(scanPage).not.toHaveBeenCalled()
+    finishScan(page(LINKED))
+    await idle(pageSync)
+
+    let finishButton: (result: ScanResult | null) => void = () => {}
+    scanPage.mockImplementationOnce(() => new Promise<ScanResult | null>((resolve) => (finishButton = resolve)))
+    const button = pageSync.start("0:1")
+    expect(button).not.toBeNull()
+    expect(pageSync.store.get().running).toBe("button")
+    pageSync.request()
+    expect(pageSync.offer("0:1", FREE)).toBe("wait")
+    finishButton(page(LINKED))
+    expect(await button).toEqual({ result: SYNCED, error: null })
+    expect(deps.syncPage).toHaveBeenLastCalledWith("0:1", LINKED, { removals: true })
+    expect(pageSync.offer("0:1", FREE)).toBe("run")
+    finishScan(page(LINKED))
+    await idle(pageSync)
+    expect(scanPageDetached).toHaveBeenCalledTimes(2)
+  })
+
+  it("is dropped when link sync is off by then, or for another server's file", () => {
+    const { deps, pageSync } = harness()
+    pageSync.request()
+    expect(pageSync.offer("0:1", { ...FREE, syncEnabled: false, busy: true })).toBe("drop")
+    expect(pageSync.store.get().requested).toBe(false)
+    pageSync.request()
+    expect(pageSync.offer("0:1", { ...FREE, readOnly: true })).toBe("drop")
+    expect(pageSync.offer("0:1", FREE)).toBeNull()
+    expect(deps.scanPageDetached).not.toHaveBeenCalled()
+  })
+
+  it("is discarded by reset (sign-out, another project), also while it runs", async () => {
+    const scanPageDetached = vi.fn<() => Promise<ScanResult | null>>().mockResolvedValueOnce(null).mockResolvedValue(page(LINKED))
+    const { pageSync } = harness({ scanPageDetached })
+    pageSync.request()
+    pageSync.offer("0:1", FREE)
+    pageSync.reset()
+    await idle(pageSync)
+    // The cancelled scan does not ask again after reset.
+    expect(pageSync.store.get()).toEqual({ running: null, requested: false, auto: null })
+
+    pageSync.request()
+    pageSync.offer("0:1", FREE)
+    pageSync.reset()
+    await idle(pageSync)
+    expect(pageSync.store.get()).toEqual({ running: null, requested: false, auto: null })
+
+    pageSync.request()
+    pageSync.offer("0:1", FREE)
+    await idle(pageSync)
+    expect(pageSync.store.get().auto).not.toBeNull()
+    pageSync.dismiss()
+    expect(pageSync.store.get().auto).toBeNull()
+  })
+
+  it("reports a failed scan or sync in its note and does not ask again", async () => {
+    const failing = harness({ scanPageDetached: () => Promise.reject(new Error("The plugin stopped responding. Try again.")) })
+    failing.pageSync.request()
+    failing.pageSync.offer("0:1", FREE)
+    await idle(failing.pageSync)
+    const note = failing.pageSync.store.get().auto
+    expect(failing.pageSync.store.get().requested).toBe(false)
+    expect(note).toEqual({ pageId: "0:1", result: null, error: "The plugin stopped responding. Try again." })
+    expect(autoPageSyncNote(note!)).toBe("Link sync is on, but the links on this page couldn't be shared: The plugin stopped responding. Try again. " + RUN_ON_LAYERS_LATER)
+    expect(failing.deps.syncPage).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["network", new ApiError(0, "network", "Can't reach ReRune. Check your connection.")],
+    ["403", new ApiError(403, "forbidden", "forbidden")],
+    ["429", new ApiError(429, "rate_limited", "rate limited")],
+  ])("shows the sync's error when the automatic run fails (%s)", async (_label, failure) => {
+    const api = { links: vi.fn(async () => Promise.reject(failure)), upsertLinks: vi.fn() }
+    const { bus } = checkingBus({})
+    const syncer = createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => ON })
+    const { pageSync } = harness({ syncPage: (pageId, scanned, options) => syncer.syncPage(pageId, scanned, options) })
+    pageSync.request()
+    pageSync.offer("0:1", FREE)
+    await idle(pageSync)
+    expect(api.upsertLinks).not.toHaveBeenCalled()
+    const note = autoPageSyncNote(pageSync.store.get().auto!)
+    expect(note).toBe("Link sync is on, but the links on this page couldn't be shared: " + userMessage(failure) + " " + RUN_ON_LAYERS_LATER)
+    expect(note).not.toContain(OTHER_PAGES_NOTE)
+  })
+
+  it("leaves no note while link sync is off at the syncer", async () => {
+    const api = linksApi()
+    const { bus, posted } = checkingBus({})
+    const syncer = createLinkSyncer({ api, bus, projectId: () => PROJECT_ID, gate: () => ({ enabled: false, reason: "possible_copy", fileKey: null }) })
+    const { pageSync } = harness({ syncPage: (pageId, scanned, options) => syncer.syncPage(pageId, scanned, options) })
+    pageSync.request()
+    pageSync.offer("0:1", FREE)
+    await idle(pageSync)
+    expect(pageSync.store.get()).toEqual({ running: null, requested: false, auto: null })
+    expect(api.links).not.toHaveBeenCalled()
+    expect(posted).toEqual([])
+  })
+
+  it("reports the button's scan that did not finish or failed, without syncing", async () => {
+    const syncPage = vi.fn()
+    expect(await harness({ scanPage: async () => null, scanError: () => "The canvas is busy", syncPage }).pageSync.start("0:1")).toEqual({ result: null, error: "The canvas is busy" })
+    expect(await harness({ scanPage: async () => null, syncPage }).pageSync.start("0:1")).toEqual({ result: null, error: SCAN_UNFINISHED })
+    const thrown = harness({ scanPage: () => Promise.reject(new ApiError(0, "network", "Can't reach ReRune. Check your connection.")), syncPage }).pageSync
+    expect(await thrown.start("0:1")).toEqual({ result: null, error: "Can't reach ReRune. Check your connection." })
+    expect(thrown.store.get().running).toBeNull()
+    expect(syncPage).not.toHaveBeenCalled()
+  })
+})
+
+describe("the page sync in the app and on Layers", () => {
+  function body(source: string, start: string): string {
+    const from = source.indexOf(start)
+    expect(from, start).toBeGreaterThan(-1)
+    return source.slice(from, source.indexOf("\n  }\n", from))
+  }
+
+  it("asks for the automatic run after a pasted link and after This is the same file, without leaving the tab", () => {
+    expect(body(appSource, "async function saveFileLink(")).toContain("return saveAndRegister(withFileLink(")
+    expect(body(appSource, "async function confirmFile(")).toContain("return saveAndRegister(confirmSameFile(")
+    const save = body(appSource, "function saveAndRegister(")
+    expect(save).toContain("requestPageSync: () => pageSync.request()")
+    for (const name of ["function saveAndRegister(", "async function saveFileLink(", "async function confirmFile("]) {
+      expect(body(appSource, name)).not.toContain("go(")
+    }
+  })
+
+  it("runs it once nothing else uses the canvas, and shows its progress and note with the notices", () => {
+    const busy = appSource.slice(appSource.indexOf("const autoSyncBusy ="), appSource.indexOf("\n", appSource.indexOf("const autoSyncBusy =")))
+    for (const condition of ["workLocked", "resetting", "layersBusy", "link !== null", 'space.status === "scanning"', "!isWorkspaceScreen(screen)"]) {
+      expect(busy).toContain(condition)
+    }
+    expect(appSource).toContain("pageSync.offer(pageRef.current, { syncEnabled: gate.enabled, readOnly, busy: autoSyncBusy })")
+    expect(appSource).toContain("[pageSyncState.requested, pageSyncState.running, gate.enabled, readOnly, autoSyncBusy, projectLoaded]")
+    expect(appSource).toContain("{autoSyncRunning && <Note tone=\"info\">{AUTO_SYNC_RUNNING}</Note>}")
+    expect(appSource).toContain("{autoPageSyncNote(autoSyncNote)}")
+    expect(AUTO_SYNC_RUNNING).toBe("Link sync is on. Syncing the links on this page…")
+  })
+
+  it("drops the request and the note on sign-out and when a project is picked", () => {
+    expect(appSource.match(/setLink\(null\)\n {4}pageSync\.reset\(\)\n {4}workspace\.clear\(true\)/g)).toHaveLength(2)
+    expect(body(appSource, "async function pickProject(")).toContain("pageSync.reset()")
+  })
+
+  it("shares one guard with Layers, which waits while any page sync runs", () => {
+    expect(layersSource).not.toContain("createPageSync")
+    expect(body(layersSource, "async function syncPage()")).toContain("props.pageSync.start(props.pageId)")
+    expect(layersSource).toContain("const syncing = useStore(props.pageSync.store).running !== null")
+    expect(layersSource).toContain("<SegmentedControl value={state.scope} disabled={syncing}")
+    expect(layersSource).toContain("const writeDisabled = props.readOnly || busy !== null || scanning || syncing")
+    expect(layersSource).toContain("openDisabled={syncing}")
+    expect(layersSource).toContain("props.onBusy(busy !== null)")
+    expect(appSource).toContain("onBusy={setLayersBusy}")
+  })
+})
+
+describe("autoPageSyncStep (the automatic run)", () => {
+  const FREE = { syncEnabled: true, readOnly: false, busy: false }
+
+  it("runs when the button could, once nothing else runs", () => {
+    expect(autoPageSyncStep(FREE)).toBe("run")
+    expect(autoPageSyncStep({ ...FREE, busy: true })).toBe("wait")
+  })
+
+  it("is dropped when link sync is off by then or on another server's file", () => {
+    expect(autoPageSyncStep({ ...FREE, syncEnabled: false })).toBe("drop")
+    expect(autoPageSyncStep({ ...FREE, readOnly: true, busy: true })).toBe("drop")
+  })
+})
+
 describe("messages", () => {
   it("explains failures and rejections, and summarises a page sync", () => {
     expect(linkSyncWarning(null)).toBeNull()
@@ -479,7 +810,23 @@ describe("messages", () => {
     )
     expect(rejectedWarning(2)).toBe("2 links weren't saved in ReRune because the key no longer exists or is a group.")
     expect(rejectedWarning(0)).toBeNull()
-    expect(pageSyncSummary({ upserted: 0, removed: 0, rejected: [], error: null, serverLinks: 3, unresolved: [] })).toBe("ReRune's links match the layers on this page.")
+    expect(pageSyncSummary({ upserted: 0, removed: 0, rejected: [], error: null, serverLinks: 3, unresolved: [], heldBack: 0 })).toBe("ReRune's links match the layers on this page.")
     expect(unresolvedSummary(3)).toBe("3 links point to layers not in this file")
+  })
+
+  it("words the button's note and the automatic run's note", () => {
+    const synced: PageSyncResult = { upserted: 173, removed: 1, rejected: [{ node_id: "1:1", reason: "key_not_found" }], error: null, serverLinks: 1, unresolved: [], heldBack: 0 }
+    expect(pageSyncNote(synced)).toBe("Links on this page: 173 links added or updated, 1 link removed. 1 link wasn't saved in ReRune because the key no longer exists or is a group.")
+    expect(pageSyncNote({ ...synced, upserted: 0, removed: 0, rejected: [] })).toBe("ReRune's links match the layers on this page.")
+    const auto = { ...synced, removed: 0, heldBack: 1 }
+    expect(autoPageSyncNote({ result: auto, error: null })).toBe(
+      "Link sync is on. Links on this page: 173 links added or updated. 1 link wasn't saved in ReRune because the key no longer exists or is a group. ReRune also has 1 link on this page that no longer matches its layer. Run Sync links on this page on Layers to review it. To share the links on other pages, open each page and run Sync links on this page on Layers.",
+    )
+    expect(autoPageSyncNote({ result: { ...auto, upserted: 0, rejected: [], heldBack: 0, serverLinks: 0 }, error: null })).toBe("Link sync is on. No layer on this page is linked yet. " + OTHER_PAGES_NOTE)
+    // One verb for the button everywhere: "Run".
+    for (const text of [OTHER_PAGES_NOTE, RUN_ON_LAYERS_LATER, linkSyncWarning({ ...synced, error: "x" }) ?? ""]) {
+      expect(text).toMatch(/[Rr]un Sync links on this page/)
+      expect(text).not.toMatch(/use Sync links on this page/)
+    }
   })
 })

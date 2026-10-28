@@ -103,4 +103,37 @@ describe("workspace", () => {
     workspace.clear(true)
     expect(workspace.store.get().pending.size).toBe(0)
   })
+
+  it("scans the page for the automatic link sync without changing the shown scope, list or status (§7.7)", async () => {
+    const shown = [scannedNode("9:1", "Selected")]
+    const scanner = fakeScanner((scope) => (scope === "page" ? nodes : shown))
+    const workspace = createWorkspace({ scanner, api: api(), project: () => ({ id: PROJECT_ID, main_language: "en" }) })
+    await workspace.scan("selection")
+    const before = workspace.store.get()
+    const result = await workspace.scanDetached("page")
+    expect(result?.nodes).toEqual(nodes)
+    expect(workspace.store.get()).toBe(before)
+    expect(workspace.store.get()).toMatchObject({ scope: "selection", status: "ready", result: { scope: "selection", nodes: shown } })
+  })
+
+  it("leaves the shown scan alone: null while it runs or when a newer scan cancels it, and throws a failure", async () => {
+    let finish: () => void = () => {}
+    const waiting: ScanRunner & { cancel: ReturnType<typeof vi.fn<() => void>> } = {
+      cancel: vi.fn<() => void>(),
+      run: vi.fn((scope: Scope) => new Promise<ScanResult>((resolve) => (finish = () => resolve({ scope, nodes, total: 2, truncated: false, skipped: SKIPPED })))),
+    }
+    const busy = createWorkspace({ scanner: waiting, api: api(), project: () => ({ id: PROJECT_ID, main_language: "en" }) })
+    const shownScan = busy.scan("selection")
+    expect(await busy.scanDetached("page")).toBeNull()
+    expect(waiting.run).toHaveBeenCalledTimes(1)
+    finish()
+    await shownScan
+    expect(busy.store.get().status).toBe("ready")
+
+    const cancelled = createWorkspace({ scanner: fakeScanner(() => new ScanCancelledError()), api: api(), project: () => ({ id: PROJECT_ID, main_language: "en" }) })
+    expect(await cancelled.scanDetached("page")).toBeNull()
+    const failing = createWorkspace({ scanner: fakeScanner(() => new Error("The plugin stopped responding. Try again.")), api: api(), project: () => ({ id: PROJECT_ID, main_language: "en" }) })
+    await expect(failing.scanDetached("page")).rejects.toThrow("The plugin stopped responding. Try again.")
+    expect(failing.store.get()).toMatchObject({ status: "idle", error: null })
+  })
 })

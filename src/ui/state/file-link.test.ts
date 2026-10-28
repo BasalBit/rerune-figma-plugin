@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
 import { PROJECT_ID } from "../../../test/fixtures"
 import type { FigmaFile, FigmaRegisterFileRequest } from "../../shared/api-types"
-import { linkSyncGate, withFileLink } from "../../shared/file-link"
+import { confirmSameFile, linkSyncGate, withFileLink } from "../../shared/file-link"
 import type { FileSettings } from "../../shared/messages"
 import { newFileSettings } from "../../shared/plugin-data"
-import { ApiError } from "../api/client"
+import { ApiError, userMessage } from "../api/client"
 import {
   BRANCH_MESSAGE,
   COPY_MESSAGE,
@@ -16,8 +16,12 @@ import {
   NO_PERMISSION_MESSAGE,
   readFileLinkInput,
   registerFile,
+  saveAndRegisterFile,
+  syncsPageAfterSave,
   SYNC_ON_MESSAGE,
+  type FileLinkSave,
 } from "./file-link"
+import { RUN_ON_LAYERS_LATER } from "./link-sync"
 
 const FILE_KEY = "AbCdEf1234567890XyZ"
 const BRANCH_KEY = "BrAnCh1234567890"
@@ -138,5 +142,108 @@ describe("fileRegistration and registerFile (E14)", () => {
       file: null,
       error: "The link is saved in this file, but ReRune couldn't register it: Paste a Figma file link (Share → Copy link).",
     })
+  })
+})
+
+describe("saveAndRegisterFile: the page sync after a saved or confirmed file link (§7.7)", () => {
+  const API_BASE = "http://localhost:8080"
+  const pasted = withFileLink(settings(), { fileKey: FILE_KEY, branchKey: null }, "Chapter App", 5)
+
+  // Records the order of save, E14 and the page sync request; `register` answers E14.
+  function harness(register: (request: FigmaRegisterFileRequest) => Promise<FigmaFile> = async (request) => registered(request)) {
+    const calls: string[] = []
+    const api = {
+      registerFile: vi.fn(async (_projectId: string, request: FigmaRegisterFileRequest) => {
+        calls.push("register")
+        return register(request)
+      }),
+    }
+    const save = vi.fn<(next: FileSettings) => Promise<void>>(async () => {
+      calls.push("save")
+    })
+    const requestPageSync = vi.fn(() => {
+      calls.push("sync-page")
+    })
+    return { calls, api, save, requestPageSync, deps: { api, apiBase: API_BASE, save, requestPageSync } }
+  }
+
+  function input(next: FileSettings, overrides: Partial<FileLinkSave> = {}): FileLinkSave {
+    return { projectId: PROJECT_ID, permissions: EDITOR, settings: next, rootName: "Chapter App", ...overrides }
+  }
+
+  it("syncs the page after a pasted link once the file is saved and registered", async () => {
+    const run = harness()
+    expect(await saveAndRegisterFile(run.deps, input(pasted))).toBeNull()
+    expect(run.calls).toEqual(["save", "register", "sync-page"])
+    expect(run.save).toHaveBeenCalledWith(pasted)
+  })
+
+  it("syncs the page after This is the same file, which resumes a paused sync", async () => {
+    const copy = { ...pasted, fileName: "Chapter App" }
+    expect(linkSyncGate(copy, "Chapter App (Copy)", EDITOR).reason).toBe("possible_copy")
+    const run = harness()
+    expect(await saveAndRegisterFile(run.deps, input(confirmSameFile(copy, "Chapter App (Copy)", 6), { rootName: "Chapter App (Copy)" }))).toBeNull()
+    expect(run.calls).toEqual(["save", "register", "sync-page"])
+  })
+
+  it.each([
+    ["network", new ApiError(0, "network", "Can't reach ReRune. Check your connection.")],
+    ["403", new ApiError(403, null, "You don't have permission to do that.")],
+    ["429", new ApiError(429, null, "Too many requests. Wait a moment and try again.")],
+  ])("keeps the link saved, does not sync and says how to share the links later when E14 failed (%s)", async (_label, failure) => {
+    const run = harness(async () => Promise.reject(failure))
+    const warning = await saveAndRegisterFile(run.deps, input(pasted))
+    expect(warning).toBe("The link is saved in this file, but ReRune couldn't register it: " + userMessage(failure) + " " + RUN_ON_LAYERS_LATER)
+    expect(run.calls).toEqual(["save", "register"])
+  })
+
+  it("does not point to Sync links on this page when E14 failed for a branch link (sync waits for the merge)", async () => {
+    const branch = withFileLink(settings(), { fileKey: FILE_KEY, branchKey: BRANCH_KEY }, "Chapter App", 5)
+    const run = harness(async () => Promise.reject(new ApiError(0, "network", "Can't reach ReRune. Check your connection.")))
+    expect(await saveAndRegisterFile(run.deps, input(branch))).toBe("The link is saved in this file, but ReRune couldn't register it: Can't reach ReRune. Check your connection.")
+  })
+
+  it("does not sync without edit_keys: nothing is registered and links stay in the file", async () => {
+    const run = harness()
+    expect(await saveAndRegisterFile(run.deps, input(pasted, { permissions: ["publishing"] }))).toBeNull()
+    expect(run.calls).toEqual(["save"])
+  })
+
+  it("does not sync for a branch link: the main file is registered, sync waits for the merge", async () => {
+    const branch = withFileLink(settings(), { fileKey: FILE_KEY, branchKey: BRANCH_KEY }, "Chapter App", 5)
+    const run = harness()
+    expect(await saveAndRegisterFile(run.deps, input(branch))).toBeNull()
+    expect(run.calls).toEqual(["save", "register"])
+  })
+
+  it("does not sync while sync is paused for a suspected copy", async () => {
+    const run = harness()
+    expect(await saveAndRegisterFile(run.deps, input(pasted, { rootName: "Chapter App (Copy)" }))).toBeNull()
+    expect(run.calls).toEqual(["save"])
+  })
+
+  it("does not sync settings of another ReRune server (read-only)", async () => {
+    const run = harness()
+    expect(await saveAndRegisterFile(run.deps, input({ ...pasted, apiBase: "https://rerune.io/api" }))).toBeNull()
+    expect(run.calls).toEqual(["save", "register"])
+  })
+
+  it("neither registers nor syncs when the settings could not be saved", async () => {
+    const run = harness()
+    run.save.mockRejectedValueOnce(new Error("The settings couldn't be saved."))
+    await expect(saveAndRegisterFile(run.deps, input(pasted))).rejects.toThrow("The settings couldn't be saved.")
+    expect(run.api.registerFile).not.toHaveBeenCalled()
+    expect(run.requestPageSync).not.toHaveBeenCalled()
+  })
+
+  it("needs a registered file and the link sync gate (syncsPageAfterSave)", () => {
+    const on = linkSyncGate(pasted, "Chapter App", EDITOR)
+    const file = registered({ url: pasted.fileUrl ?? "" })
+    expect(syncsPageAfterSave({ file, error: null }, on)).toBe(true)
+    expect(syncsPageAfterSave({ file: null, error: null }, on)).toBe(false)
+    expect(syncsPageAfterSave({ file: null, error: "The link is saved in this file, but ReRune couldn't register it: boom" }, on)).toBe(false)
+    for (const reason of ["no_file", "branch", "possible_copy", "no_permission"] as const) {
+      expect(syncsPageAfterSave({ file, error: null }, { enabled: false, reason, fileKey: null })).toBe(false)
+    }
   })
 })

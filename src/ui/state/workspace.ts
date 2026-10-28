@@ -38,6 +38,9 @@ export interface WorkspaceDeps {
 export interface Workspace {
   store: Store<WorkspaceState>
   scan(scope?: Scope): Promise<ScanResult | null>
+  // A scan whose result is not shown (the automatic page link sync, §7.7): scope, list and status stay. Scans share
+  // one runner, so it returns null while a shown scan runs, and a later scan or clear() cancels it (null).
+  scanDetached(scope: Scope): Promise<ScanResult | null>
   refreshRemote(): Promise<void>
   setScope(scope: Scope): void
   setPending(nodeIds: readonly string[], name: string | null): void
@@ -131,6 +134,19 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
       })
       await refreshRemote()
       return result
+    },
+    async scanDetached(scope) {
+      if (store.get().status === "scanning") {
+        return null
+      }
+      try {
+        return await deps.scanner.run(scope)
+      } catch (error) {
+        if (error instanceof ScanCancelledError) {
+          return null
+        }
+        throw error
+      }
     },
     setScope(scope) {
       store.set((state) => ({ ...state, scope }))

@@ -1,10 +1,12 @@
 import type { FigmaFile, FigmaRegisterFileRequest } from "../../shared/api-types"
-import { EDIT_KEYS_PERMISSION, isPossibleCopy, type LinkSyncBlock, type LinkSyncGate } from "../../shared/file-link"
+import { EDIT_KEYS_PERMISSION, isPossibleCopy, linkSyncGate, type LinkSyncBlock, type LinkSyncGate } from "../../shared/file-link"
 import { canonicalFileUrl, fileKeyUrl, isFigmaFileKey, parseFigmaUrl, type ParsedFigmaUrl } from "../../shared/figma-url"
 import type { FileSettings } from "../../shared/messages"
 import { firstRunes, trimSpace } from "../../shared/text"
 import { REASON_MESSAGES, userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
+import { RUN_ON_LAYERS_LATER } from "./link-sync"
+import { connectedSettings } from "./navigation"
 
 // The pasted file link (§7.7, Phase 2): input validation, E14 registration and the banners that explain why link
 // sync is off (§7.11: skipped silently, "a banner explains how to enable").
@@ -115,4 +117,39 @@ export async function registerFile(
   } catch (error) {
     return { file: null, error: "The link is saved in this file, but ReRune couldn't register it: " + userMessage(error) }
   }
+}
+
+// After a pasted link or "This is the same file" (§7.7), the links made while sync was off (no link yet, a
+// suspected copy) are in the file only: link, unlink and push send just the layers they change. So the current
+// page is synced once, when E14 registered the file and link sync is now on, by the gate of the button and of
+// link, unlink and push (§7.11).
+export function syncsPageAfterSave(registration: RegistrationResult, gate: LinkSyncGate): boolean {
+  return registration.error === null && registration.file !== null && gate.enabled
+}
+
+export interface FileLinkSaveDeps {
+  api: Pick<FigmaApi, "registerFile">
+  apiBase: string                            // this build's server: settings of another server are read-only
+  save(settings: FileSettings): Promise<void>
+  requestPageSync(): void                    // the app runs "Sync links on this page" once it is free (createPageSync)
+}
+
+export interface FileLinkSave {
+  projectId: string
+  permissions: readonly string[]
+  settings: FileSettings                     // with the pasted link (withFileLink) or the confirmed name (confirmSameFile)
+  rootName: string
+}
+
+// Saves the settings, registers the file (E14) and asks for the page sync when syncsPageAfterSave says so. Returns
+// E14's warning, or null; with link sync on, the warning says how to share the links made before (links register
+// the file themselves, D15). A failed save throws; a failed registration or sync never undoes the saved link.
+export async function saveAndRegisterFile(deps: FileLinkSaveDeps, save: FileLinkSave): Promise<string | null> {
+  await deps.save(save.settings)
+  const registration = await registerFile(deps.api, save.projectId, save.settings, save.rootName, save.permissions)
+  const gate = linkSyncGate(connectedSettings({ apiBase: deps.apiBase, settings: save.settings }), save.rootName, save.permissions)
+  if (syncsPageAfterSave(registration, gate)) {
+    deps.requestPageSync()
+  }
+  return registration.error !== null && gate.enabled ? registration.error + " " + RUN_ON_LAYERS_LATER : registration.error
 }

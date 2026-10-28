@@ -41,7 +41,7 @@ Until Dev Mode has been tested on a paid Figma plan (`TESTING.md` §5.5, §5.6 a
 #### Context for translators
 
 - **File link:** paste the file's Figma link once (Project screen, or Settings → Figma file). In a branch or a suspected copy of the file, link sync and screenshots wait until you confirm the link.
-- **Link sync:** ReRune learns which layers show which key after every link, unlink and push, and when you click **Sync links on this page**. Translators then see where each key is used. Links whose layer is gone are listed and removed only when you ask.
+- **Link sync:** ReRune learns which layers show which key after every link, unlink and push, and when you click **Sync links on this page**. Saving the file's link in Settings, or confirming the file, shares the open page's links at once, including layers linked before the link was saved; other pages follow with **Sync links on this page**. Translators then see where each key is used. Links whose layer is gone are listed and removed only when you ask.
 - **Screenshots on push** ("Upload screenshots on push", on by default): uploads an image of each changed top-level frame, with a box around each linked layer, and shows progress and **Stop**. Sandbox accounts never upload images.
 
 #### Dev Mode (full build only)
