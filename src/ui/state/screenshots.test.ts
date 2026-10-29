@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { keyId, PROJECT_ID, scannedNode } from "../../../test/fixtures"
-import type { FigmaMetaResponse, FigmaScreenshotUploadResponse, FigmaUser } from "../../shared/api-types"
+import type { FigmaMetaResponse, FigmaScreenshotUploadResponse, FigmaTextStyle, FigmaUser } from "../../shared/api-types"
 import type { Box, FileSettings, MainToUi, UiToMain } from "../../shared/messages"
 import { newFileSettings } from "../../shared/plugin-data"
 import { ApiError, RATE_LIMIT_MESSAGE, REASON_MESSAGES } from "../api/client"
@@ -22,6 +22,7 @@ import {
   progressText,
   requestFrameImage,
   screenshotDeps,
+  screenshotFreshness,
   screenshotGate,
   screenshotMeta,
   SCREENSHOTS_ON_HINT,
@@ -45,7 +46,7 @@ const FILE_KEY = "AbCdEf1234567890XyZ"
 const K1 = keyId(1)
 const K2 = keyId(2)
 
-const META: FigmaMetaResponse = { api_version: 1, screenshots_enabled: true, max_image_bytes: 2097152, max_image_side: 4096, max_batch_size: 100, server_time: "2026-10-27T10:00:00Z" }
+const META: FigmaMetaResponse = { api_version: 1, screenshots_enabled: true, max_image_bytes: 2097152, max_image_side: 4096, max_batch_size: 100, server_time: "2026-10-27T10:00:00Z", screenshot_freshness: false }
 const USER: FigmaUser = { id: "kc-1", email: "dana@example.com", first_name: "Dana", last_name: "Designer", sandbox_expires_at: null }
 const READY: Availability = { meta: META, user: USER, error: null }
 
@@ -160,6 +161,16 @@ describe("createAvailability (E1 + E8)", () => {
     expect(fake.projects).not.toHaveBeenCalled()
   })
 
+  it("says whether the server takes captured texts and styles (E1 screenshot_freshness)", () => {
+    expect(screenshotFreshness(READY)).toBe(false)
+    expect(screenshotFreshness({ ...READY, meta: { ...META, screenshot_freshness: true } })).toBe(true)
+    // An older server sends no flag at all.
+    const older: Partial<FigmaMetaResponse> = { ...META }
+    delete older.screenshot_freshness
+    expect(screenshotFreshness({ ...READY, meta: older as FigmaMetaResponse })).toBe(false)
+    expect(screenshotFreshness({ meta: null, user: null, error: null })).toBe(false)
+  })
+
   it("switches screenshots off for the session, also before meta loaded", async () => {
     const loader = createAvailability(api())
     loader.disable()
@@ -203,7 +214,30 @@ describe("affectedFrames (§7.13 rule 11)", () => {
 })
 
 function box(x: number, y: number, w: number, h: number, nodeId = "12:1"): Box {
-  return { nodeId, keyId: K1, x, y, w, h }
+  return { nodeId, keyId: K1, x, y, w, h, text: null, style: null }
+}
+
+const STYLE: FigmaTextStyle = {
+  font_family: "Inter",
+  font_style: "Semi Bold",
+  font_weight: 600,
+  font_size: 17,
+  line_height_px: 22,
+  letter_spacing_px: -0.41,
+  text_align_horizontal: "center",
+  text_align_vertical: "center",
+  text_case: "original",
+  text_decoration: "none",
+  color: "#FFFFFFFF",
+  background: "#0A84FFFF",
+  auto_resize: "none",
+  max_lines: null,
+  truncation: "disabled",
+  mixed: false,
+}
+
+function styled(x: number, y: number, w: number, h: number, nodeId = "12:1", text: string | null = "Pay now", style: FigmaTextStyle | null = STYLE): Box {
+  return { ...box(x, y, w, h, nodeId), text, style }
 }
 
 describe("fitBoxes (§7.16 decoded size)", () => {
@@ -218,6 +252,17 @@ describe("fitBoxes (§7.16 decoded size)", () => {
 
   it("drops boxes that end up empty or outside", () => {
     expect(fitBoxes([box(400, 10, 10, 10), box(-5, -5, 3, 3), box(-5, 0, 10, 10)], { width: 400, height: 800 }, { width: 400, height: 800 })).toEqual([box(0, 0, 5, 10)])
+  })
+
+  it("scales the text style by actual/expected height only when it rescales the boxes (contract §3.3)", () => {
+    expect(fitBoxes([styled(10, 10, 20, 20)], { width: 400, height: 800 }, { width: 398, height: 799 })).toEqual([styled(10, 10, 20, 20)])
+    expect(fitBoxes([styled(100, 200, 50, 20)], { width: 400, height: 800 }, { width: 300, height: 600 })).toEqual([
+      styled(75, 150, 38, 15, "12:1", "Pay now", { ...STYLE, font_size: 12.75, line_height_px: 16.5, letter_spacing_px: -0.31 }),
+    ])
+    // A font size that rounds to 0 at the new size leaves the box without a style.
+    expect(fitBoxes([styled(0, 0, 400, 800, "12:1", "Pay", { ...STYLE, font_size: 0.01 })], { width: 400, height: 800 }, { width: 100, height: 200 })).toEqual([
+      styled(0, 0, 100, 200, "12:1", "Pay", null),
+    ])
   })
 })
 
@@ -242,7 +287,7 @@ describe("E19 parts", () => {
   })
 
   it("builds meta with the decoded size, trimmed names and at most 500 boxes", () => {
-    expect(screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, IMAGE.boxes)).toEqual({
+    expect(screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, IMAGE.boxes, false)).toEqual({
       file_key: FILE_KEY,
       frame_id: "I10:1;2:3",
       frame_name: "Checkout",
@@ -256,15 +301,53 @@ describe("E19 parts", () => {
       ],
     })
     const many = Array.from({ length: 501 }, (_, index) => box(0, 0, 1, 1, "12:" + index))
-    const meta = screenshotMeta({ ...IMAGE, frameName: "😀".repeat(250) }, FILE_KEY, { width: 10, height: 10 }, many)
+    const meta = screenshotMeta({ ...IMAGE, frameName: "😀".repeat(250) }, FILE_KEY, { width: 10, height: 10 }, many, false)
     expect(meta.boxes).toHaveLength(500)
     expect(meta.frame_name).toBe("😀".repeat(200))
+  })
+
+  it("adds each box's text and style only for a server with screenshot_freshness (SF5b)", () => {
+    const boxes = [styled(20, 50, 100, 20), styled(380, 50, 20, 20, "12:2", null, null), styled(10, 10, 5, 5, "12:3", "", STYLE)]
+    const base = { x: 20, y: 50, w: 100, h: 20 }
+    expect(screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, boxes, false).boxes).toEqual([
+      { key_id: K1, node_id: "12:1", ...base },
+      { key_id: K1, node_id: "12:2", x: 380, y: 50, w: 20, h: 20 },
+      { key_id: K1, node_id: "12:3", x: 10, y: 10, w: 5, h: 5 },
+    ])
+    const fresh = screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, boxes, true)
+    expect(fresh.boxes).toEqual([
+      { key_id: K1, node_id: "12:1", ...base, text: "Pay now", style: STYLE },
+      { key_id: K1, node_id: "12:2", x: 380, y: 50, w: 20, h: 20 },
+      { key_id: K1, node_id: "12:3", x: 10, y: 10, w: 5, h: 5, text: "", style: STYLE },
+    ])
+    // Absent, not null, for what was not captured; the box keys come first.
+    expect(JSON.stringify(fresh.boxes[1])).toBe('{"key_id":"' + K1 + '","node_id":"12:2","x":380,"y":50,"w":20,"h":20}')
+    expect(Object.keys(fresh.boxes[0])).toEqual(["key_id", "node_id", "x", "y", "w", "h", "text", "style"])
+  })
+
+  it("never sends a style the server would reject, and keeps the meta under 900,000 bytes", () => {
+    const invalid = screenshotMeta(
+      IMAGE,
+      FILE_KEY,
+      { width: 400, height: 800 },
+      [styled(0, 0, 1, 1, "12:1", "Pay", { ...STYLE, color: "#fff" }), styled(0, 0, 1, 1, "12:2", "x".repeat(5001))],
+      true,
+    )
+    expect(invalid.boxes).toEqual([
+      { key_id: K1, node_id: "12:1", x: 0, y: 0, w: 1, h: 1, text: "Pay" },
+      { key_id: K1, node_id: "12:2", x: 0, y: 0, w: 1, h: 1, style: STYLE },
+    ])
+    const many = Array.from({ length: 500 }, (_, index) => styled(0, 0, 1, 1, "12:" + index, "x".repeat(5000)))
+    const meta = screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, many, true)
+    expect(new TextEncoder().encode(JSON.stringify(meta)).length).toBeLessThanOrEqual(900000)
+    expect(meta.boxes.filter((entry) => entry.text === undefined).length).toBeGreaterThan(300)
+    expect(meta.boxes.every((entry) => entry.style !== undefined)).toBe(true)
   })
 
   it("trims names as the server's strings.TrimSpace does: U+0085 yes, U+FEFF no", () => {
     const nel = String.fromCharCode(0x85)
     const bom = String.fromCharCode(0xfeff)
-    const meta = screenshotMeta({ ...IMAGE, frameName: "Checkout" + nel, pageName: bom + "Mobile" }, FILE_KEY, { width: 400, height: 800 }, [])
+    const meta = screenshotMeta({ ...IMAGE, frameName: "Checkout" + nel, pageName: bom + "Mobile" }, FILE_KEY, { width: 400, height: 800 }, [], false)
     expect(meta.frame_name).toBe("Checkout")
     expect(meta.page_name).toBe(bom + "Mobile")
   })
@@ -372,7 +455,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
   it("uploads frame by frame, exporting the next frame while one uploads", async () => {
     const fake = deps()
     const progress: number[] = []
-    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, onProgress: (state) => progress.push(state.done) })
+    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: false, onProgress: (state) => progress.push(state.done) })
     expect(fake.log).toEqual(["export 10:1", "export 11:1", "upload 10:1", "export 12:1", "upload 11:1", "upload 12:1"])
     expect(run).toEqual({ ...emptyScreenshotRun(3), done: 3, uploaded: 3 })
     expect(progress).toEqual([0, 1, 2, 3, 3])
@@ -398,16 +481,35 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
 
   it("sends the decoded size and rescales the boxes when the image differs by more than 2 px", async () => {
     const fake = deps({ measure: vi.fn(async () => ({ width: 200, height: 400 })) })
-    await uploadScreenshots(fake.deps, FRAMES.slice(0, 1), { fileKey: FILE_KEY })
+    await uploadScreenshots(fake.deps, FRAMES.slice(0, 1), { fileKey: FILE_KEY, freshness: false })
     expect(fake.uploads[0].meta).toMatchObject({ width: 200, height: 400, boxes: [{ x: 10, y: 25, w: 50, h: 10 }, { x: 190, y: 25, w: 10, h: 10 }] })
     expect(fake.deps.measure).toHaveBeenCalledWith(IMAGE.bytes, "image/jpeg")
+  })
+
+  it("sends text and style with freshness and counts the screenshots that still show other text than ReRune's", async () => {
+    const fake = deps({
+      exportFrame: vi.fn(async (frameId: string): Promise<FrameExportResult> => ({ kind: "image", image: imageOf(frameId, { boxes: [styled(20, 50, 100, 20)] }) })),
+      upload: vi.fn(async (upload: ScreenshotUpload) => {
+        fake.uploads.push(upload)
+        const outdated = upload.meta.frame_id === "11:1" ? 1 : 0
+        return uploaded({ screenshot: { outdated_box_count: outdated } as FigmaScreenshotUploadResponse["screenshot"] })
+      }),
+    })
+    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: true })
+    expect(run).toMatchObject({ uploaded: 3, outdated: 1 })
+    expect(fake.uploads[0].meta.boxes).toEqual([{ key_id: K1, node_id: "12:1", x: 20, y: 50, w: 100, h: 20, text: "Pay now", style: STYLE }])
+
+    const old = deps({ exportFrame: fake.deps.exportFrame })
+    const plain = await uploadScreenshots(old.deps, FRAMES.slice(0, 1), { fileKey: FILE_KEY, freshness: false })
+    expect(plain.outdated).toBe(0)
+    expect(old.uploads[0].meta.boxes).toEqual([{ key_id: K1, node_id: "12:1", x: 20, y: 50, w: 100, h: 20 }])
   })
 
   it("counts unchanged images and boxes the server left out", async () => {
     const fake = deps({
       upload: vi.fn(async () => uploaded({ unchanged_image: true, dropped_boxes: [{ node_id: "12:2", key_id: K2, reason: "key_not_found" }] })),
     })
-    const run = await uploadScreenshots(fake.deps, FRAMES.slice(0, 2), { fileKey: FILE_KEY })
+    const run = await uploadScreenshots(fake.deps, FRAMES.slice(0, 2), { fileKey: FILE_KEY, freshness: false })
     expect(run).toMatchObject({ uploaded: 2, unchanged: 2, droppedBoxes: 2 })
   })
 
@@ -438,7 +540,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
       }),
     })
     const frames = [...FRAMES, { frameId: "13:1", frameName: "Paid" }, { frameId: "14:1", frameName: "Huge" }, { frameId: "15:1", frameName: "Broken" }]
-    const run = await uploadScreenshots(fake.deps, frames, { fileKey: FILE_KEY })
+    const run = await uploadScreenshots(fake.deps, frames, { fileKey: FILE_KEY, freshness: false })
     expect(run.stopped).toBeNull()
     expect(run.done).toBe(6)
     expect(run.uploaded).toBe(0)
@@ -464,7 +566,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
         return uploaded()
       }),
     })
-    const run = await uploadScreenshots(fake.deps, FRAMES.slice(0, 2), { fileKey: FILE_KEY })
+    const run = await uploadScreenshots(fake.deps, FRAMES.slice(0, 2), { fileKey: FILE_KEY, freshness: false })
     expect(slept(fake.deps)).toBe(12000)
     expect(vi.mocked(fake.deps.sleep).mock.calls.every(([ms]) => ms <= STOP_POLL_MS)).toBe(true)
     expect(run).toMatchObject({ uploaded: 2, problems: [], stopped: null })
@@ -472,7 +574,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
 
   it("stops after repeated 429s and counts what was left", async () => {
     const fake = deps({ upload: vi.fn(async () => Promise.reject(new ApiError(429, null, "slow down", 60))) })
-    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY })
+    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: false })
     expect(fake.deps.upload).toHaveBeenCalledTimes(3)
     expect(slept(fake.deps)).toBe(120000)
     expect(run).toMatchObject({ stopped: "rate_limited", stopMessage: RATE_LIMIT_MESSAGE, notUploaded: 3, done: 0 })
@@ -488,7 +590,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
         if (waited >= 1000) stop = true
       }),
     })
-    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, stopped: () => stop })
+    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: false, stopped: () => stop })
     expect(fake.deps.upload).toHaveBeenCalledTimes(1)
     expect(waited).toBe(1000)
     expect(run).toMatchObject({ uploaded: 0, done: 0, stopped: "cancelled", stopMessage: null, notUploaded: 3 })
@@ -497,7 +599,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
 
   it("stops silently on 503 design_storage_disabled and switches screenshots off for the session", async () => {
     const fake = deps({ upload: vi.fn(async () => Promise.reject(new ApiError(503, "design_storage_disabled", "off"))) })
-    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY })
+    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: false })
     expect(fake.deps.upload).toHaveBeenCalledTimes(1)
     expect(fake.deps.onDisabled).toHaveBeenCalledTimes(1)
     expect(run).toMatchObject({ stopped: "disabled", stopMessage: null, notUploaded: 3 })
@@ -515,7 +617,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
         return uploaded()
       }),
     })
-    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY })
+    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: false })
     expect(fake.deps.upload).toHaveBeenCalledTimes(2)
     expect(fake.deps.onDisabled).not.toHaveBeenCalled()
     expect(run).toMatchObject({ uploaded: 1, done: 1, stopped: "forbidden", notUploaded: 2 })
@@ -527,9 +629,9 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
 
   it("stops on 401 (the client signs out) and when main stops answering", async () => {
     const signedOut = deps({ upload: vi.fn(async () => Promise.reject(new ApiError(401, "plugin_token_invalid", "x"))) })
-    expect(await uploadScreenshots(signedOut.deps, FRAMES, { fileKey: FILE_KEY })).toMatchObject({ stopped: "signed_out", stopMessage: null })
+    expect(await uploadScreenshots(signedOut.deps, FRAMES, { fileKey: FILE_KEY, freshness: false })).toMatchObject({ stopped: "signed_out", stopMessage: null })
     const stuck = deps({ exportFrame: vi.fn(async () => Promise.reject(new RequestTimeoutError("c1"))) })
-    const run = await uploadScreenshots(stuck.deps, FRAMES, { fileKey: FILE_KEY })
+    const run = await uploadScreenshots(stuck.deps, FRAMES, { fileKey: FILE_KEY, freshness: false })
     expect(run).toMatchObject({ stopped: "unresponsive", stopMessage: "The plugin stopped responding. Try again.", notUploaded: 3 })
     expect(stuck.deps.upload).not.toHaveBeenCalled()
   })
@@ -542,7 +644,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
         return uploaded()
       }),
     })
-    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, stopped: () => stop })
+    const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: false, stopped: () => stop })
     expect(fake.deps.upload).toHaveBeenCalledTimes(1)
     expect(run).toMatchObject({ uploaded: 1, stopped: "cancelled", notUploaded: 2 })
     expect(screenshotSummary(run)?.message).toBe("1 screenshot uploaded. Screenshot upload stopped. 2 screenshots weren't uploaded.")
@@ -550,7 +652,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
 
   it("does nothing without frames", async () => {
     const fake = deps()
-    expect(await uploadScreenshots(fake.deps, [], { fileKey: FILE_KEY })).toEqual(emptyScreenshotRun(0))
+    expect(await uploadScreenshots(fake.deps, [], { fileKey: FILE_KEY, freshness: false })).toEqual(emptyScreenshotRun(0))
     expect(fake.deps.exportFrame).not.toHaveBeenCalled()
   })
 })
@@ -566,7 +668,7 @@ describe("screenshotDeps", () => {
     const uploadScreenshot = vi.fn(async () => uploaded())
     const built = screenshotDeps({ api: { uploadScreenshot }, bus: createUiBus(fake.environment), projectId: PROJECT_ID, measure: async () => null })
     expect(await built.exportFrame("10:1")).toEqual({ kind: "image", image: imageOf("10:1") })
-    const upload = { image: IMAGE.bytes, contentType: "image/jpeg" as const, fileName: "10_1.jpg", meta: screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, []) }
+    const upload = { image: IMAGE.bytes, contentType: "image/jpeg" as const, fileName: "10_1.jpg", meta: screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, [], false) }
     await built.upload(upload)
     expect(uploadScreenshot).toHaveBeenCalledWith(PROJECT_ID, upload)
   })

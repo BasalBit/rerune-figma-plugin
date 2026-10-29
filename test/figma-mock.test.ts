@@ -82,6 +82,22 @@ describe("values the mock hands out", () => {
     expect(Object.isFrozen(text.styles[0].fontName)).toBe(false)
   })
 
+  it("gives a text node-level style values: shared by every character, figma.mixed otherwise, frozen", () => {
+    const text = fakeText("1:1", "Pay now", { fontSize: 17, fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1 }, opacity: 1, visible: true }] })
+    expect(text.fontSize).toBe(17)
+    expect(text.getStyledTextSegments(["fontSize", "fontWeight"])).toEqual([{ characters: "Pay now", start: 0, end: 7, fontSize: 17, fontWeight: 400 }])
+    expect(frozenDeep(text.fills)).toBe(true)
+    expect(frozenDeep(text.absoluteTransform)).toBe(true)
+    expect(text.lineHeight).toEqual({ unit: "AUTO" })
+    text.setRangeFontSize(0, 3, 20)
+    expect(text.fontSize).toBe(figmaMock.mixed)
+    expect(text.fills).toEqual([{ type: "SOLID", color: { r: 1, g: 1, b: 1 }, opacity: 1, visible: true }])
+    const empty = fakeText("1:2", "", { letterSpacing: { unit: "PIXELS", value: 2 } })
+    expect(empty.letterSpacing).toEqual({ unit: "PIXELS", value: 2 })
+    expect(empty.textAlignHorizontal).toBe("LEFT")
+    expect(text.clone().fontSize).toBe(figmaMock.mixed)
+  })
+
   it("freezes instance overrides; followText still records the characters override", () => {
     loadFont(figmaMock)
     const mainText = fakeText("5:67", "Pay now")

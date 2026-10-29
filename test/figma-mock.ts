@@ -11,6 +11,7 @@ export interface FakeFont { family: string; style: string }
 export interface FakeStyle {
   fontName: FakeFont
   fontSize: number
+  fontWeight: number
   fills: unknown[]
   textDecoration: string
   textCase: string
@@ -162,6 +163,7 @@ export function defaultStyle(overrides: Partial<FakeStyle> = {}): FakeStyle {
   return {
     fontName: { family: "Inter", style: "Regular" },
     fontSize: 12,
+    fontWeight: 400,
     fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1, visible: true, blendMode: "NORMAL" }],
     textDecoration: "NONE",
     textCase: "ORIGINAL",
@@ -310,6 +312,9 @@ export function createNode(type: string, id: string, name: string, children: Fak
   return node
 }
 
+// TextNode's node-level style properties that fakeText derives from the per-character styles.
+const NODE_STYLE_FIELDS = ["fontSize", "fontWeight", "fills", "lineHeight", "letterSpacing", "textCase", "textDecoration"] as const
+
 // Properties every node gets from createNode (or fakeText's accessors); clone() copies the rest as data.
 const BASE_KEYS = new Set([
   "id", "type", "name", "parent", "removed", "visible", "locked", "children", "allChildren", "inheritFrom",
@@ -351,7 +356,8 @@ function cloneTree(source: FakeNode, root: CloneRoot | null, isRoot: boolean, in
   const extra: Record<string, unknown> = {}
   for (const key of Object.keys(source)) {
     const descriptor = Object.getOwnPropertyDescriptor(source, key)
-    if (BASE_KEYS.has(key) || descriptor === undefined) {
+    // A text's node-level style values come with its per-character styles.
+    if (BASE_KEYS.has(key) || descriptor === undefined || (source.type === "TEXT" && (NODE_STYLE_FIELDS as readonly string[]).includes(key))) {
       continue
     }
     if (descriptor.get !== undefined && handOutGetters.has(descriptor.get)) {
@@ -470,6 +476,23 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
       configurable: true,
     },
   })
+  // Node-level style values (TextNode.fontSize, fills, …): the value every character shares, figma.mixed when they
+  // differ; empty text has the style it would type with. Assigning one sets every character, as in Figma.
+  for (const field of NODE_STYLE_FIELDS) {
+    Object.defineProperty(text, field, {
+      get: () => {
+        const runs = value.length === 0 ? [baseStyle] : styles
+        const first = JSON.stringify(runs[0][field])
+        return runs.every((style) => JSON.stringify(style[field]) === first) ? handOut(clone(runs[0][field])) : (current?.mixed ?? Symbol("mixed"))
+      },
+      set: (next: unknown) => {
+        baseStyle = { ...baseStyle, [field]: clone(next) }
+        styles = styles.map((style) => ({ ...style, [field]: clone(next) }))
+      },
+      enumerable: true,
+      configurable: true,
+    })
+  }
   // Setting textAutoResize needs the fonts loaded (as in Figma). Switching to "HEIGHT" keeps the width and takes
   // the height the test gave as `measuredHeight` (the text's height when it wraps freely), if any.
   let autoResize = typeof extra.textAutoResize === "string" ? extra.textAutoResize : "WIDTH_AND_HEIGHT"
@@ -490,11 +513,15 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
   defineValue(text, "componentPropertyReferences", null)
   defineValue(text, "boundVariables", {})
   defineValue(text, "absoluteBoundingBox", { x: 0, y: 0, width: 100, height: 20 })
+  defineValue(text, "absoluteTransform", [[1, 0, 0], [0, 1, 0]])
   Object.assign(text, {
     autoRename: true,
     hasMissingFont: false,
     width: 100,
     height: 20,
+    opacity: 1,
+    textAlignHorizontal: "LEFT",
+    textAlignVertical: "TOP",
     textTruncation: "DISABLED",
     maxLines: null,
     getRangeAllFontNames(start: number, end: number): FakeFont[] {
@@ -557,6 +584,10 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
   })
   for (const [key, entry] of Object.entries(extra)) {
     if (key === "textAutoResize") {
+      continue
+    }
+    if ((NODE_STYLE_FIELDS as readonly string[]).includes(key)) {
+      ;(text as Record<string, unknown>)[key] = entry
       continue
     }
     defineValue(text, key, entry)

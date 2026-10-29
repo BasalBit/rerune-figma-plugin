@@ -34,6 +34,7 @@ import {
   emptyScreenshotRun,
   groupProblems,
   progressText,
+  screenshotFreshness,
   screenshotSummary,
   type ScreenshotFrame,
   type ScreenshotRun,
@@ -219,7 +220,12 @@ export function PushScreen(props: PushScreenProps) {
       stopShots.current = false
       setStopping(false)
       setShots({ kind: "running", run: emptyScreenshotRun(frames.length) })
-      const result = await uploader.upload(frames, { fileKey: gate.fileKey, stopped: () => stopShots.current, onProgress: (next) => setShots({ kind: "running", run: next }) })
+      const result = await uploader.upload(frames, {
+        fileKey: gate.fileKey,
+        freshness: screenshotFreshness(availability),
+        stopped: () => stopShots.current,
+        onProgress: (next) => setShots({ kind: "running", run: next }),
+      })
       setShots({ kind: "done", run: result })
     } catch (caught) {
       setShots({ kind: "unavailable", message: userMessage(caught) })

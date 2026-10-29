@@ -1,4 +1,4 @@
-import type { FigmaMetaResponse, FigmaScreenshotContentType, FigmaScreenshotMeta, FigmaScreenshotUploadResponse, FigmaUser } from "../../shared/api-types"
+import type { FigmaMetaResponse, FigmaScreenshotBox, FigmaScreenshotContentType, FigmaScreenshotMeta, FigmaScreenshotUploadResponse, FigmaUser } from "../../shared/api-types"
 import {
   MAX_IMAGE_SIDE,
   MAX_IMAGE_UPLOAD_BYTES,
@@ -12,6 +12,7 @@ import {
 import { EDIT_KEYS_PERMISSION, syncPauseOf, type SyncPauseReason } from "../../shared/file-link"
 import type { Box, FileSettings, FrameSkipReason, MainToUiOf, ScannedNode } from "../../shared/messages"
 import { firstRunes, trimSpace } from "../../shared/text"
+import { capturedText, fitMetaBudget, isWireTextStyle, scaleTextStyle } from "../../shared/text-style"
 import { ApiError, RATE_LIMIT_DEFAULT_SECONDS, RATE_LIMIT_MESSAGE, REASON_MESSAGES, userMessage } from "../api/client"
 import type { FigmaApi, ScreenshotUpload } from "../api/figma-api"
 import { RequestTimeoutError, type UiBus } from "../bus"
@@ -47,6 +48,7 @@ const OFF_META: FigmaMetaResponse = {
   max_image_side: MAX_IMAGE_SIDE,
   max_batch_size: 100,
   server_time: "",
+  screenshot_freshness: false,
 }
 
 export function createAvailability(api: Pick<FigmaApi, "meta" | "projects">): AvailabilityLoader {
@@ -99,6 +101,11 @@ export function createAvailability(api: Pick<FigmaApi, "meta" | "projects">): Av
       error = null
     },
   }
+}
+
+// E1 screenshot_freshness (SF5b): only such a server takes the boxes' text and style (an older one answers 400).
+export function screenshotFreshness(availability: Availability): boolean {
+  return availability.meta?.screenshot_freshness === true
 }
 
 export type ScreenshotBlock = "sandbox" | "server_disabled" | "pref_off" | "unavailable" | SyncPauseReason | "no_permission"
@@ -199,7 +206,8 @@ export function affectedFrames(nodeIds: readonly string[], nodes: ReadonlyMap<st
 }
 
 // §7.16: when the decoded image differs from the expected size by more than 2 px, boxes are rescaled by
-// actual/expected; they are always clamped to the decoded size (E19 drops boxes that leave the image).
+// actual/expected; they are always clamped to the decoded size (E19 drops boxes that leave the image). A rescale
+// scales the style's lengths by actual/expected height too (contract §3.3).
 export function fitBoxes(boxes: readonly Box[], expected: PixelSize, actual: PixelSize): Box[] {
   const rescale =
     Math.abs(actual.width - expected.width) > SCREENSHOT_SIZE_TOLERANCE_PX || Math.abs(actual.height - expected.height) > SCREENSHOT_SIZE_TOLERANCE_PX
@@ -212,7 +220,8 @@ export function fitBoxes(boxes: readonly Box[], expected: PixelSize, actual: Pix
     const x2 = Math.min(actual.width, Math.round((box.x + box.w) * sx))
     const y2 = Math.min(actual.height, Math.round((box.y + box.h) * sy))
     if (x2 > x && y2 > y) {
-      fitted.push({ ...box, x, y, w: x2 - x, h: y2 - y })
+      const style = rescale && box.style !== null ? scaleTextStyle(box.style, sy) : box.style
+      fitted.push({ ...box, x, y, w: x2 - x, h: y2 - y, style })
     }
   }
   return fitted
@@ -232,9 +241,24 @@ function cleanName(name: string): string {
   return firstRunes(trimSpace(name), SCREENSHOT_NAME_MAX_RUNES)
 }
 
-// The E19 `meta` part: the decoded size and the fitted boxes (at most 500).
-export function screenshotMeta(image: FrameImage, fileKey: string, size: PixelSize, boxes: readonly Box[]): FigmaScreenshotMeta {
-  return {
+// Main only captures valid text and styles; anything else is left out here too, since one invalid box fails the
+// whole upload (400 "invalid meta").
+function wireBox(box: Box, freshness: boolean): FigmaScreenshotBox {
+  const wire: FigmaScreenshotBox = { key_id: box.keyId, node_id: box.nodeId, x: box.x, y: box.y, w: box.w, h: box.h }
+  if (freshness && typeof box.text === "string" && capturedText(box.text) !== null) {
+    wire.text = box.text
+  }
+  if (freshness && box.style !== null && isWireTextStyle(box.style)) {
+    wire.style = box.style
+  }
+  return wire
+}
+
+// The E19 `meta` part: the decoded size and the fitted boxes (at most 500). With `freshness` (E1
+// screenshot_freshness) each box also carries its text and style, within the 900,000-byte budget (SF2c); without it
+// the boxes are sent as before, since an older server rejects unknown fields.
+export function screenshotMeta(image: FrameImage, fileKey: string, size: PixelSize, boxes: readonly Box[], freshness: boolean): FigmaScreenshotMeta {
+  const meta: FigmaScreenshotMeta = {
     file_key: fileKey,
     frame_id: image.frameId,
     frame_name: cleanName(image.frameName),
@@ -242,8 +266,9 @@ export function screenshotMeta(image: FrameImage, fileKey: string, size: PixelSi
     page_name: cleanName(image.pageName),
     width: size.width,
     height: size.height,
-    boxes: boxes.slice(0, SCREENSHOT_MAX_BOXES).map((box) => ({ key_id: box.keyId, node_id: box.nodeId, x: box.x, y: box.y, w: box.w, h: box.h })),
+    boxes: boxes.slice(0, SCREENSHOT_MAX_BOXES).map((box) => wireBox(box, freshness)),
   }
+  return freshness ? fitMetaBudget(meta) : meta
 }
 
 export function frameImageOf(message: MainToUiOf<"frame-image">): FrameImage {
@@ -302,6 +327,7 @@ export interface ScreenshotRun {
   uploaded: number             // E19 answered 200 (unchanged images included)
   unchanged: number            // same bytes as the stored image: the server kept it and updated names and boxes
   droppedBoxes: number         // boxes E19 left out (key deleted, out of the image)
+  outdated: number             // uploaded screenshots that still show text other than ReRune's (outdated_box_count > 0)
   problems: ScreenshotProblem[]
   stopped: ScreenshotStop | null
   stopMessage: string | null   // null for a silent stop (screenshots switched off, signed out)
@@ -309,7 +335,7 @@ export interface ScreenshotRun {
 }
 
 export function emptyScreenshotRun(total: number): ScreenshotRun {
-  return { total, done: 0, uploaded: 0, unchanged: 0, droppedBoxes: 0, problems: [], stopped: null, stopMessage: null, notUploaded: 0 }
+  return { total, done: 0, uploaded: 0, unchanged: 0, droppedBoxes: 0, outdated: 0, problems: [], stopped: null, stopMessage: null, notUploaded: 0 }
 }
 
 export type UploadErrorAction =
@@ -352,6 +378,7 @@ export interface ScreenshotDeps {
 
 export interface ScreenshotRunOptions {
   fileKey: string
+  freshness: boolean                          // E1 screenshot_freshness: send each box's text and style
   stopped?(): boolean                         // "Stop": checked before each upload and during a 429 wait
   onProgress?(run: ScreenshotRun): void
 }
@@ -433,7 +460,7 @@ async function handleFrame(deps: ScreenshotDeps, frame: ScreenshotFrame, settled
     image: image.bytes,
     contentType,
     fileName: imageFileName(image.frameId, image.format),
-    meta: screenshotMeta(image, options.fileKey, size, fitBoxes(image.boxes, expected, size)),
+    meta: screenshotMeta(image, options.fileKey, size, fitBoxes(image.boxes, expected, size), options.freshness),
   }
   for (let attempt = 0; ; attempt++) {
     try {
@@ -443,6 +470,10 @@ async function handleFrame(deps: ScreenshotDeps, frame: ScreenshotFrame, settled
         run.unchanged++
       }
       run.droppedBoxes += Array.isArray(response.dropped_boxes) ? response.dropped_boxes.length : 0
+      const outdated = response.screenshot?.outdated_box_count
+      if (typeof outdated === "number" && outdated > 0) {
+        run.outdated++
+      }
       return { kind: "next" }
     } catch (error) {
       const action = uploadErrorAction(error, attempt)
@@ -548,7 +579,8 @@ export function progressText(run: ScreenshotRun): string {
 }
 
 // The Push screen's way in (§7.13 rule 11): `prepare` loads E1/E8 when needed and evaluates the gate with the
-// current settings, prefs and permissions; `upload` runs the queue for this project.
+// current settings, prefs and permissions; `upload` runs the queue for this project (with `freshness` from the
+// availability `prepare` returned).
 export interface ScreenshotUploader {
   prepare(): Promise<{ gate: ScreenshotGate; availability: Availability }>
   upload(frames: readonly ScreenshotFrame[], options: ScreenshotRunOptions): Promise<ScreenshotRun>

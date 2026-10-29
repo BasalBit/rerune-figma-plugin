@@ -1,5 +1,7 @@
+import type { FigmaTextStyle } from "../shared/api-types"
 import { MAX_IMAGE_SIDE, MAX_IMAGE_UPLOAD_BYTES, OBJECT_ID_PATTERN, SCAN_YIELD_EVERY_TEXTS, SCREENSHOT_MAX_BOXES } from "../shared/constants"
 import type { Box, FrameSkip, FrameSkipReason, MainToUi, MainToUiOf, RequestId } from "../shared/messages"
+import { capturedText, captureTextStyle, scaleTextStyle } from "../shared/text-style"
 import { readLinkInfo } from "./links"
 import { createNodeCaches, isHidden, pageOf, yieldToCanvas, type NodeCaches } from "./node-utils"
 import { readFileSettings } from "./settings"
@@ -115,8 +117,9 @@ export async function exportFrameImage(frame: ExportableNode): Promise<FrameExpo
 export type FrameImage = Omit<MainToUiOf<"frame-image">, "type" | "requestId">
 export type ScreenshotExport = { ok: true; image: FrameImage } | { ok: false; reason: FrameSkipReason }
 
-// `rect` is relative to the frame's top-left corner, read in the same synchronous step as the frame's bounds.
-interface BoxSource { nodeId: string; keyId: string; rect: BoxRect }
+// `rect` is relative to the frame's top-left corner, read in the same synchronous step as the frame's bounds, with
+// the layer's text and its style in Figma units (screenshot freshness, contract §3.3).
+export interface BoxSource { nodeId: string; keyId: string; rect: BoxRect; text: string | null; style: FigmaTextStyle | null }
 export interface FrameBoxSources { previewing: boolean; sources: BoxSource[] }
 
 const BOX_STATES = ["ok", "inherited"]
@@ -129,9 +132,10 @@ function isExportable(node: BaseNode): node is ExportableNode {
 // inherited; inherited_overridden and copied links show no key), with its bounds relative to the frame. The walk
 // yields to the canvas and the designer can move the frame meanwhile, so each text's absolute bounds are taken
 // relative to the frame's bounds read in the same step (never to bounds read before or after an await): the
-// boxes stay on their text however the frame moves before the export. `previewing` is set as soon as one text
-// shows a language preview: the image would show preview text, never the design (D23). A text that fails to read
-// is left out; the frame still exports.
+// boxes stay on their text however the frame moves before the export. The layer's characters and text style are
+// read in that step too, so they match the image (previewing frames are refused first, so the characters are the
+// design text). `previewing` is set as soon as one text shows a language preview: the image would show preview
+// text, never the design (D23). A text that fails to read is left out; the frame still exports.
 export async function frameBoxSources(frame: SceneNode & { absoluteBoundingBox: Rect | null }, projectId: string | null, caches: NodeCaches): Promise<FrameBoxSources> {
   const sources: BoxSource[] = []
   const texts = "findAllWithCriteria" in frame ? (frame as SceneNode & ChildrenMixin).findAllWithCriteria({ types: ["TEXT"] }) : []
@@ -158,7 +162,13 @@ export async function frameBoxSources(frame: SceneNode & { absoluteBoundingBox: 
       const origin = frame.absoluteBoundingBox
       const rect = text.absoluteBoundingBox
       if (rect !== null && origin !== null) {
-        sources.push({ nodeId: text.id, keyId: link.id, rect: { x: rect.x - origin.x, y: rect.y - origin.y, width: rect.width, height: rect.height } })
+        sources.push({
+          nodeId: text.id,
+          keyId: link.id,
+          rect: { x: rect.x - origin.x, y: rect.y - origin.y, width: rect.width, height: rect.height },
+          text: capturedText(text.characters),
+          style: captureTextStyle(text, frame.id),
+        })
       }
     } catch {
       // The canvas stays editable: a text removed or unreadable meanwhile gets no box.
@@ -170,13 +180,14 @@ export async function frameBoxSources(frame: SceneNode & { absoluteBoundingBox: 
 const FRAME_ORIGIN: BoxRect = { x: 0, y: 0, width: 0, height: 0 }
 
 // Boxes in image pixels (Appendix A.8, with frame-relative rects) for the exported image; texts clipped away by the
-// frame get none. E19 takes at most 500 boxes per image, so the first 500 in layer order are kept.
+// frame get none. E19 takes at most 500 boxes per image, so the first 500 in layer order are kept. The style's
+// lengths are scaled by the same factor as the rect.
 export function boxesFor(sources: readonly BoxSource[], scale: number, imgW: number, imgH: number): Box[] {
   const boxes: Box[] = []
   for (const source of sources) {
     const box = boxFor(source.rect, FRAME_ORIGIN, scale, imgW, imgH)
     if (box !== null) {
-      boxes.push({ nodeId: source.nodeId, keyId: source.keyId, ...box })
+      boxes.push({ nodeId: source.nodeId, keyId: source.keyId, ...box, text: source.text, style: source.style === null ? null : scaleTextStyle(source.style, scale) })
       if (boxes.length >= SCREENSHOT_MAX_BOXES) {
         break
       }

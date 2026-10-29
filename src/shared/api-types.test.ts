@@ -3,8 +3,25 @@ import {
   ERROR_REASONS,
   FIGMA_DROPPED_BOX_REASONS,
   FIGMA_LINK_REJECT_REASONS,
+  FIGMA_TEXT_ALIGN_HORIZONTALS,
+  FIGMA_TEXT_ALIGN_VERTICALS,
+  FIGMA_TEXT_AUTO_RESIZES,
+  FIGMA_TEXT_CASES,
+  FIGMA_TEXT_DECORATIONS,
+  FIGMA_TEXT_STATUSES,
+  FIGMA_TEXT_TRUNCATIONS,
   FIGMA_URL_KEYS_MATCHES,
   PUSH_ITEM_REASONS,
+  type FigmaFileRefreshResponse,
+  type FigmaRefreshRequestResponse,
+  type FigmaTextAlignHorizontal,
+  type FigmaTextAlignVertical,
+  type FigmaTextAutoResize,
+  type FigmaTextCase,
+  type FigmaTextDecoration,
+  type FigmaTextStatus,
+  type FigmaTextStyle,
+  type FigmaTextTruncation,
   type FigmaKeyDesignResponse,
   type FigmaScreenshotsQuery,
   type FigmaScreenshotsResponse,
@@ -55,6 +72,7 @@ const meta: FigmaMetaResponse = {
   max_image_side: 4096,
   max_batch_size: 100,
   server_time: "2026-10-27T10:00:00Z",
+  screenshot_freshness: true,
 }
 
 const session: FigmaCreateSessionResponse = {
@@ -220,6 +238,8 @@ const file: FigmaFile = {
   last_push_by: null,
   created_at: "2026-10-27T10:00:00Z",
   updated_at: "2026-10-27T10:00:00Z",
+  outdated_screenshot_count: 0,
+  refresh_requested_count: 0,
 }
 
 const files: FigmaFilesResponse = { files: [file, { ...file, last_push_at: "2026-10-27T11:00:00Z", last_push_by: { id: "kc-sub", name: "Ada Lovelace" } }] }
@@ -275,12 +295,15 @@ const screenshot: FigmaScreenshot = {
   width: 1170,
   height: 2532,
   size_bytes: 184233,
-  boxes: [{ key_id: "6a4800000000000000000001", node_id: "12:345", x: 24, y: 310, w: 200, h: 40 }],
+  boxes: [{ key_id: "6a4800000000000000000001", node_id: "12:345", x: 24, y: 310, w: 200, h: 40, text: null, style: null, text_status: "unknown" }],
   image_url: "https://designs.rerune.io/projects/6a46/screenshots/6a49/6a4a.jpg?token=HS256-x&expires=1761562800",
   image_url_expires_at: "2026-10-27T11:00:00Z",
   figma_url: "https://www.figma.com/design/AbCdEf1234567890XyZ/Chapter?node-id=10-1",
   created_at: "2026-10-27T10:00:00Z",
   updated_at: "2026-10-27T10:00:00Z",
+  outdated_box_count: 0,
+  refresh_requested_at: null,
+  refresh_requested_by: null,
 }
 
 const screenshotUpload: FigmaScreenshotUploadResponse = {
@@ -351,6 +374,81 @@ const urlKeys: FigmaUrlKeysResponse = {
 const urlKeysFile: FigmaUrlKeysResponse = { ...urlKeys, node_id: null, matched: "file" }
 
 const urlKeysMatchesComplete: Equal<(typeof FIGMA_URL_KEYS_MATCHES)[number], FigmaUrlKeysMatch> = true
+
+// Screenshot freshness examples (E1, E19–E26), as written in the freshness contract (§3.1, §5.2, §5.3).
+const textStyle: FigmaTextStyle = {
+  font_family: "Inter",
+  font_style: "Semi Bold",
+  font_weight: 600,
+  font_size: 17,
+  line_height_px: 22,
+  letter_spacing_px: -0.41,
+  text_align_horizontal: "center",
+  text_align_vertical: "center",
+  text_case: "original",
+  text_decoration: "none",
+  color: "#FFFFFFFF",
+  background: "#0A84FFFF",
+  auto_resize: "none",
+  max_lines: null,
+  truncation: "disabled",
+  mixed: false,
+}
+
+const freshMeta: FigmaScreenshotMeta = {
+  ...screenshotMeta,
+  boxes: [
+    { key_id: "6a4800000000000000000001", node_id: "12:345", x: 24, y: 310, w: 200, h: 40, text: "Pay now", style: textStyle },
+    { key_id: "6a4800000000000000000002", node_id: "12:346", x: 24, y: 360, w: 300, h: 20 },
+  ],
+}
+
+const freshScreenshot: FigmaScreenshot = {
+  ...screenshot,
+  boxes: [{ key_id: "6a4800000000000000000001", node_id: "12:345", x: 24, y: 310, w: 200, h: 40, text: "Pay now", style: textStyle, text_status: "outdated" }],
+  outdated_box_count: 1,
+  refresh_requested_at: "2026-10-29T10:00:00Z",
+  refresh_requested_by: { id: "kc-sub", name: "Ada Lovelace" },
+}
+
+const requestedQuery: FigmaScreenshotsQuery = { file_key: "AbCdEf1234567890XyZ", refresh_requested: true, limit: 100 }
+
+const refreshRequest: FigmaRefreshRequestResponse = {
+  screenshot_id: "6a4900000000000000000a01",
+  refresh_requested_at: "2026-10-29T10:00:00Z",
+  refresh_requested_by: { id: "kc-sub", name: "Ada Lovelace" },
+  created: true,
+}
+
+const fileRefresh: FigmaFileRefreshResponse = { outdated: 4, requested: 3, already_requested: 1 }
+
+const freshFile: FigmaFile = { ...file, outdated_screenshot_count: 4, refresh_requested_count: 3 }
+
+const alignHorizontalsComplete: Equal<(typeof FIGMA_TEXT_ALIGN_HORIZONTALS)[number], FigmaTextAlignHorizontal> = true
+const alignVerticalsComplete: Equal<(typeof FIGMA_TEXT_ALIGN_VERTICALS)[number], FigmaTextAlignVertical> = true
+const casesComplete: Equal<(typeof FIGMA_TEXT_CASES)[number], FigmaTextCase> = true
+const decorationsComplete: Equal<(typeof FIGMA_TEXT_DECORATIONS)[number], FigmaTextDecoration> = true
+const autoResizesComplete: Equal<(typeof FIGMA_TEXT_AUTO_RESIZES)[number], FigmaTextAutoResize> = true
+const truncationsComplete: Equal<(typeof FIGMA_TEXT_TRUNCATIONS)[number], FigmaTextTruncation> = true
+const statusesComplete: Equal<(typeof FIGMA_TEXT_STATUSES)[number], FigmaTextStatus> = true
+
+describe("wire types (screenshot freshness)", () => {
+  it("accept the contract examples", () => {
+    const examples = [textStyle, freshMeta, freshScreenshot, requestedQuery, refreshRequest, fileRefresh, freshFile]
+    expect(JSON.parse(JSON.stringify(examples))).toEqual(examples)
+  })
+
+  it("list every value of each text enum, as the server spells them", () => {
+    expect([alignHorizontalsComplete, alignVerticalsComplete, casesComplete, decorationsComplete, autoResizesComplete, truncationsComplete, statusesComplete]).toEqual(Array(7).fill(true))
+    expect(FIGMA_TEXT_ALIGN_HORIZONTALS).toEqual(["left", "center", "right", "justified"])
+    expect(FIGMA_TEXT_ALIGN_VERTICALS).toEqual(["top", "center", "bottom"])
+    expect(FIGMA_TEXT_CASES).toEqual(["original", "upper", "lower", "title", "small_caps", "small_caps_forced"])
+    expect(FIGMA_TEXT_DECORATIONS).toEqual(["none", "underline", "strikethrough"])
+    expect(FIGMA_TEXT_AUTO_RESIZES).toEqual(["none", "width_and_height", "height", "truncate"])
+    expect(FIGMA_TEXT_TRUNCATIONS).toEqual(["disabled", "ending"])
+    expect(FIGMA_TEXT_STATUSES).toEqual(["current", "outdated", "unknown"])
+  })
+})
 
 describe("wire types (§4, E20–E23)", () => {
   it("accept the spec examples", () => {

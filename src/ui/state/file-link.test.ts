@@ -42,6 +42,8 @@ function registered(request: FigmaRegisterFileRequest): FigmaFile {
     last_push_by: null,
     created_at: "2026-10-27T10:00:00Z",
     updated_at: "2026-10-27T10:00:00Z",
+    outdated_screenshot_count: 0,
+    refresh_requested_count: 0,
   }
 }
 

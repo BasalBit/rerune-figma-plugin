@@ -97,6 +97,9 @@ export interface FigmaMetaResponse {
   max_image_side: number
   max_batch_size: number
   server_time: string
+  // Screenshot freshness: E19 boxes take `text`/`style`, E20 filters `refresh_requested`, E24–E26 exist. Absent on
+  // older servers (read as false).
+  screenshot_freshness: boolean
 }
 
 export type FigmaCreateSessionRequest = Record<string, never>
@@ -299,6 +302,8 @@ export interface FigmaFile {
   last_push_by: FigmaFileUserRef | null
   created_at: string
   updated_at: string
+  outdated_screenshot_count: number   // screenshots of the file with at least one outdated box
+  refresh_requested_count: number     // screenshots of the file with a refresh request
 }
 
 export interface FigmaFilesResponse { files: FigmaFile[] }
@@ -350,7 +355,59 @@ export interface FigmaLinksListResponse { links: FigmaLink[]; next_cursor: strin
 
 // Phase 2: screenshots (E19; FigmaScreenshot is shared by E19–E22).
 
-export interface FigmaScreenshotBox { key_id: string; node_id: string; x: number; y: number; w: number; h: number }
+// Screenshot freshness: the text style of a linked layer as captured at export (lengths in image pixels). The plugin
+// only sends values the server accepts (§3.2 of the freshness contract).
+export type FigmaTextAlignHorizontal = "left" | "center" | "right" | "justified"
+export type FigmaTextAlignVertical = "top" | "center" | "bottom"
+export type FigmaTextCase = "original" | "upper" | "lower" | "title" | "small_caps" | "small_caps_forced"
+export type FigmaTextDecoration = "none" | "underline" | "strikethrough"
+export type FigmaTextAutoResize = "none" | "width_and_height" | "height" | "truncate"
+export type FigmaTextTruncation = "disabled" | "ending"
+// Whether a stored box's captured text equals the key's draft main-language text (computed by the server).
+export type FigmaTextStatus = "current" | "outdated" | "unknown"
+
+export const FIGMA_TEXT_ALIGN_HORIZONTALS: readonly FigmaTextAlignHorizontal[] = ["left", "center", "right", "justified"]
+export const FIGMA_TEXT_ALIGN_VERTICALS: readonly FigmaTextAlignVertical[] = ["top", "center", "bottom"]
+export const FIGMA_TEXT_CASES: readonly FigmaTextCase[] = ["original", "upper", "lower", "title", "small_caps", "small_caps_forced"]
+export const FIGMA_TEXT_DECORATIONS: readonly FigmaTextDecoration[] = ["none", "underline", "strikethrough"]
+export const FIGMA_TEXT_AUTO_RESIZES: readonly FigmaTextAutoResize[] = ["none", "width_and_height", "height", "truncate"]
+export const FIGMA_TEXT_TRUNCATIONS: readonly FigmaTextTruncation[] = ["disabled", "ending"]
+export const FIGMA_TEXT_STATUSES: readonly FigmaTextStatus[] = ["current", "outdated", "unknown"]
+
+export interface FigmaTextStyle {
+  font_family: string
+  font_style: string
+  font_weight: number | null
+  font_size: number
+  line_height_px: number | null        // null: Figma's AUTO
+  letter_spacing_px: number
+  text_align_horizontal: FigmaTextAlignHorizontal
+  text_align_vertical: FigmaTextAlignVertical
+  text_case: FigmaTextCase
+  text_decoration: FigmaTextDecoration
+  color: string | null                 // #RRGGBBAA
+  background: string | null            // #RRGGBBAA
+  auto_resize: FigmaTextAutoResize
+  max_lines: number | null
+  truncation: FigmaTextTruncation
+  mixed: boolean                       // more than one style run; the style is the first run's
+}
+
+// E19 meta box; `text` and `style` are sent only to a server with E1 screenshot_freshness.
+export interface FigmaScreenshotBox { key_id: string; node_id: string; x: number; y: number; w: number; h: number; text?: string; style?: FigmaTextStyle }
+
+// A stored box as E19–E22 return it.
+export interface FigmaStoredScreenshotBox {
+  key_id: string
+  node_id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  text: string | null
+  style: FigmaTextStyle | null
+  text_status: FigmaTextStatus
+}
 
 // The `meta` part of the E19 multipart upload (strict JSON on the server).
 export interface FigmaScreenshotMeta {
@@ -377,12 +434,15 @@ export interface FigmaScreenshot {
   width: number
   height: number
   size_bytes: number
-  boxes: FigmaScreenshotBox[]
+  boxes: FigmaStoredScreenshotBox[]
   image_url: string | null
   image_url_expires_at: string | null
   figma_url: string | null
   created_at: string
   updated_at: string
+  outdated_box_count: number                       // over all stored boxes, also when `boxes` is filtered to one key
+  refresh_requested_at: string | null
+  refresh_requested_by: FigmaFileUserRef | null    // null: no request, or the user no longer exists
 }
 
 export type FigmaDroppedBoxReason = "out_of_bounds" | "invalid_node_id" | "key_not_found"
@@ -404,12 +464,25 @@ export interface FigmaScreenshotsQuery {
   file_key?: string | null
   frame_id?: string | null
   key_id?: string | null
+  refresh_requested?: boolean | null   // sent as "true" / "false"; absent: no filter
   cursor?: string | null
   limit?: number | null
 }
 
 // E20: with `key_id`, each screenshot's boxes are those of that key.
 export interface FigmaScreenshotsResponse { screenshots: FigmaScreenshot[]; next_cursor: string | null; has_more: boolean }
+
+// E24 (request a new screenshot of one frame): `created` is false when it was already requested; the response then
+// carries that first request.
+export interface FigmaRefreshRequestResponse {
+  screenshot_id: string
+  refresh_requested_at: string
+  refresh_requested_by: FigmaFileUserRef | null
+  created: boolean
+}
+
+// E26 (request new screenshots of every outdated frame of a file).
+export interface FigmaFileRefreshResponse { outdated: number; requested: number; already_requested: number }
 
 // E21: a fresh signed URL for one screenshot.
 export interface FigmaScreenshotUrlResponse { image_url: string; image_url_expires_at: string }
