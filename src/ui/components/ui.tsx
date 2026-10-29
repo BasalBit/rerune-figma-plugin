@@ -56,11 +56,13 @@ export function Chip(props: { tone?: Tone; children: ComponentChildren; title?: 
   )
 }
 
-export function TextButton(props: { onClick(): void; children: ComponentChildren; disabled?: boolean; danger?: boolean; title?: string }) {
+// `ariaLabel`: the accessible name when the visible label is the same on several buttons (it names what each acts on).
+export function TextButton(props: { onClick(): void; children: ComponentChildren; disabled?: boolean; danger?: boolean; title?: string; ariaLabel?: string }) {
   return (
     <button
       type="button"
       title={props.title}
+      aria-label={props.ariaLabel}
       disabled={props.disabled}
       onClick={props.onClick}
       style={{

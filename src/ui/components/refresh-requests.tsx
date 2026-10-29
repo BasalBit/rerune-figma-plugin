@@ -167,16 +167,22 @@ function DoneOutcome(props: { outcome: Extract<RefreshOutcome, { kind: "done" }>
   )
 }
 
+// One card per frame, each with its own Remove request: the button's accessible name says which frame it is for.
 function MissingFrameCard(props: { frame: MissingFrame; disabled: boolean; onRemove(): void }) {
   const { frame } = props
+  const label = framesLine([frame])
   return (
     <div style={styles.card}>
       <div style={styles.wrapRow}>
-        <Small style={styles.grow}>{framesLine([frame])}</Small>
+        <Small style={styles.grow}>{label}</Small>
         {frame.removal === "removed" ? (
           <Small muted>{REQUEST_REMOVED}</Small>
         ) : (
-          <TextButton disabled={props.disabled || frame.removal === "removing"} onClick={props.onRemove}>
+          <TextButton
+            disabled={props.disabled || frame.removal === "removing"}
+            ariaLabel={(frame.removal === "removing" ? "Removing request for " : "Remove request for ") + label}
+            onClick={props.onRemove}
+          >
             {frame.removal === "removing" ? "Removing…" : "Remove request"}
           </TextButton>
         )}

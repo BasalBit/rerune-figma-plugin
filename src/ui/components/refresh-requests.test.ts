@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import appSource from "../app.tsx?raw"
 import pushSource from "../screens/push.tsx?raw"
 import settingsSource from "../screens/settings.tsx?raw"
-import { emptyRefreshState, type RefreshRequest, type RefreshState } from "../state/refresh-requests"
+import { emptyRefreshState, type RefreshOutcome, type RefreshRequest, type RefreshState } from "../state/refresh-requests"
 import { emptyScreenshotRun } from "../state/screenshots"
 import { RefreshRequestsNote, refreshNotesShown, type RefreshRequestsNoteProps } from "./refresh-requests"
 
@@ -47,15 +47,18 @@ function lines(nodes: (Rendered | string)[]): string[] {
     .filter((line) => line !== "")
 }
 
-function buttons(nodes: (Rendered | string)[]): { label: string; disabled: boolean; click(): void }[] {
-  const found: { label: string; disabled: boolean; click(): void }[] = []
+function buttons(nodes: (Rendered | string)[]): { label: string; name: string; disabled: boolean; click(): void }[] {
+  const found: { label: string; name: string; disabled: boolean; click(): void }[] = []
   const walk = (list: (Rendered | string)[]) => {
     for (const node of list) {
       if (typeof node === "string") {
         continue
       }
       if (node.type === "button") {
-        found.push({ label: text(node.children).trim(), disabled: node.props.disabled === true, click: node.props.onClick as () => void })
+        const label = text(node.children).trim()
+        // The accessible name: aria-label when set, else the visible label.
+        const name = typeof node.props["aria-label"] === "string" ? (node.props["aria-label"] as string) : label
+        found.push({ label, name, disabled: node.props.disabled === true, click: node.props.onClick as () => void })
       }
       walk(node.children)
     }
@@ -175,6 +178,13 @@ describe("RefreshRequestsNote", () => {
       "Select on canvas",
     ])
     const byLabel = buttons(nodes)
+    // Each Remove request names its frame for screen readers and voice control.
+    expect(byLabel.filter((button) => button.label === "Remove request").map((button) => button.name)).toEqual([
+      "Remove request for Cart (Mobile)",
+      "Remove request for Home (Web)",
+      "Remove request for Legacy (Web)",
+    ])
+    expect(byLabel.find((button) => button.label === "Dismiss")?.name).toBe("Dismiss")
     byLabel.filter((button) => button.label === "Remove request")[1].click()
     expect(input.onRemove).toHaveBeenCalledWith("s4")
     byLabel.find((button) => button.label === "Remove all")?.click()
@@ -184,6 +194,9 @@ describe("RefreshRequestsNote", () => {
 
     const removing = view(props({ outcome: input.state.outcome, removing: true }))
     expect(buttons(removing).filter((button) => button.label.startsWith("Remove")).every((button) => button.disabled)).toBe(true)
+    const one = { ...missing[0], removal: "removing" as const }
+    const busy = view(props({ outcome: { ...(input.state.outcome as Extract<RefreshOutcome, { kind: "done" }>), missing: [one] } }))
+    expect(buttons(busy).find((button) => button.label === "Removing…")?.name).toBe("Removing request for Cart (Mobile)")
   })
 
   it("offers Reset previews for a run that stopped before writing, and says when nothing is requested anymore", () => {

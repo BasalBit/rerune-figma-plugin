@@ -23,7 +23,7 @@ import {
   type RefreshOutcome,
   type RefreshRequest,
 } from "./refresh-requests"
-import { emptyScreenshotRun, type Availability, type ScreenshotFrame, type ScreenshotGate, type ScreenshotRun, type ScreenshotRunOptions, type ScreenshotUploader } from "./screenshots"
+import { emptyScreenshotRun, SKIP_MESSAGES, type Availability, type ScreenshotFrame, type ScreenshotGate, type ScreenshotRun, type ScreenshotRunOptions, type ScreenshotUploader } from "./screenshots"
 import { fakeMain, resolvedKey } from "./test-fakes"
 import { createWorkLock } from "./work-lock"
 import { NO_MAIN_LANGUAGE } from "./workspace"
@@ -478,6 +478,22 @@ describe("createRefreshRequests: Update screenshots (§6.4)", () => {
     expect(refreshLines(outcomeOf(h) as Extract<RefreshOutcome, { kind: "done" }>).figmaSide).toBe("3 layers changed in Figma or in both weren't changed. Review them on Push.")
     // Nothing was written, so no key name is refreshed.
     expect(h.main.writes.map((write) => write.type)).toEqual(["text-apply"])
+  })
+
+  it("tells how to retry a frame that wasn't uploaded without sending the designer to a push", async () => {
+    const problems = [
+      { frameId: "10:1", frameName: "Frame 10:1", message: SKIP_MESSAGES.preview_active },
+      { frameId: "12:1", frameName: "Frame 12:1", message: "Screenshot upload failed. It will be retried on the next push." },
+      { frameId: "13:1", frameName: "Frame 13:1", message: SKIP_MESSAGES.export_failed },
+    ]
+    const h = harness({ uploadRun: (frames) => ({ ...emptyScreenshotRun(frames.length), done: frames.length, problems }) })
+    await h.refresh.run()
+    const shots = (outcomeOf(h) as Extract<RefreshOutcome, { kind: "done" }>).shots
+    expect(shots?.kind === "done" ? shots.run.problems.map((problem) => problem.message) : []).toEqual([
+      "The frame shows a language preview. Reset previews, then reopen the plugin to update its screenshot.",
+      "Screenshot upload failed. Reopen the plugin later to try again.",
+      "Figma couldn't export the frame.",
+    ])
   })
 
   it("keeps the requests of step 6 when a read that started before the run answers after it", async () => {

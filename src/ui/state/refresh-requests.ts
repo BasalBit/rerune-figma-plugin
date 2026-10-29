@@ -3,7 +3,7 @@ import { REFRESH_REQUESTS_MAX, REFRESH_REQUESTS_PAGE_SIZE } from "../../shared/c
 import type { NodeError } from "../../shared/messages"
 import { buildPushPlan } from "../../shared/push-plan"
 import { computeSyncState } from "../../shared/sync-state"
-import { ApiError, userMessage } from "../api/client"
+import { ApiError, REASON_MESSAGES, userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { SCAN_UNFINISHED } from "./link-sync"
@@ -15,6 +15,7 @@ import {
   progressText,
   screenshotFreshness,
   screenshotGate,
+  SKIP_MESSAGES,
   type ScreenshotFrame,
   type ScreenshotGateInput,
   type ScreenshotRun,
@@ -182,6 +183,17 @@ export interface RefreshState {
   removing: boolean                    // a Remove request runs
 }
 
+// Per-frame problems whose usual text sends the designer to a push, which uploads only frames whose layers it changes:
+// after this run, a frame comes back when the plugin is opened again (step 6 puts the run's requests aside).
+export const REFRESH_PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
+  [SKIP_MESSAGES.preview_active]: "The frame shows a language preview. Reset previews, then reopen the plugin to update its screenshot.",
+  [REASON_MESSAGES.design_storage_failed]: "Screenshot upload failed. Reopen the plugin later to try again.",
+}
+
+function refreshProblems(run: ScreenshotRun): ScreenshotRun {
+  return { ...run, problems: run.problems.map((problem) => ({ ...problem, message: REFRESH_PROBLEM_MESSAGES[problem.message] ?? problem.message })) }
+}
+
 export interface RefreshContext {
   projectId: string
   mainLanguage: string
@@ -274,7 +286,7 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
         stopped: () => stopped,
         onProgress: (next) => setStep(mine, { step: "uploading", run: next }),
       })
-      return { kind: "done", run }
+      return { kind: "done", run: refreshProblems(run) }
     } catch (caught) {
       return { kind: "unavailable", message: userMessage(caught) }
     }
