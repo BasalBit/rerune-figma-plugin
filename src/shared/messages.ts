@@ -72,7 +72,8 @@ export type UiToMain =
   | { type: "notify"; message: string; error?: boolean }
   | { type: "resize"; width: number; height: number }
   | { type: "select-nodes"; nodeIds: string[] }
-  | { type: "scan-request"; requestId: RequestId; scope: Scope }
+  | { type: "scan-request"; requestId: RequestId; scope: Scope
+      frameIds?: string[] }                                                               // screenshot freshness: scan these frames instead of the scope
   | { type: "scan-cancel"; requestId: RequestId }
   | { type: "link-apply"; requestId: RequestId; items: { nodeId: string; keyId: string; keyName: string; projectId: string; src: string }[] }
   | { type: "link-remove"; requestId: RequestId; nodeIds: string[] }
@@ -100,7 +101,8 @@ export type MainToUi =
   | { type: "scan-progress"; requestId: RequestId; scanned: number }
   | { type: "scan-batch"; requestId: RequestId; nodes: ScannedNode[] }
   | { type: "scan-done"; requestId: RequestId; total: number; truncated: boolean
-      skipped: { hidden: number; locked: number; empty: number; numeric: number; underscore: number; languageCopy: number; unavailable: number } }
+      skipped: { hidden: number; locked: number; empty: number; numeric: number; underscore: number; languageCopy: number; unavailable: number }
+      missingFrameIds?: string[] }                                                        // screenshot freshness: set only for a frameIds scan
   | { type: "op-result"; requestId: RequestId; ok: boolean; done: number; errors: NodeError[] }
   | { type: "link-check-result"; requestId: RequestId; nodes: LinkCheck[] }               // Phase 2 addition (link sync)
   | { type: "frame-image"; requestId: RequestId; frameId: string; frameName: string; pageId: string; pageName: string

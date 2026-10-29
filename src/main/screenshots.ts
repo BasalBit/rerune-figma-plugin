@@ -124,7 +124,8 @@ export interface FrameBoxSources { previewing: boolean; sources: BoxSource[] }
 
 const BOX_STATES = ["ok", "inherited"]
 
-function isExportable(node: BaseNode): node is ExportableNode {
+// A node a screenshot can be exported from (also the roots of a scan of requested frames, src/main/scan.ts).
+export function isExportable(node: BaseNode): node is ExportableNode {
   return node.type !== "PAGE" && node.type !== "DOCUMENT" && "exportAsync" in node && "absoluteBoundingBox" in node
 }
 

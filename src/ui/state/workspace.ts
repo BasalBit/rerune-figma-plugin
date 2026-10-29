@@ -41,6 +41,9 @@ export interface Workspace {
   // A scan whose result is not shown (the automatic page link sync, §7.7): scope, list and status stay. Scans share
   // one runner, so it returns null while a shown scan runs, and a later scan or clear() cancels it (null).
   scanDetached(scope: Scope): Promise<ScanResult | null>
+  // A detached scan of the frames ReRune asks new screenshots of (screenshot freshness, contract §6.4 step 2), with
+  // the file's scan filters; the frames not in the file come back in `missingFrameIds`. Same rules as scanDetached.
+  scanFrames(frameIds: readonly string[]): Promise<ScanResult | null>
   refreshRemote(): Promise<void>
   setScope(scope: Scope): void
   setPending(nodeIds: readonly string[], name: string | null): void
@@ -99,6 +102,20 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
     }))
   }
 
+  async function detached(scope: Scope, frameIds?: readonly string[]): Promise<ScanResult | null> {
+    if (store.get().status === "scanning") {
+      return null
+    }
+    try {
+      return await deps.scanner.run(scope, undefined, frameIds)
+    } catch (error) {
+      if (error instanceof ScanCancelledError) {
+        return null
+      }
+      throw error
+    }
+  }
+
   return {
     store,
     refreshRemote,
@@ -135,19 +152,8 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
       await refreshRemote()
       return result
     },
-    async scanDetached(scope) {
-      if (store.get().status === "scanning") {
-        return null
-      }
-      try {
-        return await deps.scanner.run(scope)
-      } catch (error) {
-        if (error instanceof ScanCancelledError) {
-          return null
-        }
-        throw error
-      }
-    },
+    scanDetached: (scope) => detached(scope),
+    scanFrames: (frameIds) => detached("page", frameIds),
     setScope(scope) {
       store.set((state) => ({ ...state, scope }))
     },

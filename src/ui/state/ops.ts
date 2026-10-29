@@ -12,7 +12,8 @@ export type SkipCounts = MainToUiOf<"scan-done">["skipped"]
 export const WRITE_BATCH_SIZE = 200
 export const LONG_OP_IDLE_MS = 300000
 
-export interface ScanResult { scope: Scope; nodes: ScannedNode[]; total: number; truncated: boolean; skipped: SkipCounts }
+// `missingFrameIds`: only for a scan of requested frames (screenshot freshness), the frames not in the file.
+export interface ScanResult { scope: Scope; nodes: ScannedNode[]; total: number; truncated: boolean; skipped: SkipCounts; missingFrameIds?: string[] }
 
 export class ScanCancelledError extends Error {
   constructor() {
@@ -22,7 +23,8 @@ export class ScanCancelledError extends Error {
 }
 
 export interface ScanRunner {
-  run(scope: Scope, onProgress?: (scanned: number) => void): Promise<ScanResult>
+  // With `frameIds` main scans those frames instead of the scope (screenshot freshness, contract §6.4 step 2).
+  run(scope: Scope, onProgress?: (scanned: number) => void, frameIds?: readonly string[]): Promise<ScanResult>
   cancel(): void
 }
 
@@ -42,7 +44,7 @@ export function createScanRunner(bus: Pick<UiBus, "send" | "on" | "nextRequestId
 
   return {
     cancel,
-    run(scope, onProgress) {
+    run(scope, onProgress, frameIds) {
       cancel()
       const requestId = bus.nextRequestId()
       return new Promise<ScanResult>((resolve, reject) => {
@@ -84,7 +86,11 @@ export function createScanRunner(bus: Pick<UiBus, "send" | "on" | "nextRequestId
           bus.on("scan-done", (message) => {
             if (message.requestId === requestId) {
               finish()
-              resolve({ scope, nodes, total: message.total, truncated: message.truncated, skipped: message.skipped })
+              const result: ScanResult = { scope, nodes, total: message.total, truncated: message.truncated, skipped: message.skipped }
+              if (frameIds !== undefined) {
+                result.missingFrameIds = message.missingFrameIds?.slice() ?? []
+              }
+              resolve(result)
             }
           }),
           bus.on("handler-error", (message) => {
@@ -94,7 +100,7 @@ export function createScanRunner(bus: Pick<UiBus, "send" | "on" | "nextRequestId
             }
           }),
         )
-        bus.send({ type: "scan-request", requestId, scope })
+        bus.send(frameIds === undefined ? { type: "scan-request", requestId, scope } : { type: "scan-request", requestId, scope, frameIds: frameIds.slice() })
       })
     },
   }

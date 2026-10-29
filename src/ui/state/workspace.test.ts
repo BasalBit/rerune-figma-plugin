@@ -12,13 +12,14 @@ const SKIPPED = { hidden: 0, locked: 0, empty: 0, numeric: 0, underscore: 0, lan
 function fakeScanner(nodesFor: (scope: Scope) => ScannedNode[] | Error): ScanRunner & { cancel: ReturnType<typeof vi.fn<() => void>> } {
   return {
     cancel: vi.fn<() => void>(),
-    async run(scope, onProgress): Promise<ScanResult> {
+    async run(scope, onProgress, frameIds): Promise<ScanResult> {
       const nodes = nodesFor(scope)
       if (nodes instanceof Error) {
         throw nodes
       }
       onProgress?.(nodes.length)
-      return { scope, nodes, total: nodes.length, truncated: false, skipped: SKIPPED }
+      const result: ScanResult = { scope, nodes, total: nodes.length, truncated: false, skipped: SKIPPED }
+      return frameIds === undefined ? result : { ...result, missingFrameIds: frameIds.filter((frameId) => frameId.startsWith("99:")) }
     },
   }
 }
@@ -114,6 +115,30 @@ describe("workspace", () => {
     expect(result?.nodes).toEqual(nodes)
     expect(workspace.store.get()).toBe(before)
     expect(workspace.store.get()).toMatchObject({ scope: "selection", status: "ready", result: { scope: "selection", nodes: shown } })
+  })
+
+  it("scans requested frames detached, like the automatic link sync (screenshot freshness)", async () => {
+    const shown = [scannedNode("9:1", "Selected")]
+    const scanner = fakeScanner((scope) => (scope === "page" ? nodes : shown))
+    const run = vi.spyOn(scanner, "run")
+    const workspace = createWorkspace({ scanner, api: api(), project: () => ({ id: PROJECT_ID, main_language: "en" }) })
+    await workspace.scan("selection")
+    const before = workspace.store.get()
+    const result = await workspace.scanFrames(["10:1", "99:1"])
+    expect(run).toHaveBeenLastCalledWith("page", undefined, ["10:1", "99:1"])
+    expect(result).toMatchObject({ nodes, missingFrameIds: ["99:1"] })
+    expect(workspace.store.get()).toBe(before)
+
+    let finish: () => void = () => {}
+    const waiting: ScanRunner = {
+      cancel: vi.fn<() => void>(),
+      run: vi.fn((scope: Scope) => new Promise<ScanResult>((resolve) => (finish = () => resolve({ scope, nodes, total: 2, truncated: false, skipped: SKIPPED })))),
+    }
+    const busy = createWorkspace({ scanner: waiting, api: api(), project: () => ({ id: PROJECT_ID, main_language: "en" }) })
+    const shownScan = busy.scan("selection")
+    expect(await busy.scanFrames(["10:1"])).toBeNull()
+    finish()
+    await shownScan
   })
 
   it("leaves the shown scan alone: null while it runs or when a newer scan cancels it, and throws a failure", async () => {

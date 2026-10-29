@@ -164,7 +164,7 @@ export function registerHandlers(bus: MainBus, context: MainContext): void {
   bus.on("select-nodes", async (message) => {
     await selectNodes(message.nodeIds, context.editorType)
   })
-  bus.on("scan-request", (message) => scanner.start(message.requestId, message.scope))
+  bus.on("scan-request", (message) => scanner.start(message.requestId, message.scope, message.frameIds === undefined ? undefined : frameIdsOf(message.frameIds)))
   bus.on("scan-cancel", (message) => {
     scanner.cancel(message.requestId)
   })

@@ -23,6 +23,7 @@ import {
   yieldToCanvas,
   type NodeCaches,
 } from "./node-utils"
+import { isExportable } from "./screenshots"
 import { readFileSettings } from "./settings"
 import { shownPreview, type ShownPreview } from "./shown-preview"
 
@@ -115,8 +116,53 @@ function childrenOf(node: BaseNode): readonly SceneNode[] {
 }
 
 export interface Scanner {
-  start(requestId: RequestId, scope: Scope): Promise<void>
+  // With `frameIds` (screenshot freshness, the frames ReRune asks new screenshots of) the roots are those frames and
+  // `scope` is ignored.
+  start(requestId: RequestId, scope: Scope, frameIds?: readonly string[]): Promise<void>
   cancel(requestId: RequestId): void
+}
+
+interface FrameRoots { roots: SceneNode[]; ids: string[]; missing: Set<string> }
+
+// The roots of a scan of requested frames (contract §6.4 step 2): each frame by id, its page loaded first (the
+// frames can be on any page). A frame that resolves to null, was removed or cannot be exported is missing. A page
+// that fails to load leaves its frame in: reading it then counts as unavailable, and its export reports the problem.
+// null: the scan went stale meanwhile.
+async function frameRoots(frameIds: readonly string[], stale: () => boolean): Promise<FrameRoots | null> {
+  const roots: SceneNode[] = []
+  const ids: string[] = []
+  const missing = new Set<string>()
+  const loaded = new Set<string>()
+  for (const frameId of frameIds) {
+    let node: BaseNode | null
+    try {
+      node = await figma.getNodeByIdAsync(frameId)
+    } catch {
+      node = null
+    }
+    if (stale()) {
+      return null
+    }
+    if (node === null || node.removed || !isExportable(node)) {
+      missing.add(frameId)
+      continue
+    }
+    const page = pageOf(node)
+    if (page !== null && !loaded.has(page.id)) {
+      loaded.add(page.id)
+      try {
+        await page.loadAsync()
+      } catch {
+        // See above.
+      }
+      if (stale()) {
+        return null
+      }
+    }
+    roots.push(node)
+    ids.push(frameId)
+  }
+  return { roots, ids, missing }
 }
 
 // Chunked scanning (§7.9): per-child findAllWithCriteria, setTimeout(0) yields, batches of 100, a generation
@@ -132,7 +178,7 @@ export function createScanner(send: (message: MainToUi) => void): Scanner {
         activeRequestId = null
       }
     },
-    async start(requestId, scope) {
+    async start(requestId, scope, frameIds) {
       const mine = ++generation
       activeRequestId = requestId
       const stale = () => mine !== generation
@@ -159,7 +205,17 @@ export function createScanner(send: (message: MainToUi) => void): Scanner {
 
       const page = figma.currentPage
       let roots: readonly SceneNode[]
-      if (scope === "selection") {
+      let rootIds: readonly string[] = []
+      let missing: Set<string> | null = null
+      if (frameIds !== undefined) {
+        const found = await frameRoots(frameIds, stale)
+        if (found === null) {
+          return
+        }
+        roots = found.roots
+        rootIds = found.ids
+        missing = found.missing
+      } else if (scope === "selection") {
         roots = page.selection.slice()
       } else {
         await page.loadAsync()
@@ -177,6 +233,8 @@ export function createScanner(send: (message: MainToUi) => void): Scanner {
         const texts: TextNode[] = []
         try {
           if (root.removed) {
+            // A requested frame deleted while the scan yielded is not in the file anymore.
+            missing?.add(rootIds[r])
             continue
           }
           if (root.type === "TEXT") {
@@ -251,7 +309,13 @@ export function createScanner(send: (message: MainToUi) => void): Scanner {
       }
       flush()
       activeRequestId = null
-      send({ type: "scan-done", requestId, total, truncated, skipped })
+      if (frameIds === undefined || missing === null) {
+        send({ type: "scan-done", requestId, total, truncated, skipped })
+      } else {
+        const gone = missing
+        // In request order, each frame once.
+        send({ type: "scan-done", requestId, total, truncated, skipped, missingFrameIds: [...new Set(frameIds)].filter((frameId) => gone.has(frameId)) })
+      }
     },
   }
 }

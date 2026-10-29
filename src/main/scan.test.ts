@@ -383,6 +383,51 @@ describe("createScanner", () => {
     expect(done()?.total).toBe(1)
   })
 
+  // Screenshot freshness (contract §6.4 step 2): the frames ReRune asks new screenshots of.
+  describe("requested frames (frameIds)", () => {
+    function exportable(id: string, name: string, children: FakeNode[]): FakeNode {
+      return fakeFrame(id, name, children, { exportAsync: vi.fn(), absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 } })
+    }
+
+    it("scans those frames on any page with the file's filters, whatever the scope, and lists the missing ones in request order", async () => {
+      const checkout = exportable("10:1", "Checkout", [fakeText("10:2", "Pay now"), fakeText("10:3", "Locked", { locked: true }), fakeText("10:4", "Note", { name: "_note" })])
+      const unrequested = exportable("11:1", "Cart", [fakeText("11:2", "Cart")])
+      onPage(figmaMock, [checkout, unrequested], [unrequested])
+      const other = fakePage("0:2", "Web", [exportable("20:1", "Home", [fakeText("20:2", "Welcome")])])
+      figmaMock.root.appendChild(other)
+
+      await createScanner((message) => messages.push(message)).start("r1", "selection", ["99:1", "20:1", "0:1", "10:1", "99:1"])
+      expect(other.loadAsync).toHaveBeenCalledTimes(1)
+      expect(batches().map((node) => [node.nodeId, node.pageName, node.frameId])).toEqual([
+        ["20:2", "Web", "20:1"],
+        ["10:2", "Page 1", "10:1"],
+      ])
+      // A page is not a frame: it cannot be exported.
+      expect(done()).toEqual({ type: "scan-done", requestId: "r1", total: 2, truncated: false, skipped: { ...emptySkipCounts(), locked: 1, underscore: 1 }, missingFrameIds: ["99:1", "0:1"] })
+    })
+
+    it("lists a frame deleted while the scan ran as missing", async () => {
+      const checkout = exportable("10:1", "Checkout", [fakeText("10:2", "Pay now")])
+      onPage(figmaMock, [checkout])
+      const other = fakePage("0:2", "Web", [exportable("20:1", "Home", [fakeText("20:2", "Welcome")])])
+      figmaMock.root.appendChild(other)
+      other.loadAsync = vi.fn(async () => {
+        checkout.remove()
+      })
+      await createScanner((message) => messages.push(message)).start("r1", "page", ["10:1", "20:1"])
+      expect(batches().map((node) => node.nodeId)).toEqual(["20:2"])
+      expect(done()?.missingFrameIds).toEqual(["10:1"])
+    })
+
+    it("sends an empty list when every frame was found, and none for a scope scan", async () => {
+      onPage(figmaMock, [exportable("10:1", "Checkout", [fakeText("10:2", "Pay now")])])
+      await createScanner((message) => messages.push(message)).start("r1", "page", ["10:1"])
+      expect(done("r1")?.missingFrameIds).toEqual([])
+      await createScanner((message) => messages.push(message)).start("r2", "page")
+      expect(done("r2")).not.toHaveProperty("missingFrameIds")
+    })
+  })
+
   it("lets a newer scan supersede a running one", async () => {
     const texts = Array.from({ length: 250 }, (_, i) => lightText("3:" + i, "Text " + i))
     onPage(figmaMock, [fakeFrame("1:1", "List", texts)])
