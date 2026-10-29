@@ -361,7 +361,8 @@ describe("preview-reset (§7.14 reset)", () => {
 
     expect(await resetPreview("page", undefined, undefined)).toEqual({ done: 1, errors: [] })
     expect(segmentsOf(node)).toEqual(original)
-    const styleCall = node.setRangeTextStyleIdAsync.mock.invocationCallOrder.at(-1) ?? 0
+    const styleOrders = node.setRangeTextStyleIdAsync.mock.invocationCallOrder
+    const styleCall = styleOrders[styleOrders.length - 1] ?? 0
     const linkCall = node.setRangeHyperlink.mock.invocationCallOrder.find((order, index) => node.setRangeHyperlink.mock.calls[index][0] === 0) ?? Infinity
     expect(styleCall).toBeGreaterThan(linkCall)
   })
