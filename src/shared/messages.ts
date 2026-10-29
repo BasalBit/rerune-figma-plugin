@@ -1,5 +1,3 @@
-import type { FigmaTextStyle } from "./api-types"
-
 export type RequestId = string
 export type Scope = "selection" | "page"
 export type ResolveSource = "draft" | "published"
@@ -32,9 +30,8 @@ export interface ScannedNode {
   width: number; height: number; textAutoResize: "NONE" | "WIDTH_AND_HEIGHT" | "HEIGHT" | "TRUNCATE"
   textTruncation: "DISABLED" | "ENDING"; maxLines: number | null
 }
-// Screenshot freshness addition: the layer's text at export (null when longer than 5,000 UTF-16 units) and its text
-// style in image pixels (null when it cannot be described, contract §3.3).
-export interface Box { nodeId: string; keyId: string; x: number; y: number; w: number; h: number; text: string | null; style: FigmaTextStyle | null }
+// Screenshot freshness addition: the layer's text at export (null when longer than 5,000 UTF-16 units, contract §3.3).
+export interface Box { nodeId: string; keyId: string; x: number; y: number; w: number; h: number; text: string | null }
 export interface NodeError {
   nodeId: string
   code: "missing_font" | "node_not_found" | "write_failed" | "preview_active" | "not_previewing" | "readonly_mode" | "mixed_styles_flattened" | "too_large"

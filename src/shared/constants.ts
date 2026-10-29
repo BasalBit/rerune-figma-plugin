@@ -69,11 +69,7 @@ export const SCREENSHOT_NAME_MAX_RUNES = 200         // frame and page names are
 export const SCREENSHOT_RATE_LIMIT_RETRIES = 2       // 429 waits per frame before the upload queue stops
 export const SCREENSHOT_EXPORT_IDLE_MS = 120000      // one frame export (with re-exports) per request
 export const SCREENSHOT_TEXT_MAX_UTF16 = 5000        // a box's captured text; longer layers send none (server: ≤ 5,000 runes)
-export const SCREENSHOT_META_MAX_BYTES = 900000      // the E19 meta part with captured texts and styles, as UTF-8 JSON
-export const TEXT_STYLE_NAME_MAX_RUNES = 200         // font family and style names, trimmed
-export const TEXT_STYLE_MAX_PX = 8192                // font size, line height and |letter spacing| in image pixels
-export const TEXT_STYLE_MAX_LINES = 1000
-export const TEXT_STYLE_MAX_WEIGHT = 1000
+export const SCREENSHOT_META_MAX_BYTES = 900000      // the E19 meta part with captured texts, as UTF-8 JSON
 export const REFRESH_REQUESTS_PAGE_SIZE = 100        // E20 page size for the frames ReRune asks new screenshots of
 export const REFRESH_REQUESTS_MAX = 1000             // requested frames the plugin reads per file
 
