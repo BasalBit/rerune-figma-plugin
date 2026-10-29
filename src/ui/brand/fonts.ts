@@ -1,8 +1,10 @@
 /*! Fonts bundled with ReRune for Figma (src/ui/assets/fonts, Latin subsets, WOFF2):
- *  Inter 4.001 (variable wght), from @fontsource-variable/inter 5.3.0, unmodified.
+ *  Inter 4.001 (variable wght), the Latin subset of @fontsource-variable/inter 5.3.0, used under the CSS name
+ *  "ReRune Inter".
  *    Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
- *  IBM Plex Mono Medium 2.3, from @fontsource/ibm-plex-mono 5.3.0, unmodified, used under the CSS name "ReRune Mono".
- *    Copyright 2017 IBM Corp. All rights reserved.
+ *  IBM Plex Mono Medium 2.005, IBM's own Latin1 subset (@ibm/plex-mono 2.5.0, IBMPlexMono-Medium-Latin1.woff2),
+ *  unchanged, used under the CSS name "ReRune Mono".
+ *    Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"
  *  Bricolage Grotesque 1.001, from @fontsource-variable/bricolage-grotesque 5.3.0, instanced (wght 800, wdth 88,
  *  opsz 24) and subset to ASCII for ReRune, used under the CSS name "ReRune Display".
  *    Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)
@@ -97,15 +99,17 @@
  *  OTHER DEALINGS IN THE FONT SOFTWARE.
  */
 import interBytes from "../assets/fonts/inter-latin-wght.woff2"
-import monoBytes from "../assets/fonts/ibm-plex-mono-latin-500.woff2"
+import monoBytes from "../assets/fonts/IBMPlexMono-Medium-Latin1.woff2"
 import displayBytes from "../assets/fonts/rerune-display-800.woff2"
 
 // The brand fonts, registered from bytes bundled in ui.js (build-figma-plugin.ui.js loads .woff2 as binary): no
-// url(), no fetch, so Figma's iframe CSP and networkAccess never apply. "Inter" is the family CFP's --font-family
-// asks for. Only index.tsx imports this module, so node tests never load the binaries.
+// url(), no fetch, so Figma's iframe CSP and networkAccess never apply. Inter is registered as "ReRune Inter", first
+// in --font-family (tokens.ts), so the Latin subset never hides an installed full Inter: characters outside it (Polish,
+// Czech, Turkish, Vietnamese, Cyrillic…) come from that Inter, or Helvetica. Only index.tsx imports this module, so
+// node tests never load the binaries.
 
 export const BRAND_FONTS = [
-  { family: "Inter", bytes: interBytes, descriptors: { weight: "100 900", style: "normal", display: "block" } },
+  { family: "ReRune Inter", bytes: interBytes, descriptors: { weight: "100 900", style: "normal", display: "block" } },
   { family: "ReRune Mono", bytes: monoBytes, descriptors: { weight: "500", style: "normal", display: "block" } },
   { family: "ReRune Display", bytes: displayBytes, descriptors: { weight: "800", style: "normal", display: "block" } },
 ] as const

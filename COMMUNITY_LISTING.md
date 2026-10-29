@@ -59,7 +59,7 @@ The reasoning is the manifest's `networkAccess.reasoning`, word for word; `test/
 
 ## Assets
 
-The images in `listing/` follow the dashboard's /figma page and its share card: the ReRune mark and wordmark, the Bricolage title on an amber tile, the amber field with the airmail edge, and the plugin's real screens (Figma light, the QA one in Figma dark). Rendered by `node scripts/listing-art.mjs` from `listing/src/`; capture the screenshots again from the build you publish (README → [Listing images](README.md#listing-images)). `test/listing.test.ts` checks each image's size and format and that this list names it.
+The images in `listing/` follow the dashboard's /figma page and its share card: the ReRune mark and wordmark, a key tag with the key of the image's own headline, the Bricolage title on an amber tile, the amber field with the airmail edge. The cover is the share card with the scholar stamp; each carousel image shows one of the plugin's real screens (Figma light, the QA one in Figma dark) large enough to read in the carousel. Rendered by `node scripts/listing-art.mjs` from `listing/src/`; capture the screenshots again from the commit you publish (README → [Listing images](README.md#listing-images)). `test/listing.test.ts` checks each image's size and format and that this list names it.
 
 - [x] Icon, 128 × 128 PNG: `listing/icon-128.png` (the ReRune mark in white on the app icon's navy)
 - [x] Cover (thumbnail), 1920 × 1080 PNG: `listing/cover-1920x1080.png`
@@ -108,9 +108,9 @@ Answers for Figma's data security disclosure (optional, reviewed by Figma, shown
 - [x] https://github.com/BasalBit/rerune-figma-plugin is public (checked on 2026-10-28: `gh repo view` reports `PUBLIC` and a signed-out request returns 200). Keep it public: the listing's source link and answer 10 point to it, and so do the dashboard's public pages `/figma` (**View source on GitHub**) and `/docs/figma` (**Source code on GitHub**), so it must be public before the dashboard is deployed.
 - [ ] Production acceptance passed and recorded (`TESTING.md` §9): server and dashboard deployed, Network check and pairing against production, a push, a preview and a screenshot upload, all in Figma desktop (it is the only place an unpublished build runs).
 - [ ] Build chosen (see [Which build to publish](#which-build-to-publish)). For the full build, S14 is answered in `TESTING.md` §8.2.
-- [ ] The release build is the CI artifact of the commit you publish (`rerune-figma-plugin-design-only` or `rerune-figma-plugin`) or the same command run locally, placed where Figma desktop imported the plugin from and checked with `node scripts/check-build.mjs` (README → Build and release, step 2).
 - [x] Icon and cover replaced.
-- [ ] Carousel images taken from the build you publish (`node scripts/listing-art.mjs capture`, then `render`); with the design-only build, leave out `carousel-5-dev-mode.png`.
+- [ ] Carousel images taken from the commit you publish (`node scripts/listing-art.mjs capture`, then `render`; capture puts back the build that was in place); with the design-only build, leave out `carousel-5-dev-mode.png`.
+- [ ] Last, the release build is the CI artifact of the commit you publish (`rerune-figma-plugin-design-only` or `rerune-figma-plugin`) or the same command run locally, placed where Figma desktop imported the plugin from and checked with `node scripts/check-build.mjs` (README → Build and release, step 2).
 - [ ] https://rerune.io/privacy and https://rerune.io/docs/figma are live, and the data security answers above still match.
 - [ ] Ops confirmed that the production bunny.net Storage zone is in Germany with no replication regions (answers 4 and 8 and the dashboard's legal pages say so; only the dev zone has been checked). Name the city in answers 4 and 8 only after that.
 - [ ] Decide how reviewers sign in (a free account as above, or a test account BasalBit creates; never commit its password).

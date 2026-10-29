@@ -52,10 +52,10 @@ describe("scripts/check-build.mjs", () => {
 
   it("keeps build/ui.js within its budget, with the brand fonts in the UI and none in main", () => {
     const manifest = builtManifest({})
-    expect(UI_JS_BUDGET).toBe(420000)
+    expect(UI_JS_BUDGET).toBe(450000)
     expect(problems("full", manifest, PRODUCTION_MAIN, PRODUCTION_UI + " ".repeat(UI_JS_BUDGET - PRODUCTION_UI.length))).toEqual([])
     expect(problems("full", manifest, PRODUCTION_MAIN, PRODUCTION_UI + " ".repeat(UI_JS_BUDGET - PRODUCTION_UI.length + 1))).toEqual([
-      "build/ui.js is 420001 bytes, over its budget of 420000",
+      "build/ui.js is 450001 bytes, over its budget of 450000",
     ])
     expect(problems("full", manifest, PRODUCTION_MAIN, "function render(){}")).toEqual(["build/ui.js has no bundled fonts (the .woff2 loader of build-figma-plugin.ui.js?)"])
     expect(problems("full", manifest, PRODUCTION_MAIN + 'var f="d09GMgAB";', PRODUCTION_UI)).toEqual(["build/main.js has font data (the brand fonts belong to build/ui.js only)"])

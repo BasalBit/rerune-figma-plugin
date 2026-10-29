@@ -52,7 +52,7 @@ export function PairingScreen(props: PairingScreenProps) {
   if (state.kind === "failed") {
     return (
       <div style={styles.page}>
-        <div style={{ ...styles.body, ...styles.stack, justifyContent: "center" }}>
+        <div class="rr-center" style={{ ...styles.body, gap: "8px" }}>
           <Note tone={state.reason === "denied" ? "warning" : "danger"}>{state.message}</Note>
           <Button fullWidth onClick={props.onRestart}>
             Start again
@@ -72,7 +72,7 @@ export function PairingScreen(props: PairingScreenProps) {
   const left = secondsLeft(state.deadline, now)
   return (
     <div style={styles.page}>
-      <div style={{ ...styles.body, ...styles.stack, justifyContent: "center" }}>
+      <div class="rr-center" style={{ ...styles.body, gap: "8px" }}>
         <Ticket
           stub={
             <Fragment>
@@ -81,10 +81,8 @@ export function PairingScreen(props: PairingScreenProps) {
             </Fragment>
           }
         >
-          <div class="rr-label" aria-hidden="true">
-            Pairing code
-          </div>
-          <div class="rr-pairing-code" aria-label="Pairing code" translate={false}>
+          <div class="rr-label">Pairing code</div>
+          <div class="rr-pairing-code" translate={false}>
             {state.code}
           </div>
           <div style={{ fontSize: "12px", lineHeight: "16px" }}>Check that the code in your browser matches</div>

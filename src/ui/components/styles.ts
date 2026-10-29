@@ -13,6 +13,8 @@ export const styles = {
   card: { border: "1px solid var(--figma-color-border)", borderRadius: "6px", padding: "8px", display: "flex", flexDirection: "column", gap: "6px" } as JSX.CSSProperties,
   // --font-family-code is ReRune Mono (IBM Plex Mono 500, bundled; brand-css.ts).
   mono: { fontFamily: "var(--font-family-code, ui-monospace, monospace)", fontSize: "11px", overflowWrap: "anywhere" } as JSX.CSSProperties,
+  // A text box where a new key's name is typed: the name in ReRune Mono, as its key tag shows it.
+  keyInput: { fontFamily: "var(--rr-font-mono)", fontWeight: "500" } as JSX.CSSProperties,
   clamp: { display: "-webkit-box", WebkitLineClamp: "2", WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" } as JSX.CSSProperties,
   // ReRune's --ink-3 in light mode (Figma's text-secondary is 3.98:1 on white), Figma's text-secondary in dark.
   muted: { color: "var(--rr-muted)" } as JSX.CSSProperties,

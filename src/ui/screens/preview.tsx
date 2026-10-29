@@ -8,7 +8,7 @@ import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
 import { KeyTag } from "../brand/key-tag"
-import { ErrorGroups, ErrorNote, FieldLabel, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import {
@@ -147,7 +147,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
       <ScreenBody notices={props.notices} stack>
         {props.readOnly && <Note tone="warning">This file is connected to a different ReRune server.</Note>}
         <div style={styles.tightStack}>
-          <FieldLabel>Language</FieldLabel>
+          <Small muted>Language</Small>
           {languageOptions.length === 0 ? (
             <Note tone="warning">This project has no languages yet.</Note>
           ) : (
@@ -155,12 +155,12 @@ export function PreviewScreen(props: PreviewScreenProps) {
           )}
         </div>
         <div style={styles.tightStack}>
-          <FieldLabel>Source</FieldLabel>
+          <Small muted>Source</Small>
           <SegmentedControl value={source} options={SOURCE_OPTIONS} disabled={keysMode} onValueChange={(value) => setSource(value as ResolveSource)} />
         </div>
         {project.variation_options.length > 0 && (
           <div style={styles.tightStack}>
-            <FieldLabel>Variation</FieldLabel>
+            <Small muted>Variation</Small>
             <Dropdown value={variation ?? NO_VARIATION} options={variationOptions} disabled={keysMode} onValueChange={(value) => setVariation(value === NO_VARIATION ? null : value)} />
           </div>
         )}
@@ -179,7 +179,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
           />
         )}
         <div style={styles.tightStack}>
-          <FieldLabel>Apply to</FieldLabel>
+          <Small muted>Apply to</Small>
           <SegmentedControl value={scope} options={SCOPE_OPTIONS} onValueChange={(value) => setScope(value as Scope)} />
         </div>
         <Small muted>Previews change layers only until you reset them. Preview text is never pushed.</Small>
@@ -188,7 +188,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
         {applied !== null && (
           <div style={styles.stack}>
             <Note tone="good">
-              Previewing <span class="rr-code">{applied.build.info.lang}</span> on {plural(applied.done, "layer", "layers")}.
+              Previewing {applied.build.info.lang} on {plural(applied.done, "layer", "layers")}.
               {applied.build.skipped.variable.length > 0 ? " " + plural(applied.build.skipped.variable.length, "layer uses", "layers use") + " a Figma variable and kept its text." : ""}
             </Note>
             <ErrorGroups groups={applied.errors} onSelect={props.onSelect} />
@@ -240,9 +240,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
                       <div key={entry.nodeId} style={{ ...styles.row, ...styles.card, flexDirection: "row" }}>
                         <div style={styles.grow}>
                           <KeyTag name={entry.keyName} />
-                          <Small muted>
-                            inherited from <span class="rr-code">{entry.resolvedLang}</span>
-                          </Small>
+                          <Small muted>inherited from {entry.resolvedLang}</Small>
                         </div>
                         <TextButton onClick={() => props.onSelect([entry.nodeId])}>Select</TextButton>
                       </div>

@@ -7,8 +7,8 @@ the build keeps in `build/ui.js`.
 
 | File | CSS family | Source | Glyphs | Bytes | SHA-256 |
 |---|---|---|---|---|---|
-| `inter-latin-wght.woff2` | `Inter` (the family Create Figma Plugin's `--font-family` asks for) | Inter 4.001, `@fontsource-variable/inter@5.3.0` `files/inter-latin-wght-normal.woff2`, unmodified (variable, wght 100–900). © 2016 The Inter Project Authors | 518 | 48,256 | `3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62` |
-| `ibm-plex-mono-latin-500.woff2` | `ReRune Mono` | IBM Plex Mono Medium 2.3, `@fontsource/ibm-plex-mono@5.3.0` `files/ibm-plex-mono-latin-500-normal.woff2`, unmodified (IBM reserves the name "Plex"; the file is not changed). © 2017 IBM Corp. | 280 | 14,888 | `01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22` |
+| `inter-latin-wght.woff2` | `ReRune Inter` (first in `--font-family`, before an installed `Inter`) | Inter 4.001, `@fontsource-variable/inter@5.3.0` `files/inter-latin-wght-normal.woff2`: fontsource's Latin subset, variable (wght 100–900), not changed further. © 2016 The Inter Project Authors, no Reserved Font Name | 518 | 48,256 | `3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62` |
+| `IBMPlexMono-Medium-Latin1.woff2` | `ReRune Mono` | IBM Plex Mono Medium 2.005, IBM's own Latin1 subset from the IBM Plex release (`@ibm/plex-mono@2.5.0` `fonts/split/woff2/IBMPlexMono-Medium-Latin1.woff2`), unchanged: an Original Version, so it keeps its name (IBM reserves the name "Plex" for modified versions). © 2017 IBM Corp. | 313 | 17,868 | `41201b658a328b9d00368215c2f1102770f80b15952ab82631e4006255e6365d` |
 | `rerune-display-800.woff2` | `ReRune Display` | Bricolage Grotesque 1.001, `@fontsource-variable/bricolage-grotesque@5.3.0` `files/bricolage-grotesque-latin-standard-normal.woff2`, instanced and subset (below). © 2022 The Bricolage Grotesque Project Authors, no Reserved Font Name | 107 | 11,476 | `073c14e9feca497c297bc7e2610e3d6271f9874bb729d070b326fb6d0788a520` |
 
 `ReRune Display` is a static instance (wght 800, wdth 88, opsz 24: the dashboard wordmark's 800 / 88%) cut to ASCII and
@@ -22,5 +22,9 @@ pyftsubset rerune-display.ttf --flavor=woff2 --name-IDs='*' --notdef-outline --l
   --output-file=rerune-display-800.woff2
 ```
 
-Inter and Plex Mono are the fontsource Latin subsets: user text in Cyrillic, Greek, Arabic or CJK, and `→`, fall back
-to the system fonts per glyph, as before.
+Inter and Plex Mono are Latin subsets. `--font-family` is `"ReRune Inter", Inter, Helvetica, sans-serif`
+(`src/ui/brand/tokens.ts`), so a character the subset lacks (Polish ł ż ę, Czech ř, Turkish ğ ş, Vietnamese, Cyrillic,
+Greek, `→`) comes from an installed full Inter when the designer has one, and from Helvetica (Arial on Windows)
+otherwise: in that case such a word mixes two fonts, one character at a time. Plex Mono's Latin1 subset covers Western
+European accents; key names and codes outside it fall back to the system monospace per glyph. The licences are in
+`OFL-*.txt`; `OFL-IBMPlexMono.txt` is IBM's `LICENSE.txt` from the same release.

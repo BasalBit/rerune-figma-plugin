@@ -6,12 +6,16 @@
 //
 //   CHROME_BIN=… node scripts/ui-harness.mjs <out dir> [scenario prefix …]
 //
-// Build first (npm run build, or npm run build:design-only). Writes <scenario>[-<size>]-<theme>.png at 2x (HARNESS_SCALE=1
-// for standard-resolution screens), and
-// checks.json: no horizontal scroll, the brand fonts loaded, page errors, text under 4.5:1 (3:1 large). CHROME_BIN
-// is a Chromium or Chrome binary; without it, the installed Google Chrome is used. Not run in CI.
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+// Build first (npm run build, or npm run build:design-only). Writes <scenario>[-<width>x<height>]-<theme>.png at 2x
+// (HARNESS_SCALE=1 for standard-resolution screens), and checks.json: no horizontal scroll, no content above the top of
+// a scroll area (unreachable), the layout shift while the screen loads, the brand fonts loaded, page errors, text under
+// 4.5:1 (3:1 large). The Design screens render at 400 × 640 and at the window's 360 × 480 minimum, the Dev Mode panel at
+// 300 × 480 and 300 × 200 (a short inspect panel). Every run sets reduced motion except 07-push-results, which plays the
+// postmark's stamp-in. CHROME_BIN is a Chromium or Chrome binary; without it, the installed Google Chrome is used. Not
+// run in CI.
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
+import { dirname } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { chromium } from "playwright-core"
 
@@ -186,10 +190,10 @@ export const SCENARIOS = {
   "02-pairing": { ...base, auth: null, settings: null, steps: async (h) => { await h.button("Sign in with ReRune"); await h.text("Check that the code in your browser matches") } },
   "03-signed-in": { ...base, auth: null, settings: null, pollApproves: true, steps: async (h) => { await h.button("Sign in with ReRune"); await h.text("Signed in as", 9000) } },
   "04-project-picker": { ...base, steps: async (h) => { await h.text("Chapter · Mobile app"); await h.link("Change"); await h.text("Choose a ReRune project"); await h.text("Brand guidelines") } },
-  "05-layers": { ...base, sizes: ["default", "small"], steps: async (h) => { await h.scanPage(); await h.pending("1:5", "Cancel", "checkout_cancel"); await h.text("Review your order") } },
+  "05-layers": { ...base, sizes: ["default", "min"], steps: async (h) => { await h.scanPage(); await h.pending("1:5", "Cancel", "checkout_cancel"); await h.text("Review your order") } },
   "06-push-review": {
     ...base,
-    sizes: ["default", "small"],
+    sizes: ["default", "min"],
     steps: async (h) => { await h.scanPage(); await h.tab("Push"); await h.text("Changed in both", 8000); await h.wait(300) },
   },
   "06b-push-review-more": {
@@ -199,6 +203,7 @@ export const SCENARIOS = {
   "07-push-results": {
     ...base,
     nodes: CLEAN_LAYERS,
+    motion: true,
     steps: async (h) => { await h.scanPage(); await h.tab("Push"); await h.text("Changed in Figma", 8000); await h.checkAll("Include in push"); await h.button(/^Push \d+ changes?$/); await h.text("Drafts are never published from Figma.", 8000); await h.wait(400) },
   },
   "08-preview": { ...base, steps: async (h) => { await h.scanPage(); await h.tab("Preview"); await h.text("Show key names instead of text"); await h.button("Apply to page"); await h.text("Missing translations", 8000); await h.wait(300) } },
@@ -216,12 +221,26 @@ export const SCENARIOS = {
     steps: async (h) => { await h.scanPage(); await h.tabTo((el) => el.classList.contains("rr-focus") && el.textContent.startsWith("Total")); await h.wait(150) },
     keepFocus: true,
   },
-  "13-inspect": { ...base, editorType: "dev", sizes: ["small"], steps: async (h) => { await h.text("Copy code", 9000); await h.wait(300) } },
+  "13-inspect": { ...base, editorType: "dev", sizes: ["inspect", "short"], steps: async (h) => { await h.text("Copy code", 9000); await h.wait(300) } },
+  // The Dev Mode panel's sign-in and pairing in a short panel: they scroll from the top instead of losing it.
+  "15-inspect-signin": { ...base, editorType: "dev", auth: null, settings: null, sizes: ["short"], steps: async (h) => { await h.text("Sign in with ReRune"); await h.wait(200) } },
+  "16-inspect-pairing": { ...base, editorType: "dev", auth: null, settings: null, sizes: ["short"], steps: async (h) => { await h.button("Sign in with ReRune"); await h.text("Check that the code in your browser matches"); await h.wait(200) } },
 }
 
+// default: the Design window as it opens; min: its smallest size (DESIGN_UI_MIN_SIZE); listing: a shorter Design window
+// for the Community carousel (scripts/listing-art.mjs); inspect and short: the Dev Mode inspect panel, which can be
+// 300 px wide and very short.
 export const SIZES = {
   default: { width: 400, height: 640 },
-  small: { width: 300, height: 480 },
+  min: { width: 360, height: 480 },
+  listing: { width: 400, height: 560 },
+  inspect: { width: 300, height: 480 },
+  short: { width: 300, height: 200 },
+}
+
+function baseName(name, size) {
+  const { width, height } = SIZES[size]
+  return name + (size === "default" ? "" : "-" + width + "x" + height)
 }
 
 function remoteKey(id, languagesWanted, source) {
@@ -370,8 +389,18 @@ export function allRuns(only = []) {
 async function captureOne(browser, outDir, { name, size, theme, file: fileName }) {
   const scenario = SCENARIOS[name]
   const { width, height } = SIZES[size]
-  const file = fileName ?? name + (size === "small" ? "-" + width + "x" + height : "") + "-" + theme
-  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: Number(process.env.HARNESS_SCALE ?? 2), colorScheme: theme, reducedMotion: "reduce" })
+  const file = fileName ?? baseName(name, size) + "-" + theme
+  const reducedMotion = scenario.motion === true ? "no-preference" : "reduce"
+  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: Number(process.env.HARNESS_SCALE ?? 2), colorScheme: theme, reducedMotion })
+  // Layout shift in every frame (the plugin is the srcdoc iframe), summed without shifts right after input.
+  await context.addInitScript(() => {
+    window.__layoutShift = 0
+    try {
+      new PerformanceObserver((list) => { for (const entry of list.getEntries()) if (!entry.hadRecentInput) window.__layoutShift += entry.value }).observe({ type: "layout-shift", buffered: true })
+    } catch {
+      window.__layoutShift = null
+    }
+  })
   const page = await context.newPage()
   const errors = []
   page.on("pageerror", (error) => errors.push("pageerror: " + error.message))
@@ -385,7 +414,7 @@ async function captureOne(browser, outDir, { name, size, theme, file: fileName }
   let failed = null
   const h = helpers(page, ui)
   // A file name like 06-push-review-b-light: the suffix goes before the theme.
-  h.file = (suffix) => outDir + "/" + (fileName !== undefined ? fileName + (suffix ? "-" + suffix : "") : name + (size === "small" ? "-" + width + "x" + height : "") + (suffix ? "-" + suffix : "") + "-" + theme) + ".png"
+  h.file = (suffix) => outDir + "/" + (fileName !== undefined ? fileName + (suffix ? "-" + suffix : "") : baseName(name, size) + (suffix ? "-" + suffix : "") + "-" + theme) + ".png"
   try {
     await steps(h)
   } catch (error) {
@@ -396,6 +425,13 @@ async function captureOne(browser, outDir, { name, size, theme, file: fileName }
   const facts = await frame.evaluate(() => {
     // Horizontal scroll: a scroll container (overflow-x auto/scroll) or the document wider than its box.
     const scrollers = [...document.querySelectorAll("#create-figma-plugin *")].filter((el) => ["auto", "scroll"].includes(getComputedStyle(el).overflowX) && el.scrollWidth > el.clientWidth + 1)
+    // Content above the top of a vertical scroll area that is scrolled to the top can never be scrolled to (centred
+    // content taller than its area).
+    const aboveTop = [...document.querySelectorAll("#create-figma-plugin *")]
+      .filter((el) => ["auto", "scroll"].includes(getComputedStyle(el).overflowY) && el.scrollTop === 0 && el.children.length > 0)
+      .map((el) => ({ el, by: el.getBoundingClientRect().top - Math.min(...[...el.children].map((child) => child.getBoundingClientRect().top)) }))
+      .filter((entry) => entry.by > 0.5)
+      .map((entry) => (entry.el.className || entry.el.tagName) + " " + entry.by.toFixed(1) + "px")
     // Text contrast: each element with its own text against the first opaque background up the tree.
     const parse = (value) => {
       const rgb = value.match(/rgba?\(([^)]+)\)/)
@@ -434,20 +470,23 @@ async function captureOne(browser, outDir, { name, size, theme, file: fileName }
       if (value < (large ? 3 : 4.5)) low.push(el.textContent.trim().slice(0, 40) + " " + value.toFixed(2))
     }
     return {
-      fonts: { display: document.fonts.check('800 15px "ReRune Display"'), mono: document.fonts.check('500 11px "ReRune Mono"'), inter: document.fonts.check("400 11px Inter") },
+      fonts: { display: document.fonts.check('800 15px "ReRune Display"'), mono: document.fonts.check('500 11px "ReRune Mono"'), inter: document.fonts.check('400 11px "ReRune Inter"') },
       fontFaces: [...document.fonts].map((face) => face.family + " " + face.weight + " " + face.status),
       docScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       scrollers: scrollers.map((el) => (el.className || el.tagName) + " " + el.scrollWidth + ">" + el.clientWidth).slice(0, 5),
       lowContrast: low.slice(0, 12),
+      aboveTop,
+      layoutShift: window.__layoutShift === null ? null : Number(window.__layoutShift.toFixed(4)),
     }
   })
   if (h.shots.length === 0) {
     if (!scenario.keepFocus) await h.blur()
     await page.screenshot({ path: h.file() })
   }
-  const notes = [failed ? " — " + failed : "", errors.length ? " errors=" + JSON.stringify(errors) : "", facts.scrollers.length || facts.docScroll ? " hscroll=" + JSON.stringify(facts.scrollers) : "", facts.lowContrast.length ? " contrast=" + JSON.stringify(facts.lowContrast) : "", !facts.fonts.display || !facts.fonts.mono || !facts.fonts.inter ? " fonts=" + JSON.stringify(facts.fonts) : ""].join("")
-  console.log((failed ? "FAIL " : "ok   ") + file + notes)
+  const notes = [failed ? " — " + failed : "", errors.length ? " errors=" + JSON.stringify(errors) : "", facts.scrollers.length || facts.docScroll ? " hscroll=" + JSON.stringify(facts.scrollers) : "", facts.aboveTop.length ? " above-top=" + JSON.stringify(facts.aboveTop) : "", facts.lowContrast.length ? " contrast=" + JSON.stringify(facts.lowContrast) : "", !facts.fonts.display || !facts.fonts.mono || !facts.fonts.inter ? " fonts=" + JSON.stringify(facts.fonts) : ""].join("")
+  console.log((failed ? "FAIL " : "ok   ") + file + notes + (facts.layoutShift ? " cls=" + facts.layoutShift : ""))
   await context.close()
+  rmSync(dirname(host), { recursive: true, force: true })
   return { file, failed, errors, ...facts }
 }
 

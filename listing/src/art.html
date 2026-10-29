@@ -2,10 +2,11 @@
 <!--
   The Figma Community listing art (COMMUNITY_LISTING.md → Assets), one template per image: node scripts/listing-art.mjs
   render opens art.html#<image name> at the image's size and saves the PNG. It follows the dashboard's /figma page and
-  its share card (app/og/polyglot-og-image.tsx): paper ground, the brand row with a mono key tag, a condensed
-  Bricolage title with its last word on an amber tile, a 2px ink rule, a Newsreader italic kicker on the amber bar, a
-  Hanken Grotesk line, and the amber field behind an airmail edge. The plugin screens are real captures
-  (listing/src/shots, scripts/listing-art.mjs capture). Fonts: the dashboard's OG instances (fonts/, SIL OFL 1.1).
+  its share card (app/og/polyglot-og-image.tsx): paper ground, the brand row with a mono key tag (the key of the image's
+  own headline), a condensed Bricolage title with its last word on an amber tile, an ink rule, a Newsreader italic
+  kicker on the amber bar, a Hanken Grotesk line, and the amber field behind an airmail edge. The cover is the share
+  card with the scholar stamp; each carousel slide shows a real plugin screen at 1.6-1.9x in a field about half the
+  width (listing/src/shots, scripts/listing-art.mjs capture). Fonts: the dashboard's OG instances (fonts/, SIL OFL 1.1).
 -->
 <html lang="en">
 <head>
@@ -26,29 +27,63 @@ html, body { background: var(--paper); }
 body { -webkit-font-smoothing: antialiased; }
 .mark { display: block; color: currentColor; }
 
-/* ---- icon: the app icon's navy, the heavier mark in white, glyph 84 px tall (Figma rounds the corners) ---- */
+/* ---- icon: the app icon's navy, the heavier mark in white, glyph 99 px tall (about 78%, as app/icon.png; Figma rounds
+   the corners) ---- */
 .icon { width: 128px; height: 128px; display: grid; place-items: center; background: var(--app); color: #ffffff; }
 
-/* ---- card: the OG composition at 1920 x 1080 ---- */
+/* ---- card: the OG composition at 1920 x 1080. The cover is the share card itself (title, the scholar stamp on the
+   amber field); a carousel slide gives the field about half the width, for a plugin screen large enough to read ---- */
 .card { position: relative; display: flex; width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); color: var(--ink); }
-.copy { display: flex; flex-direction: column; width: 1302px; height: 100%; padding: 84px 84px 76px 102px; }
-.brand { display: flex; align-items: center; height: 84px; }
-.tile { display: grid; place-items: center; width: 84px; height: 84px; border-radius: 22px; border: 4px solid var(--ink); background: var(--paper-hi); color: var(--ink); flex: none; }
-.word { margin-left: 26px; font: 800 67px/1 "Bricolage Grotesque"; letter-spacing: -0.02em; }
-.hair { flex: 1; height: 3px; margin: 0 36px; background: var(--line); }
-.key { display: flex; align-items: center; padding: 15px 22px; border-radius: 14px; border: 2.4px solid var(--line); background: var(--paper-hi); font: 500 31px/1 "IBM Plex Mono"; color: var(--ink-2); white-space: nowrap; }
-.key::before { content: "\2039"; color: var(--amber-lo); margin-right: 14px; }
-.key::after { content: "\203A"; color: var(--amber-lo); margin-left: 14px; }
-.title-box { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding-top: 44px; }
-.title { font: 800 150px/0.94 "Bricolage Grotesque"; letter-spacing: -0.025em; color: var(--ink); text-wrap: balance; }
+.copy { display: flex; flex-direction: column; flex: none; height: 100%; }
+.brand { display: flex; align-items: center; flex: none; }
+.tile { display: grid; place-items: center; flex: none; background: var(--paper-hi); color: var(--ink); border: 4px solid var(--ink); }
+.word { font-family: "Bricolage Grotesque"; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.hair { flex: 1; min-width: 24px; height: 3px; background: var(--line); }
+.key { display: flex; align-items: center; border: 2.4px solid var(--line); background: var(--paper-hi); font-family: "IBM Plex Mono"; font-weight: 500; line-height: 1; color: var(--ink-2); white-space: nowrap; }
+.key::before { content: "\2039"; color: var(--amber-lo); }
+.key::after { content: "\203A"; color: var(--amber-lo); }
+.body { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+.title { font-family: "Bricolage Grotesque"; font-weight: 800; line-height: 0.94; letter-spacing: -0.025em; color: var(--ink); text-wrap: balance; }
 .title .w { display: inline-block; position: relative; z-index: 0; }
 .title .t::before { content: ""; position: absolute; z-index: -1; left: -0.07em; right: -0.07em; top: 0.1em; bottom: -0.02em; border-radius: 0.07em; background: var(--amber); transform: rotate(-1.4deg); }
-.rule { height: 3px; margin-top: 48px; background: var(--ink); }
-.kicker { display: flex; align-items: center; height: 58px; margin-top: 34px; font: italic 400 48px/1.2 "Newsreader"; color: var(--ink-2); }
-.kicker::before { content: ""; width: 60px; height: 6px; margin-right: 26px; border-radius: 3px; background: var(--amber); flex: none; }
-.support { margin-top: 16px; max-width: 1060px; font: 500 36px/1.36 "Hanken Grotesk"; color: var(--ink-2); }
-.airmail { width: 18px; height: 100%; flex: none; background: repeating-linear-gradient(135deg, var(--flame) 0 26px, var(--paper-hi) 26px 38px, var(--ink) 38px 64px, var(--paper-hi) 64px 77px); }
+.rule { height: 3px; background: var(--ink); }
+.kicker { display: flex; align-items: center; font-family: "Newsreader"; font-style: italic; font-weight: 400; line-height: 1.2; color: var(--ink-2); }
+.kicker::before { content: ""; height: 6px; border-radius: 3px; background: var(--amber); flex: none; }
+.support { font-family: "Hanken Grotesk"; font-weight: 500; line-height: 1.36; color: var(--ink-2); text-wrap: pretty; }
+.airmail { height: 100%; flex: none; background: repeating-linear-gradient(135deg, var(--flame) 0 26px, var(--paper-hi) 26px 38px, var(--ink) 38px 64px, var(--paper-hi) 64px 77px); }
 .field { position: relative; flex: 1; height: 100%; background: var(--amber); }
+
+/* cover (the OG card x 1.6): title from the top, under the brand row */
+.card--cover .copy { width: 1400px; padding: 90px 96px 84px 104px; }
+.card--cover .brand { height: 92px; }
+.card--cover .tile { width: 92px; height: 92px; border-radius: 24px; }
+.card--cover .word { margin-left: 28px; font-size: 72px; }
+.card--cover .hair { margin: 0 40px; }
+.card--cover .key { padding: 16px 24px; border-radius: 16px; font-size: 34px; }
+.card--cover .key::before { margin-right: 16px; }
+.card--cover .key::after { margin-left: 16px; }
+.card--cover .title { font-size: 196px; }
+.card--cover .rule { margin-top: 56px; }
+.card--cover .kicker { margin-top: 40px; font-size: 52px; }
+.card--cover .kicker::before { width: 64px; margin-right: 28px; }
+.card--cover .support { margin-top: 18px; font-size: 38px; max-width: 1150px; }
+.card--cover .airmail { width: 22px; }
+
+/* carousel slide: copy 962 px, field 940 px */
+.card--slide .copy { width: 962px; padding: 80px 64px 76px 88px; }
+.card--slide .brand { height: 64px; }
+.card--slide .tile { width: 64px; height: 64px; border-radius: 17px; border-width: 3px; }
+.card--slide .word { margin-left: 20px; font-size: 50px; }
+.card--slide .hair { margin: 0 24px; }
+.card--slide .key { padding: 11px 16px; border-radius: 11px; border-width: 2px; font-size: 22px; }
+.card--slide .key::before { margin-right: 10px; }
+.card--slide .key::after { margin-left: 10px; }
+.card--slide .title { font-size: 116px; }
+.card--slide .rule { margin-top: 44px; }
+.card--slide .kicker { margin-top: 30px; font-size: 42px; }
+.card--slide .kicker::before { width: 52px; margin-right: 22px; }
+.card--slide .support { margin-top: 14px; font-size: 32px; }
+.card--slide .airmail { width: 18px; }
 
 /* the plugin window as a print (pg-print): a navy frame in every theme */
 .print { position: absolute; border: 9px solid var(--ink); border-radius: 18px; background: var(--ink); overflow: hidden; box-shadow: 0 28px 60px rgba(15, 23, 41, 0.34), 0 6px 14px rgba(15, 23, 41, 0.2); }
@@ -62,14 +97,14 @@ body { -webkit-font-smoothing: antialiased; }
 .stamp .art { width: 212px; height: 318px; border: 2.5px solid var(--ink); background: var(--ink) center / cover no-repeat; }
 .stamp .cap { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 2px 6px; font: 500 16px/1 "IBM Plex Mono"; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
 
-/* an illustrative canvas frame (as on /figma): the checkout in German */
-.canvas { position: absolute; z-index: 1; width: 320px; padding: 22px 22px 26px; border-radius: 26px; background: var(--paper-hi); box-shadow: 0 22px 48px rgba(15, 23, 41, 0.3); font-family: "Hanken Grotesk"; color: var(--ink); }
-.canvas .label { position: absolute; top: -36px; left: 4px; font: 500 20px/1 "IBM Plex Mono"; color: var(--ink); }
-.canvas h3 { font: 800 40px/1 "Bricolage Grotesque"; letter-spacing: -0.02em; }
-.canvas .row { display: flex; justify-content: space-between; margin-top: 18px; padding-top: 16px; border-top: 2px solid var(--paper-2); font-size: 22px; color: var(--ink-2); }
-.canvas .row b { color: var(--ink); font-weight: 500; }
-.canvas .pay { margin-top: 24px; padding: 18px; border-radius: 14px; background: var(--ink); color: var(--paper); font-size: 24px; text-align: center; }
-.canvas .note { margin-top: 14px; font-size: 18px; color: var(--ink-3); }
+/* an illustrative canvas frame (as on /figma): the checkout in German, beside the Preview screen (never over it) */
+.canvas { position: absolute; z-index: 1; width: 222px; padding: 18px 18px 20px; border-radius: 20px; background: var(--paper-hi); box-shadow: 0 18px 40px rgba(15, 23, 41, 0.3); font-family: "Hanken Grotesk"; color: var(--ink); }
+.canvas .label { position: absolute; top: -30px; left: 4px; font: 500 17px/1 "IBM Plex Mono"; color: var(--ink); }
+.canvas h3 { font: 800 34px/1 "Bricolage Grotesque"; letter-spacing: -0.02em; }
+.canvas .row { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 2px solid var(--paper-2); font-size: 16px; color: var(--ink-2); }
+.canvas .row b { color: var(--ink); font-weight: 500; white-space: nowrap; }
+.canvas .pay { margin-top: 18px; padding: 13px 8px; border-radius: 11px; background: var(--ink); color: var(--paper); font-size: 18px; text-align: center; }
+.canvas .note { margin-top: 12px; font-size: 14px; line-height: 1.35; color: var(--ink-3); }
 .selected { outline: 3px solid #0d99ff; outline-offset: 5px; border-radius: 6px; }
 </style>
 </head>
@@ -94,26 +129,36 @@ const title = (text) => {
   return words.map((word, index) => `<span class="w${index === words.length - 1 ? " t" : ""}">${word}</span>`).join(" ")
 }
 
-function card({ keyTag, heading, kicker, support }, field, paths) {
-  return `<div class="card">
+function card(kind, { keyTag, heading, kicker, support }, field, paths) {
+  const glyph = kind === "cover" ? 64 : 44
+  return `<div class="card card--${kind}">
     <div class="copy">
-      <div class="brand"><span class="tile">${mark(paths.faithful, 58)}</span><span class="word">ReRune</span><span class="hair"></span><span class="key">${keyTag}</span></div>
-      <div class="title-box"><h1 class="title">${title(heading)}</h1></div>
-      <div class="rule"></div>
-      <p class="kicker">${kicker}</p>
-      <p class="support">${support}</p>
+      <div class="brand"><span class="tile">${mark(paths.faithful, glyph)}</span><span class="word">ReRune</span><span class="hair"></span><span class="key">${keyTag}</span></div>
+      <div class="body">
+        <h1 class="title">${title(heading)}</h1>
+        <div class="rule"></div>
+        <p class="kicker">${kicker}</p>
+        <p class="support">${support}</p>
+      </div>
     </div>
     <div class="airmail"></div>
     <div class="field">${field}</div>
   </div>`
 }
 
-// A plugin screen captured at its window size (2x), shown at `scale`; the print frame adds 9 px around it.
-const print = (shot, { left, top, scale = 1.12, width = 400, height = 640 }) =>
-  `<div class="print" style="left:${left}px;top:${top}px;width:${width * scale + 18}px;height:${height * scale + 18}px"><img src="shots/${shot}.png" alt=""></div>`
+// A plugin screen captured at its window size (2x), shown at `scale` (1.7: the UI's 11 px text is about 9 px when
+// Community shows a slide 960 px wide); the print frame adds 9 px around it. Centred in the slide's field unless
+// `left`/`top` are given.
+const FIELD = { width: 940, height: 1080 }
+const print = (shot, { scale = 1.7, width = 400, height = 560, left, top } = {}) => {
+  const [w, h] = [width * scale + 18, height * scale + 18]
+  const x = left ?? (FIELD.width - w) / 2
+  const y = top ?? (FIELD.height - h) / 2
+  return `<div class="print" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><img src="shots/${shot}.png" alt=""></div>`
+}
 
-const stamp = (paths, { left, top, rotate }) =>
-  `<div class="stamp" style="left:${left}px;top:${top}px;transform:rotate(${rotate}deg)"><div class="art" style="background-image:url(scholar.png)"></div><div class="cap"><span>The scholar</span>${mark(paths.faithful, 26)}</div></div>`
+const stamp = (paths, { left, top, rotate, scale = 1 }) =>
+  `<div class="stamp" style="left:${left}px;top:${top}px;transform:rotate(${rotate}deg) scale(${scale})"><div class="art" style="background-image:url(scholar.png)"></div><div class="cap"><span>The scholar</span>${mark(paths.faithful, 26)}</div></div>`
 
 const canvas = ({ left, top }) => `<div class="canvas" style="left:${left}px;top:${top}px">
     <span class="label">Checkout</span>
@@ -126,26 +171,28 @@ const canvas = ({ left, top }) => `<div class="canvas" style="left:${left}px;top
 
 const FREE = "Free for designers on every ReRune plan. Nothing is published from Figma."
 
+// Each image's key tag is the key of its own headline: the dashboard's /figma keys where the headline is the
+// dashboard's, figmaListing_* for headlines only the listing has.
 const ART = {
-  "icon-128.png": (paths) => `<div class="icon">${mark(paths.small, 84)}</div>`,
+  "icon-128.png": (paths) => `<div class="icon">${mark(paths.small, 99)}</div>`,
   "cover-1920x1080.png": (paths) =>
-    card({ keyTag: "figmaLanding_title", heading: "Link Figma text to real keys.", kicker: "ReRune for Figma", support: FREE },
-      stamp(paths, { left: 296, top: 70, rotate: 4 }) + print("layers-light", { left: 70, top: 168, scale: 1.12 }), paths),
+    card("cover", { keyTag: "figmaLanding_title", heading: "Link Figma text to real keys.", kicker: "ReRune for Figma", support: FREE },
+      stamp(paths, { left: 124, top: 345, rotate: 4, scale: 1.3 }), paths),
   "carousel-1-link.png": (paths) =>
-    card({ keyTag: "figmaLanding_stepLink_title", heading: "Link layers to keys", kicker: "Layers", support: "Scan a page, then link text layers to existing keys, by search or exact text, or name new keys after your project's pattern." },
-      print("layers-light", { left: 70, top: 168 }), paths),
+    card("slide", { keyTag: "figmaLanding_stepLink_title", heading: "Link layers to keys", kicker: "Layers", support: "Scan a page, then link text layers to existing keys, by search or exact text, or name new keys after your project's pattern." },
+      print("layers-light"), paths),
   "carousel-2-push.png": (paths) =>
-    card({ keyTag: "figmaLanding_stepPush_title", heading: "Push copy as drafts", kicker: "Push", support: "Review every change before it leaves Figma. Texts changed in both places wait for your decision; publishing stays in ReRune." },
-      print("push-light", { left: 70, top: 168 }), paths),
+    card("slide", { keyTag: "figmaLanding_stepPush_title", heading: "Push copy as drafts", kicker: "Push", support: "Review every change before it leaves Figma. Texts changed in both places wait for your decision; publishing stays in ReRune." },
+      print("push-light"), paths),
   "carousel-3-preview.png": (paths) =>
-    card({ keyTag: "figmaLanding_stepPreview_title", heading: "Preview every language", kicker: "Preview", support: "Show any project language on the canvas, draft or published, with regional fallbacks. Reset restores the original text." },
-      print("preview-light", { left: 158, top: 104, scale: 1.0 }) + canvas({ left: 30, top: 572 }), paths),
+    card("slide", { keyTag: "figmaLanding_stepPreview_title", heading: "Preview every language", kicker: "Preview", support: "Show any project language on the canvas, draft or published, with regional fallbacks. Reset restores the original text." },
+      print("preview-light", { scale: 1.6, left: 266 }) + canvas({ left: 26, top: 600 }), paths),
   "carousel-4-qa.png": (paths) =>
-    card({ keyTag: "checkout_delivery_note", heading: "Catch overflow before it ships", kicker: "QA", support: "An overflow report per language finds clipped, truncated and overflowing text, and values longer than their key allows." },
-      print("qa-dark", { left: 70, top: 168 }), paths),
+    card("slide", { keyTag: "figmaListing_qa_title", heading: "Catch overflow before it ships", kicker: "QA", support: "An overflow report per language finds clipped, truncated and overflowing text, and values longer than their key allows." },
+      print("qa-dark"), paths),
   "carousel-5-dev-mode.png": (paths) =>
-    card({ keyTag: "checkout_pay_button", heading: "Keys and snippets in Dev Mode", kicker: "Dev Mode", support: "Developers see the linked keys of a selection with their values in every language, and a snippet for their platform." },
-      print("inspect-light", { left: 74, top: 178, scale: 1.45, width: 300, height: 480 }), paths),
+    card("slide", { keyTag: "figmaListing_devMode_title", heading: "Keys and snippets in Dev Mode", kicker: "Dev Mode", support: "Developers see the linked keys of a selection with their values in every language, and a snippet for their platform." },
+      print("inspect-light", { scale: 1.9, width: 300, height: 480 }), paths),
 }
 
 window.renderArt = async (name) => {

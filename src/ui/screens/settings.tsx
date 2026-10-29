@@ -8,7 +8,7 @@ import type { CaseStyle, FileSettings, StoredAuth } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import { DANGER_TEXT, FileLinkForm } from "../components/file-link"
 import { BrandMark } from "../brand/mark"
-import { ErrorNote, FieldLabel, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { ErrorNote, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { fileLinkStatus } from "../state/file-link"
 import { exampleKeyName, templateIssues } from "../state/naming"
@@ -131,7 +131,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
         )}
 
         <SectionTitle>Key names</SectionTitle>
-        <FieldLabel>Template</FieldLabel>
+        <Small muted>Template</Small>
         <Textbox value={edit.keyTemplate} placeholder="{screen}_{element} (default)" disabled={props.settings === null || props.readOnly} onValueInput={(value) => setEdit({ ...edit, keyTemplate: value })} spellCheck={false} />
         {issues.map((issue) => (
           <Small key={issue} style={{ color: "var(--figma-color-text-danger)" }}>
@@ -139,7 +139,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           </Small>
         ))}
         <Small muted>Placeholders: {"{page} {frame} {screen} {layer} {element} {text} {component}"}</Small>
-        <FieldLabel>Case style</FieldLabel>
+        <Small muted>Case style</Small>
         <Dropdown
           value={edit.caseStyle}
           disabled={props.settings === null || props.readOnly}
@@ -193,9 +193,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
         </div>
         <div style={{ ...styles.row, gap: "6px", marginTop: "8px" }}>
           <BrandMark />
-          <Small muted>
-            for Figma <span class="rr-code">{props.version}</span>
-          </Small>
+          <Small muted>for Figma {props.version}</Small>
         </div>
       </ScreenBody>
     </div>

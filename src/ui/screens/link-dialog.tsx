@@ -367,7 +367,7 @@ export function LinkDialog(props: LinkDialogProps) {
           <Small muted>Select layers with the same text to create one key for them.</Small>
         ) : (
           <div style={styles.stack}>
-            <Textbox value={newName} onValueInput={setNewName} placeholder="key_name" spellCheck={false} />
+            <Textbox value={newName} onValueInput={setNewName} placeholder="key_name" spellCheck={false} style={styles.keyInput} />
             {nameCheck.issues.map((issue) => (
               <Small key={issue} style={{ color: "var(--figma-color-text-danger)" }}>
                 {issue}

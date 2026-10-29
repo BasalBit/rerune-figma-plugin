@@ -19,7 +19,7 @@ export function SignedInScreen(props: SignedInScreenProps) {
   const name = fullName(props.auth.user)
   return (
     <div style={styles.page}>
-      <div style={{ ...styles.body, ...styles.stack, justifyContent: "center" }}>
+      <div class="rr-center" style={{ ...styles.body, gap: "8px" }}>
         <div style={{ ...styles.row, gap: "10px" }}>
           <Stamp size="sm" />
           <Text>Signed in as</Text>

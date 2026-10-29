@@ -68,18 +68,14 @@ export function TextButton(props: { onClick(): void; children: ComponentChildren
   )
 }
 
-// A section heading: the dashboard's mono-cap label with a short amber bar.
+// A section heading: the dashboard's mono-cap label with a short amber bar, a level-2 heading for screen readers.
+// Field labels above a control stay Figma's (Small muted).
 export function SectionTitle(props: { children: ComponentChildren; style?: JSX.CSSProperties }) {
   return (
-    <div class="rr-eyebrow" style={props.style}>
+    <div class="rr-eyebrow" role="heading" aria-level={2} style={props.style}>
       {props.children}
     </div>
   )
-}
-
-// A field's label above its control (Language, Source, Template…): mono caps, muted.
-export function FieldLabel(props: { children: ComponentChildren }) {
-  return <div class="rr-label">{props.children}</div>
 }
 
 export function Small(props: { children: ComponentChildren; muted?: boolean; style?: JSX.CSSProperties }) {

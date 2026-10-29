@@ -42,7 +42,9 @@ export const STATE_LABELS: Record<SyncState, string> = {
   conflict: "Conflict",
 }
 
-export const STATE_TONES: Record<SyncState, "neutral" | "good" | "info" | "warning" | "danger"> = {
+// The chip tone of each state. "rerune" (ReRune amber) is the ReRune side of a change, "info" (Figma blue) the Figma
+// side; every chip of a state uses this map, so Layers and Push agree.
+export const STATE_TONES: Record<SyncState, "neutral" | "good" | "info" | "warning" | "danger" | "rerune"> = {
   unlinked: "neutral",
   invalid_link: "danger",
   other_project: "warning",
@@ -52,7 +54,7 @@ export const STATE_TONES: Record<SyncState, "neutral" | "good" | "info" | "warni
   readonly: "neutral",
   synced: "good",
   changed_in_figma: "info",
-  changed_in_rerune: "info",
+  changed_in_rerune: "rerune",
   conflict: "danger",
 }
 

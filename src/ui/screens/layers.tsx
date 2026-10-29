@@ -8,7 +8,7 @@ import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { EmptyState } from "../brand/empty-state"
 import { KeyTag } from "../brand/key-tag"
-import { BADGE_TONE, LAYER_CHIP_TONE } from "../brand/status"
+import { BADGE_TONE } from "../brand/status"
 import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import {
@@ -24,6 +24,7 @@ import {
   searchRows,
   skippedSummary,
   STATE_LABELS,
+  STATE_TONES,
   unlinkableIds,
   unlinkedTexts,
   type LayerRow,
@@ -403,7 +404,7 @@ function LayerRowView(props: { row: LayerRow; checked: boolean; openDisabled: bo
       >
         <div style={{ ...styles.clamp, fontSize: "12px" }}>{preview(row.text, 160) || "(empty)"}</div>
         <div style={{ ...styles.wrapRow, gap: "4px", marginTop: "4px" }}>
-          <Chip tone={LAYER_CHIP_TONE[row.state]}>{STATE_LABELS[row.state]}</Chip>
+          <Chip tone={STATE_TONES[row.state]}>{STATE_LABELS[row.state]}</Chip>
           {row.keyName !== null && <KeyTag name={row.keyName} />}
           {row.pendingName !== null && <Chip tone={BADGE_TONE.pending}>{BADGE_LABELS.pending}</Chip>}
           {row.pendingName !== null && <KeyTag name={row.pendingName} pending />}

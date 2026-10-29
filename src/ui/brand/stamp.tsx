@@ -1,10 +1,11 @@
 import { h } from "preact"
 import { Mark } from "./mark"
 
-// The dashboard's postage stamp (pg-stamp) at plugin scale: radial-gradient perforation around the mark in white on
-// the brand ink window. Sign-in and Signed in use md, empty states sm. Decorative and fixed-size.
+// The dashboard's logo stamp (PostageStamp src="/logo.png" tone="amber", as on its sign-in and /figma/connect pages) at
+// plugin scale: amber radial-gradient perforation and art window, the mark in brand ink inside a brand ink frame.
+// Sign-in uses md, Signed in and empty states sm. Decorative and fixed-size.
 
-const STAMP_MARK = { sm: 20, md: 36 }
+const STAMP_MARK = { sm: 19, md: 33 }
 
 export function Stamp(props: { size: "sm" | "md" }) {
   return (

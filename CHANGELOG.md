@@ -57,7 +57,7 @@ Needs a paid Figma plan with a Dev or Full seat. Dev Mode is read-only.
 
 #### Look and feel
 
-- **ReRune branding** on Figma's own controls and colours, in Figma light and dark: the ReRune mark and wordmark in the header, a "ReRune for Figma" sign-in with the pairing code on a ticket, key names as `‹ key ›` tags, state chips with a shape next to each label (amber for ReRune-side states such as "Changed in ReRune" and "New key"), a postmark beside a clean push, and a visible focus ring on every control. Muted text, links and chips now meet WCAG contrast. Inter, IBM Plex Mono and Bricolage Grotesque are bundled, so the plugin no longer falls back to Helvetica or Arial and loads no font from the network.
+- **ReRune branding** on Figma's own controls and colours, in Figma light and dark: the ReRune mark and wordmark in the header, the /figma page's "Link Figma text to real keys." with the amber ReRune stamp on the sign-in, the pairing code on a ticket, key names as `‹ key ›` tags, state chips with a shape next to each label (an amber dot for ReRune-side states such as "Changed in ReRune" and "New key"), a postmark beside a clean push, and a visible focus ring on every control. Muted text, links and chips now meet WCAG contrast. Inter, IBM Plex Mono and Bricolage Grotesque are bundled, so the plugin no longer falls back to Helvetica or Arial and loads no font from the network; an installed full Inter still supplies the letters the bundled Latin subset lacks.
 - **Community listing art:** the icon, cover and five carousel images in `listing/`, rendered from the plugin's real screens (`node scripts/listing-art.mjs`).
 
 #### Help and releases

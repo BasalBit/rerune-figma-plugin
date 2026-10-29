@@ -51,7 +51,7 @@ const codeStyle: JSX.CSSProperties = {
 }
 
 const valueRowStyle: JSX.CSSProperties = { display: "flex", gap: "8px", alignItems: "flex-start" }
-const langStyle: JSX.CSSProperties = { ...styles.mono, flexShrink: "0", width: "52px", color: "var(--rr-muted)", paddingTop: "1px" }
+const langStyle: JSX.CSSProperties = { ...styles.mono, ...styles.muted, flexShrink: "0", width: "52px", paddingTop: "1px" }
 
 function copyId(kind: "name" | "snippet", keyId: string): string {
   return kind + ":" + keyId

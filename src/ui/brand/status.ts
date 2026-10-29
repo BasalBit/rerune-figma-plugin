@@ -1,12 +1,8 @@
-import type { SyncState } from "../../shared/sync-state"
-import { STATE_TONES, type Badge } from "../state/layers"
+import type { Badge } from "../state/layers"
 
-// The tones of the plugin's chips and notes. "rerune" (amber on the ReRune wash) marks ReRune-side states; "info"
-// (Figma blue) the Figma side. The rest are Figma's semantic hues, and neutral.
+// The tones of the plugin's chips and notes. "rerune" (ReRune amber) marks ReRune-side states, "info" (Figma blue) the
+// Figma side (the states' tones are STATE_TONES in state/layers.ts). The rest are Figma's semantic hues, and neutral.
 export type Tone = "neutral" | "good" | "info" | "warning" | "danger" | "rerune"
-
-// Layer chips: state/layers.ts keeps one "info" for both sides of a change; the brand tells them apart.
-export const LAYER_CHIP_TONE: Record<SyncState, Tone> = { ...STATE_TONES, changed_in_rerune: "rerune" }
 
 export const BADGE_TONE: Record<Badge, Tone> = {
   missing_font: "danger",
@@ -18,7 +14,8 @@ export const BADGE_TONE: Record<Badge, Tone> = {
   pending: "rerune",
 }
 
-// A glyph next to each chip's label, so meaning never rests on colour alone.
+// A glyph next to each chip's label: warnings and errors get their own shape, neutral a ring. Good, info and ReRune share
+// the dot and are told apart by their labels, so meaning never rests on colour alone.
 export type Glyph = "dot" | "triangle" | "diamond" | "ring"
 
 export const TONE_GLYPH: Record<Tone, Glyph> = {
@@ -30,7 +27,8 @@ export const TONE_GLYPH: Record<Tone, Glyph> = {
   neutral: "ring",
 }
 
-// The classes of a chip or note in a tone (brand-css.ts): Figma's hues are tinted, ReRune's state is the amber wash.
+// The classes of a chip or note in a tone (brand-css.ts): Figma's hues are tinted; ReRune's notes have the amber wash,
+// its chips the key tag's paper with an amber dot.
 export function toneClasses(tone: Tone): string {
   return "rr-tone--" + tone + (tone === "good" || tone === "info" || tone === "warning" || tone === "danger" ? " rr-tinted" : "")
 }

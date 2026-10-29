@@ -10,7 +10,7 @@ import type { UiBus } from "../bus"
 import { copyText } from "../clipboard"
 import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
 import { KeyTag } from "../brand/key-tag"
-import { CheckInput, Chip, ErrorGroups, ErrorNote, FieldLabel, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import { buildPseudoPreview, languageLabel, type PseudoBuild, type RenderChoices } from "../state/preview"
@@ -281,11 +281,11 @@ export function QaScreen(props: QaScreenProps) {
       <ScreenBody notices={props.notices} stack>
         {props.readOnly && <Note tone="warning">This file is connected to a different ReRune server.</Note>}
         <div style={styles.tightStack}>
-          <FieldLabel>Apply to</FieldLabel>
+          <Small muted>Apply to</Small>
           <SegmentedControl value={scope} options={SCOPE_OPTIONS} disabled={busy !== null} onValueChange={(value) => setScope(value as Scope)} />
         </div>
         <div style={styles.tightStack}>
-          <FieldLabel>Languages</FieldLabel>
+          <Small muted>Languages</Small>
           {project.languages.length === 0 ? (
             <Note tone="warning">This project has no languages yet.</Note>
           ) : (
@@ -298,12 +298,12 @@ export function QaScreen(props: QaScreenProps) {
           )}
         </div>
         <div style={styles.tightStack}>
-          <FieldLabel>Source</FieldLabel>
+          <Small muted>Source</Small>
           <SegmentedControl value={source} options={SOURCE_OPTIONS} disabled={busy !== null} onValueChange={(value) => onSession({ source: value as ResolveSource })} />
         </div>
         {project.variation_options.length > 0 && (
           <div style={styles.tightStack}>
-            <FieldLabel>Variation</FieldLabel>
+            <Small muted>Variation</Small>
             <Dropdown value={variation ?? NO_VARIATION} options={variationOptions} disabled={busy !== null} onValueChange={(value) => onSession({ variation: value === NO_VARIATION ? null : value })} />
           </div>
         )}
@@ -379,7 +379,7 @@ export function QaScreen(props: QaScreenProps) {
             real translations arrive. Placeholders like {"{{name}}"} stay as they are.
           </Small>
           <Small muted>
-            <span class="rr-code">{PSEUDO_EXAMPLE}</span> → <span class="rr-code">{pseudoLocalize(PSEUDO_EXAMPLE)}</span>
+            {PSEUDO_EXAMPLE} → {pseudoLocalize(PSEUDO_EXAMPLE)}
           </Small>
           <Small muted>Every text layer in scope is changed until you reset it, linked or not. Pseudo text is never pushed.</Small>
         </div>

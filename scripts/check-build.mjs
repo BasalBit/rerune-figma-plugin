@@ -12,9 +12,11 @@ import { pathToFileURL } from "node:url"
 export const VARIANTS = ["full", "design-only"]
 export const PRODUCTION_API_BASE = "https://rerune.io/api"
 
-// build/ui.js was 299,034 bytes before the brand fonts and styles (+120,452: three WOFF2 fonts as base64, their
-// licence, the brand stylesheet and components). Raise it only on purpose: Figma loads ui.js every time the plugin opens.
-export const UI_JS_BUDGET = 420000
+// build/ui.js was 299,034 bytes before the brand fonts and styles, which add about 124 KB: three WOFF2 fonts as base64
+// (about 104 KB), their licence, the brand stylesheet and components. The budget leaves room for the features in flight
+// (the background reads of feature/remote-change-watch add about 13 KB, which made a merged build about 433-436 KB). Raise it
+// only on purpose: Figma loads ui.js every time the plugin opens.
+export const UI_JS_BUDGET = 450000
 // "wOF2", the WOFF2 signature, as it starts a base64 font in the bundle.
 const FONT_DATA = /d09GMg/
 

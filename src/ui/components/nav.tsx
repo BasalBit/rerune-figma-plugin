@@ -6,8 +6,8 @@ import { waitText, type WorkTask } from "../state/work-lock"
 import { styles, TextButton } from "./ui"
 
 // Header of the workspace screens: the ReRune mark and wordmark, project, Change, selection count, tabs (the active
-// one on ReRune's amber rule), and the preview status bar on the ReRune wash (§7.14). Below 340 px the wordmark and
-// the selection count make room for the project name.
+// one on ReRune's amber rule), and the preview status bar on the ReRune wash (§7.14). At the window's 360 px minimum
+// the project name keeps about 130 px and shortens with an ellipsis (its full name is the tooltip).
 
 const TABS: { screen: WorkspaceScreen; label: string }[] = [
   { screen: "layers", label: "Layers" },
@@ -45,7 +45,7 @@ export function Nav(props: NavProps) {
         <TextButton disabled={locked} onClick={props.onChangeProject}>
           Change
         </TextButton>
-        <span class="rr-narrow-hide" style={{ ...styles.small, ...styles.muted, whiteSpace: "nowrap" }}>
+        <span style={{ ...styles.small, ...styles.muted, whiteSpace: "nowrap" }}>
           {props.selectionCount === 1 ? "1 selected" : props.selectionCount + " selected"}
         </span>
       </div>

@@ -39,3 +39,17 @@ export function KeyTag(props: { name: string; pending?: boolean; large?: boolean
     </span>
   )
 }
+
+// Key names inside a sentence (a note's list): key tags with a space between them.
+export function KeyTags(props: { names: readonly string[] }) {
+  return (
+    <Fragment>
+      {props.names.map((name, index) => (
+        <Fragment key={name}>
+          {index > 0 && " "}
+          <KeyTag name={name} />
+        </Fragment>
+      ))}
+    </Fragment>
+  )
+}

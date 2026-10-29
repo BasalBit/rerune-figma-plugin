@@ -8,7 +8,7 @@ import { applyDecision, blockedUpdateNodeIds, maxLengthCheck, type PlanCreate, t
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
-import { KeyTag } from "../brand/key-tag"
+import { KeyTag, KeyTags } from "../brand/key-tag"
 import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { ScreenshotStatus, type ShotsState } from "../components/screenshot-status"
@@ -524,7 +524,7 @@ export function PushScreen(props: PushScreenProps) {
                     </Button>
                   }
                 >
-                  {plural(plan.pulls.length, "key has", "keys have")} newer text in ReRune: {plan.pulls.slice(0, 3).map((entry) => entry.keyName).join(", ")}
+                  {plural(plan.pulls.length, "key has", "keys have")} newer text in ReRune: <KeyTags names={plan.pulls.slice(0, 3).map((entry) => entry.keyName)} />
                   {plan.pulls.length > 3 ? "…" : ""}
                   {!canPull(plan) && " Reset previews first."}
                 </Note>
@@ -637,7 +637,7 @@ function CreateCard(props: {
       )}
       {create.match.decision === "create" && (
         <div style={styles.tightStack}>
-          <Textbox value={create.name} onValueInput={props.onRename} spellCheck={false} />
+          <Textbox value={create.name} onValueInput={props.onRename} spellCheck={false} style={styles.keyInput} />
           {create.nameIssues.map((issue) => (
             <Small key={issue} style={{ color: "var(--figma-color-text-danger)" }}>
               {issue}

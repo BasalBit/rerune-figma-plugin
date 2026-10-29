@@ -4,7 +4,9 @@ import smallSvg from "../../../assets/brand/rerune-mark-small.svg?raw"
 import componentSource from "./mark.tsx?raw"
 import { MARK_MAX_SIZE, MARK_MIN_SIZE, MARK_PATH_SMALL, MARK_VIEWBOX } from "./mark"
 import stampSource from "./stamp.tsx?raw"
-import refreshSource from "../components/refresh-requests.tsx?raw"
+
+// Every UI module, to find each <Mark size={…}> wherever it is drawn.
+const uiSources = import.meta.glob<string>(["../**/*.tsx", "!../**/*.test.tsx"], { query: "?raw", import: "default", eager: true })
 
 function points(path: string): [number, number][] {
   // Every command here is absolute M/L/A/Z; the last two numbers of each M, L and A are its end point.
@@ -37,7 +39,12 @@ describe("the ReRune mark", () => {
   })
 
   it("is drawn only at the sizes the heavier cut holds (18-47 px)", () => {
-    const literal = [...[componentSource, refreshSource].join("\n").matchAll(/<Mark size=\{(\d+)\}/g)].map((match) => Number(match[1]))
+    const all = Object.values(uiSources).join("\n")
+    expect(Object.keys(uiSources).length).toBeGreaterThan(20)
+    // Only literal sizes and the two named ones (the header's MARK_MIN_SIZE, the stamp's STAMP_MARK) are allowed.
+    expect([...all.matchAll(/<Mark size=\{([^}]+)\}/g)].map((match) => match[1]).filter((size) => !/^\d+$/.test(size)).sort()).toEqual(["MARK_MIN_SIZE", "STAMP_MARK[props.size]"])
+    const literal = [...all.matchAll(/<Mark size=\{(\d+)\}/g)].map((match) => Number(match[1]))
+    expect(literal.length).toBeGreaterThan(0)
     const stamps = stampSource.match(/STAMP_MARK = \{ sm: (\d+), md: (\d+) \}/)
     expect(stamps).not.toBeNull()
     expect(componentSource).toContain("<Mark size={MARK_MIN_SIZE} />")
