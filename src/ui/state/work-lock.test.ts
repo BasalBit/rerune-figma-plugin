@@ -44,5 +44,6 @@ describe("work lock", () => {
     expect(waitText("pseudo")).toBe("Wait for pseudo-localization to finish")
     expect(waitText("report")).toBe("Wait for the overflow report to finish")
     expect(waitText("copies")).toBe("Wait for the language copies to finish")
+    expect(waitText("refresh")).toBe("Wait for the screenshots to be updated")
   })
 })

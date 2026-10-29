@@ -337,11 +337,11 @@ export function emptyRun(): PushRun {
   }
 }
 
-function linkApply(deps: PushDeps, items: readonly LinkApplyItem[]): Promise<BatchOutcome> {
+function linkApply(deps: Pick<PushDeps, "bus">, items: readonly LinkApplyItem[]): Promise<BatchOutcome> {
   return runBatched(deps.bus, mainsFirst(items), (requestId, batch) => ({ type: "link-apply", requestId, items: batch }))
 }
 
-function textApply(deps: PushDeps, items: readonly TextApplyItem[]): Promise<BatchOutcome> {
+function textApply(deps: Pick<PushDeps, "bus">, items: readonly TextApplyItem[]): Promise<BatchOutcome> {
   return runBatched(deps.bus, mainsFirst(items), (requestId, batch) => ({ type: "text-apply", requestId, items: batch }))
 }
 
@@ -565,8 +565,8 @@ export interface PullRun extends BatchOutcome {
 
 // "Update layers from ReRune" (§7.13 rule 5): text-apply, then refresh the cached key name where it changed
 // (text-apply keeps `k`). Layers whose write failed keep their link untouched. The caller uploads the screenshots of
-// `affectedNodeIds` (SF1).
-export async function executePulls(deps: PushDeps, plan: PushPlan, context: PlanContext): Promise<PullRun> {
+// `affectedNodeIds` (SF1). Update screenshots writes its pulls the same way (SF6).
+export async function executePulls(deps: Pick<PushDeps, "bus">, plan: PushPlan, context: Pick<PlanContext, "projectId" | "nodes">): Promise<PullRun> {
   if (!canPull(plan)) {
     return { done: 0, errors: [], affectedNodeIds: [] }
   }

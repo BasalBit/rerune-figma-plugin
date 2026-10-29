@@ -10,6 +10,7 @@ import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
+import { ScreenshotStatus, type ShotsState } from "../components/screenshot-status"
 import { linkSyncWarning, type LinkSyncResult } from "../state/link-sync"
 import { groupErrors } from "../state/ops"
 import {
@@ -30,17 +31,7 @@ import {
   type PullRun,
   type PushRun,
 } from "../state/push"
-import {
-  affectedFrames,
-  emptyScreenshotRun,
-  groupProblems,
-  progressText,
-  screenshotFreshness,
-  screenshotSummary,
-  type ScreenshotFrame,
-  type ScreenshotRun,
-  type ScreenshotUploader,
-} from "../state/screenshots"
+import { affectedFrames, emptyScreenshotRun, screenshotFreshness, type ScreenshotFrame, type ScreenshotUploader } from "../state/screenshots"
 import type { Prefs } from "../state/settings"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
@@ -68,6 +59,9 @@ export interface PushScreenProps {
   onAvailableKeys(availableKeys: number): void
   // A push or pull starts (true) or ends (false); the app keeps the Push tab open meanwhile.
   onBusy(busy: boolean): void
+  // Another canvas task holds the work lock (Update screenshots, started from the notices): review, push, pull and
+  // the follow-up choices wait for it.
+  locked: boolean
   // Phase 2: E13 file_key of the confirmed main file (or null) and the after-push link sync (§7.13 rule 11).
   fileKey: string | null
   syncLinks(nodeIds: readonly string[]): Promise<LinkSyncResult | null>
@@ -76,7 +70,6 @@ export interface PushScreenProps {
 }
 
 type Phase = "preparing" | "plan" | "pushing" | "results"
-type ShotsState = { kind: "running"; run: ScreenshotRun } | { kind: "done"; run: ScreenshotRun } | { kind: "unavailable"; message: string }
 type ConflictChoice = "skip" | "overwrite" | "take_rerune"
 
 const NAME_RECHECK_MS = 400
@@ -96,31 +89,32 @@ export function PushScreen(props: PushScreenProps) {
   const [resolved, setResolved] = useState<Record<string, ConflictChoice | "done">>({})
   const [shots, setShots] = useState<ShotsState | null>(null)
   const [stopping, setStopping] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [running, setRunning] = useState(false)
   const busyRef = useRef(false)
   const stopShots = useRef(false)
   const nameTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const editKeys = props.project.permissions.includes("edit_keys")
+  const busy = running || props.locked
 
   // One push, pull or conflict resolution at a time, from its first request until its screenshots are uploaded or
   // stopped: review, push and the follow-up choices wait meanwhile, and the app's lock (onBusy) is released by the
   // run that took it.
   async function exclusive(work: () => Promise<void>): Promise<void> {
-    if (busyRef.current) return
+    if (busyRef.current || props.locked) return
     busyRef.current = true
-    setBusy(true)
+    setRunning(true)
     props.onBusy(true)
     try {
       await work()
     } finally {
       busyRef.current = false
-      setBusy(false)
+      setRunning(false)
       props.onBusy(false)
     }
   }
 
   async function review() {
-    if (busyRef.current) return
+    if (busyRef.current || props.locked) return
     setPhase("preparing")
     setError(null)
     setRun(null)
@@ -253,7 +247,7 @@ export function PushScreen(props: PushScreenProps) {
       setShots(null)
       let done: PullRun | null = null
       try {
-        done = await executePulls({ api: props.api, bus: props.bus }, prepared.plan, prepared.context)
+        done = await executePulls({ bus: props.bus }, prepared.plan, prepared.context)
         setPulled(done)
       } catch (caught) {
         setError(userMessage(caught))
@@ -266,7 +260,7 @@ export function PushScreen(props: PushScreenProps) {
   }
 
   async function resolveConflict(conflict: PushFollowUp["conflicts"][number], choice: ConflictChoice) {
-    if (prepared === null || run === null || busyRef.current) return
+    if (prepared === null || run === null || busyRef.current || props.locked) return
     setResolved((current) => ({ ...current, [conflict.ref]: choice }))
     if (choice === "skip") return
     // Each result is merged into the latest run.
@@ -367,7 +361,7 @@ export function PushScreen(props: PushScreenProps) {
                 tone="warning"
                 actions={
                   <TextButton
-                    disabled={props.resetting}
+                    disabled={props.resetting || props.locked}
                     onClick={() =>
                       void props
                         .onResetPreviews(props.state.scope, plan.blockedByPreview)
@@ -555,48 +549,6 @@ export function PushScreen(props: PushScreenProps) {
           {counts === null ? "Push" : "Push " + plural(counts.creates + counts.updates + counts.links + counts.keepCopied + counts.takeReRune + counts.unlinks, "change", "changes")}
         </Button>
       </div>
-    </div>
-  )
-}
-
-// Screenshot upload after a push or pull: progress with Stop, then the summary and the frames that weren't uploaded.
-function ScreenshotStatus(props: { state: ShotsState; stopping: boolean; onStop(): void; onSelect(nodeIds: string[]): void }) {
-  const { state } = props
-  if (state.kind === "unavailable") {
-    return <Note tone="warning">Screenshots weren't uploaded: {state.message}</Note>
-  }
-  if (state.kind === "running") {
-    return (
-      <Note
-        tone="info"
-        actions={
-          <TextButton disabled={props.stopping} onClick={props.onStop}>
-            {props.stopping ? "Stopping…" : "Stop"}
-          </TextButton>
-        }
-      >
-        {progressText(state.run)}
-      </Note>
-    )
-  }
-  const summary = screenshotSummary(state.run)
-  const groups = groupProblems(state.run.problems)
-  if (summary === null && groups.length === 0) {
-    return null
-  }
-  return (
-    <div style={styles.stack}>
-      {summary !== null && <Note tone={summary.tone}>{summary.message}</Note>}
-      {groups.length > 0 && <SectionTitle>Screenshots not uploaded ({state.run.problems.length})</SectionTitle>}
-      {groups.map((group) => (
-        <div key={group.message} style={styles.card}>
-          <div style={styles.wrapRow}>
-            <Small style={styles.grow}>{group.message}</Small>
-            <TextButton onClick={() => props.onSelect(group.frameIds)}>{plural(group.frameIds.length, "frame", "frames")}</TextButton>
-          </div>
-          <Small muted>{group.frameNames.join(", ")}</Small>
-        </div>
-      ))}
     </div>
   )
 }

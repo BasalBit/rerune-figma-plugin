@@ -19,6 +19,9 @@ import linkSyncState from "../src/ui/state/link-sync.ts?raw"
 import settingsScreen from "../src/ui/screens/settings.tsx?raw"
 import fileLinkState from "../src/ui/state/file-link.ts?raw"
 import screenshotState from "../src/ui/state/screenshots.ts?raw"
+import screenshotStatus from "../src/ui/components/screenshot-status.tsx?raw"
+import refreshComponent from "../src/ui/components/refresh-requests.tsx?raw"
+import refreshState from "../src/ui/state/refresh-requests.ts?raw"
 import pushScreen from "../src/ui/screens/push.tsx?raw"
 import previewScreen from "../src/ui/screens/preview.tsx?raw"
 import qaScreen from "../src/ui/screens/qa.tsx?raw"
@@ -326,7 +329,7 @@ describe("TESTING.md", () => {
 
   it("names the screenshot toggle, notes and results the plugin shows (P2.3)", () => {
     for (const label of ["Upload screenshots of changed frames", "Screenshots not uploaded", "Stop", "Uploading screenshots…"]) {
-      expect([settingsScreen, pushScreen, screenshotState].join("\n")).toContain(label)
+      expect([settingsScreen, pushScreen, screenshotState, screenshotStatus].join("\n")).toContain(label)
       expect(testing).toContain(label)
     }
     for (const name of ["SCREENSHOTS_ON_HINT", "SERVER_DISABLED_HINT", "NO_FILE_HINT", "COPY_HINT", "CHECKING_HINT"]) {
@@ -337,6 +340,20 @@ describe("TESTING.md", () => {
     const preview = screenshotState.match(/preview_active: "([^"]+)"/)
     expect(testing).toContain(preview?.[1] ?? "missing")
     expect(readme).toContain("Upload screenshots of changed frames")
+  })
+
+  it("names the screenshot requests' notice, actions and results (screenshot freshness)", () => {
+    const ui = [refreshComponent, refreshState].join("\n")
+    for (const label of ["Update screenshots", "Not now", "Remove request", "Remove all", "Reset previews", "ReRune asks for new screenshots of", "Requested by", "Request removed."]) {
+      expect(ui).toContain(label)
+      expect(testing).toContain(label)
+    }
+    for (const name of ["NO_REQUESTS_LEFT", "REFRESH_BUSY"]) {
+      const match = refreshState.match(new RegExp("export const " + name + ' = "([^"]+)"'))
+      expect(match).not.toBeNull()
+      expect(testing).toContain(match?.[1] ?? "")
+    }
+    expect(readme).toContain("Update screenshots")
   })
 
   it("names the Dev Mode inspect controls, notes and codegen lines the plugin shows (P2.4, P2.5)", () => {

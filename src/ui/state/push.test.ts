@@ -473,7 +473,7 @@ describe("after-push choices and pulls", () => {
     const ready = await preparePush({ keysByName: byName({}, []) }, input(nodes, { remote: remoteMap }))
     expect(ready.plan.pulls.map((pull) => pull.keyId)).toEqual([keyId(1), keyId(2)])
     const main = fakeMain((message) => (message.type === "text-apply" ? [{ nodeId: "1:2", code: "preview_active", message: "Reset the preview on this layer first." }] : []))
-    const outcome = await executePulls({ api: { push: vi.fn() }, bus: main.bus }, ready.plan, ready.context)
+    const outcome = await executePulls({ bus: main.bus }, ready.plan, ready.context)
     expect(main.writes[0]).toMatchObject({ type: "text-apply", items: [{ nodeId: "1:1", text: "New" }, { nodeId: "1:2", text: "New" }, { nodeId: "1:3", text: "Newer" }] })
     expect(main.writes[1]).toEqual({ type: "link-apply", requestId: expect.any(String), items: [{ nodeId: "1:1", keyId: keyId(1), keyName: "new_name", projectId: PROJECT_ID, src: src("New") }] })
     expect(outcome.errors.map((error) => error.code)).toEqual(["preview_active"])
@@ -495,7 +495,7 @@ describe("after-push choices and pulls", () => {
     expect(ready.plan.pulls[0].groupNodeIds).toEqual(["I7:1;1:5", "I8:1;1:5", "I9:1;1:7", "1:3"])
 
     const main = fakeMain()
-    const all = await executePulls({ api: { push: vi.fn() }, bus: main.bus }, ready.plan, ready.context)
+    const all = await executePulls({ bus: main.bus }, ready.plan, ready.context)
     expect(all.affectedNodeIds).toEqual(["I7:1;1:5", "1:5", "I8:1;1:5", "I9:1;1:7", "1:7", "1:3", "1:4"])
 
     // The library main (1:7) refuses the write: its instance is left out, a warning still counts as written.
@@ -503,7 +503,7 @@ describe("after-push choices and pulls", () => {
       { nodeId: "I9:1;1:7", code: "remote_component", message: "Update this text in the library file." },
       { nodeId: "1:4", code: "mixed_styles_flattened", message: "Some text styles couldn't be kept." },
     ])
-    const partial = await executePulls({ api: { push: vi.fn() }, bus: failing.bus }, ready.plan, ready.context)
+    const partial = await executePulls({ bus: failing.bus }, ready.plan, ready.context)
     expect(partial.affectedNodeIds).toEqual(["I7:1;1:5", "1:5", "I8:1;1:5", "1:3", "1:4"])
     // The main component nodes were not scanned: they have no frame, so only the scanned layers' frames get screenshots.
     expect(affectedFrames(partial.affectedNodeIds, ready.context.nodes)).toEqual([
@@ -528,7 +528,7 @@ describe("after-push choices and pulls", () => {
     expect(ready.plan.blockedByPreview).toEqual(["I7:1;1:5"])
     expect(canPull(ready.plan)).toBe(false)
     const main = fakeMain()
-    expect(await executePulls({ api: { push: vi.fn() }, bus: main.bus }, ready.plan, ready.context)).toEqual({ done: 0, errors: [], affectedNodeIds: [] })
+    expect(await executePulls({ bus: main.bus }, ready.plan, ready.context)).toEqual({ done: 0, errors: [], affectedNodeIds: [] })
     expect(main.writes).toEqual([])
   })
 

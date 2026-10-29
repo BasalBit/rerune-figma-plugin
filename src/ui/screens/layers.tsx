@@ -53,6 +53,7 @@ export interface LayersScreenProps {
   pageId: string
   pageSync: PageSync             // the app's page sync: one at a time, also the automatic run (§7.7)
   onBusy(busy: boolean): void    // a Layers action runs (the automatic page sync waits for it)
+  locked: boolean                // a canvas task started from the notices (Update screenshots) holds the work lock
 }
 
 interface ActionResult {
@@ -84,6 +85,8 @@ export function LayersScreen(props: LayersScreenProps) {
   const [error, setError] = useState<string | null>(null)
   const [pageSync, setPageSync] = useState<PageSyncResult | null>(null)
   const syncing = useStore(props.pageSync.store).running !== null
+  // While a page sync runs or a canvas task holds the lock, the scope, Scan, the write actions and the Link dialog wait.
+  const held = syncing || props.locked
 
   useEffect(() => {
     setPageSync(null)
@@ -234,22 +237,22 @@ export function LayersScreen(props: LayersScreenProps) {
   const groups = groupByFrame(visible.slice(0, limit))
   const scanning = state.status === "scanning"
   const skipped = state.result !== null ? skippedSummary(state.result.skipped) : null
-  const writeDisabled = props.readOnly || busy !== null || scanning || syncing
+  const writeDisabled = props.readOnly || busy !== null || scanning || held
 
   return (
     <div style={styles.page}>
       <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: "8px", borderBottom: "1px solid var(--figma-color-border)" }}>
         <div style={styles.row}>
           <div style={styles.grow}>
-            <SegmentedControl value={state.scope} disabled={syncing} options={SCOPE_OPTIONS} onValueChange={(value) => scan(value as Scope)} />
+            <SegmentedControl value={state.scope} disabled={held} options={SCOPE_OPTIONS} onValueChange={(value) => scan(value as Scope)} />
           </div>
-          <Button secondary loading={scanning && busy !== "sync"} disabled={scanning || busy !== null || syncing} onClick={() => scan(state.scope)}>
+          <Button secondary loading={scanning && busy !== "sync"} disabled={scanning || busy !== null || held} onClick={() => scan(state.scope)}>
             Scan
           </Button>
         </div>
         {props.syncEnabled && (
           <div style={styles.row}>
-            <TextButton disabled={props.readOnly || busy !== null || scanning || syncing} onClick={() => void syncPage()}>
+            <TextButton disabled={props.readOnly || busy !== null || scanning || held} onClick={() => void syncPage()}>
               {syncing ? "Syncing links…" : "Sync links on this page"}
             </TextButton>
           </div>
@@ -316,7 +319,7 @@ export function LayersScreen(props: LayersScreenProps) {
           </Note>
         )}
         {pageSync !== null && pageSync.unresolved.length > 0 && (
-          <UnresolvedLinks links={pageSync.unresolved} disabled={props.readOnly || busy !== null || syncing} onRemove={(links) => void removeUnresolved(links)} />
+          <UnresolvedLinks links={pageSync.unresolved} disabled={props.readOnly || busy !== null || held} onRemove={(links) => void removeUnresolved(links)} />
         )}
 
         {visible.length > 0 && (
@@ -333,7 +336,7 @@ export function LayersScreen(props: LayersScreenProps) {
             <div style={{ ...styles.sectionTitle, margin: "8px 0 4px" }}>{group.title}</div>
             <div style={styles.tightStack}>
               {group.rows.map((row) => (
-                <LayerRowView key={row.node.nodeId} row={row} checked={checked.has(row.node.nodeId)} openDisabled={syncing} onToggle={() => toggle(row.node.nodeId)} onOpen={() => props.onOpenLink([row.node])} />
+                <LayerRowView key={row.node.nodeId} row={row} checked={checked.has(row.node.nodeId)} openDisabled={held} onToggle={() => toggle(row.node.nodeId)} onOpen={() => props.onOpenLink([row.node])} />
               ))}
             </div>
           </div>
@@ -381,7 +384,7 @@ export function LayersScreen(props: LayersScreenProps) {
   )
 }
 
-// `openDisabled`: a page sync runs; the Link dialog's rescan would cancel its scan.
+// `openDisabled`: a page sync runs (the Link dialog's rescan would cancel its scan) or Update screenshots holds the lock.
 function LayerRowView(props: { row: LayerRow; checked: boolean; openDisabled: boolean; onToggle(): void; onOpen(): void }) {
   const { row } = props
   return (

@@ -581,8 +581,9 @@ export function progressText(run: ScreenshotRun): string {
 
 // The Push screen's way in (§7.13 rule 11, SF1): `prepare` loads E1/E8 when needed and evaluates the gate with the
 // current settings, prefs and permissions; `upload` runs the queue for this project (with `freshness` from the
-// availability `prepare` returned).
+// availability `prepare` returned). `ignorePref`: Update screenshots (SF6) fulfils an explicit request, which is not
+// an automatic upload, so the setting does not apply to it.
 export interface ScreenshotUploader {
-  prepare(): Promise<{ gate: ScreenshotGate; availability: Availability }>
+  prepare(options?: { ignorePref?: boolean }): Promise<{ gate: ScreenshotGate; availability: Availability }>
   upload(frames: readonly ScreenshotFrame[], options: ScreenshotRunOptions): Promise<ScreenshotRun>
 }

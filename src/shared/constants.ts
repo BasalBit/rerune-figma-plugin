@@ -74,6 +74,8 @@ export const TEXT_STYLE_NAME_MAX_RUNES = 200         // font family and style na
 export const TEXT_STYLE_MAX_PX = 8192                // font size, line height and |letter spacing| in image pixels
 export const TEXT_STYLE_MAX_LINES = 1000
 export const TEXT_STYLE_MAX_WEIGHT = 1000
+export const REFRESH_REQUESTS_PAGE_SIZE = 100        // E20 page size for the frames ReRune asks new screenshots of
+export const REFRESH_REQUESTS_MAX = 1000             // requested frames the plugin reads per file
 
 export const REQUEST_TIMEOUT_MS = 30000
 export const UPLOAD_TIMEOUT_MS = 60000

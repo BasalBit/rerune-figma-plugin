@@ -121,6 +121,51 @@ describe("createFigmaApi", () => {
     expect(calls[0].options.json).toBeUndefined()
   })
 
+  it("lists screenshots with the refresh_requested filter as a string (E20) and cancels a request (E25)", async () => {
+    const { api, calls } = recorder()
+    await api.screenshots(PROJECT, { file_key: "AbCdEf1234567890XyZ", refresh_requested: true, limit: 100 })
+    await api.screenshots(PROJECT, { file_key: "AbCdEf1234567890XyZ", refresh_requested: false, cursor: "c2" })
+    await api.screenshots(PROJECT, { key_id: "6a48000000000000000000a1" })
+    await expect(api.cancelRefreshRequest(PROJECT, "6a49000000000000000000a1")).resolves.toBeUndefined()
+    expect(calls).toEqual([
+      {
+        method: "GET",
+        path: "/figma/projects/" + PROJECT + "/screenshots",
+        options: { query: { file_key: "AbCdEf1234567890XyZ", frame_id: null, key_id: null, refresh_requested: "true", cursor: null, limit: 100 } },
+      },
+      {
+        method: "GET",
+        path: "/figma/projects/" + PROJECT + "/screenshots",
+        options: { query: { file_key: "AbCdEf1234567890XyZ", frame_id: null, key_id: null, refresh_requested: "false", cursor: "c2", limit: null } },
+      },
+      {
+        method: "GET",
+        path: "/figma/projects/" + PROJECT + "/screenshots",
+        options: { query: { file_key: null, frame_id: null, key_id: "6a48000000000000000000a1", refresh_requested: null, cursor: null, limit: null } },
+      },
+      { method: "DELETE", path: "/figma/projects/" + PROJECT + "/screenshots/6a49000000000000000000a1/refresh-request", options: { retry: "none" } },
+    ])
+  })
+
+  it("sends the E20 query as ?file_key=…&refresh_requested=true and resolves E25's 204", async () => {
+    const urls: string[] = []
+    const client = createApiClient({
+      apiBase: "http://localhost:8080",
+      getToken: () => "rrf_token",
+      fetch: async (url, init) => {
+        urls.push(init.method + " " + url)
+        return init.method === "DELETE" ? new Response(null, { status: 204 }) : new Response(JSON.stringify({ screenshots: [], next_cursor: null, has_more: false }), { status: 200, headers: { "Content-Type": "application/json" } })
+      },
+    })
+    const api = createFigmaApi(client)
+    await expect(api.screenshots(PROJECT, { file_key: "AbCdEf1234567890XyZ", refresh_requested: true, limit: 100 })).resolves.toEqual({ screenshots: [], next_cursor: null, has_more: false })
+    await expect(api.cancelRefreshRequest(PROJECT, "6a49000000000000000000a1")).resolves.toBeUndefined()
+    expect(urls).toEqual([
+      "GET http://localhost:8080/figma/projects/" + PROJECT + "/screenshots?file_key=AbCdEf1234567890XyZ&refresh_requested=true&limit=100",
+      "DELETE http://localhost:8080/figma/projects/" + PROJECT + "/screenshots/6a49000000000000000000a1/refresh-request",
+    ])
+  })
+
   it("encodes path segments", async () => {
     const { api, calls } = recorder()
     await api.project("a/b")

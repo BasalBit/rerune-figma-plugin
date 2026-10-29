@@ -2,9 +2,10 @@
 // pseudo-localization, the overflow report and language copies each write the canvas over many messages; two of them
 // at once would write previews over each other (the second one's preview stored as the first one's "original") or
 // copy a frame while another task previews it. The task holding the lock keeps the tabs and Change project put; a
-// task that cannot take it does not start.
+// task that cannot take it does not start. "refresh" is Update screenshots (screenshot freshness): it starts from the
+// notices of any tab, so the tabs whose own actions do not take the lock (Layers, Push) wait for it explicitly.
 
-export type WorkTask = "push" | "preview" | "pseudo" | "report" | "copies"
+export type WorkTask = "push" | "preview" | "pseudo" | "report" | "copies" | "refresh"
 
 export interface WorkLock {
   // Takes the lock for this task; false (and nothing changes) while any task holds it.
@@ -44,6 +45,7 @@ const WAIT_TEXTS: Record<WorkTask, string> = {
   pseudo: "Wait for pseudo-localization to finish",
   report: "Wait for the overflow report to finish",
   copies: "Wait for the language copies to finish",
+  refresh: "Wait for the screenshots to be updated",
 }
 
 export function waitText(task: WorkTask): string {

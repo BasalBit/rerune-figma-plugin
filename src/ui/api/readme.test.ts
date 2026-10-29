@@ -37,6 +37,8 @@ const CALLS: Record<keyof FigmaApi, (api: FigmaApi) => Promise<unknown>> = {
   upsertLinks: (api) => api.upsertLinks(P, { file_key: "AbCdEf1234567890XyZ", upserts: [], removed_node_ids: [] }),
   links: (api) => api.links(P, { file_key: "AbCdEf1234567890XyZ" }),
   uploadScreenshot: (api) => api.uploadScreenshot(P, UPLOAD),
+  screenshots: (api) => api.screenshots(P, { file_key: "AbCdEf1234567890XyZ", refresh_requested: true }),
+  cancelRefreshRequest: (api) => api.cancelRefreshRequest(P, "{screenshot_id}"),
 }
 
 async function endpointOf(method: keyof FigmaApi): Promise<string> {

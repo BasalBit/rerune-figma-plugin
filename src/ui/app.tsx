@@ -13,6 +13,7 @@ import { InspectApp } from "./inspect-app"
 import { measureImage } from "./image"
 import { FileLinkNote } from "./components/file-link"
 import { Nav } from "./components/nav"
+import { RefreshRequestsNote, refreshNotesShown } from "./components/refresh-requests"
 import { ErrorGroups, GlobalStyle, Loading, Note, styles, TextButton } from "./components/ui"
 import { runNetworkCheck } from "./diagnostics"
 import { DiagnosticsScreen } from "./screens/diagnostics"
@@ -42,6 +43,7 @@ import { AUTO_SYNC_RUNNING, autoPageSyncNote, createLinkSyncer, createPageSync, 
 import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, singleFlight, type ErrorGroup } from "./state/ops"
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
 import { leftoverPreviewNotice, previewStatus, resetOutcome } from "./state/preview"
+import { createRefreshRequests, refetchAfterUpload, refreshGate } from "./state/refresh-requests"
 import { cacheEntriesFromResolved } from "./state/remote"
 import type { ProjectPluralChoice } from "./state/samples"
 import {
@@ -78,7 +80,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const [selectionCount, setSelectionCount] = useState(init.selectionCount)
   const pageRef = useRef(init.pageId)
   // One canvas task at a time: a push (with its screenshots), a preview apply, pseudo-localization, an overflow
-  // report or language copies holds the work lock, which keeps the tabs and Change project put and refuses the others.
+  // report, language copies or Update screenshots holds the work lock, which keeps the tabs and Change project put and
+  // refuses the others.
   const [workTask, setWorkTask] = useState<WorkTask | null>(null)
   const workLocked = workTask !== null
   const contextRef = useRef<NavContext>({ apiBase: init.apiBase, settings })
@@ -180,6 +183,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setActiveProject(null)
     setLink(null)
     pageSync.reset()
+    refreshRequests.reset()
     workspace.clear(true)
     go({ type: "signed-out", notice: SESSION_ENDED_NOTICE })
   }
@@ -292,14 +296,14 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   }, [auth, project?.id])
 
   // Screenshots of changed frames (§7.13 rule 11, §7.16, SF1): the gate is evaluated when a push or pull ends, with
-  // the settings, prefs and permissions of that moment.
+  // the settings, prefs and permissions of that moment. Update screenshots (SF6) ignores the setting.
   const screenshotUploader = useMemo<ScreenshotUploader>(
     () => ({
-      async prepare() {
+      async prepare(options) {
         const loaded = await availabilityLoader.load()
         setAvailability(loaded)
         const gate = screenshotGate({
-          pref: prefsRef.current.uploadScreenshotsOnPush,
+          pref: options?.ignorePref === true || prefsRef.current.uploadScreenshotsOnPush,
           availability: loaded,
           settings: usableRef.current,
           rootName: rootNameRef.current,
@@ -328,6 +332,37 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     [],
   )
 
+  // The frames ReRune asks new screenshots of (screenshot freshness, SF6): read when the workspace opens on a confirmed
+  // file, after the file link is saved and after every upload run; Update screenshots runs from the notices.
+  const freshnessGate = refreshGate({ availability, settings: usable, rootName, permissions: project?.permissions ?? [] })
+  const freshnessGateRef = useRef(freshnessGate)
+  freshnessGateRef.current = freshnessGate
+  const refreshRequests = useMemo(
+    () =>
+      createRefreshRequests({
+        api,
+        bus,
+        context: () => {
+          const active = projectRef.current
+          return active === null
+            ? null
+            : { projectId: active.id, mainLanguage: active.main_language, gate: freshnessGateRef.current, groupIdenticalTexts: prefsRef.current.groupIdenticalTexts }
+        },
+        scanFrames: (frameIds) => workspace.scanFrames(frameIds),
+        uploader: screenshotUploader,
+        lock: workLock,
+      }),
+    [],
+  )
+  const refreshState = useStore(refreshRequests.store)
+  // Push, pull, Overwrite and Take ReRune text: their uploads clear requests, so the requests are read again after each.
+  const pushUploader = useMemo(() => refetchAfterUpload(screenshotUploader, () => refreshRequests.fetch()), [])
+  useEffect(() => {
+    if (auth !== null && project !== null) {
+      void refreshRequests.fetch()
+    }
+  }, [auth, project?.id, freshnessGate.enabled, freshnessGate.fileKey, usable?.updatedAt])
+
   // QA picks and results belong to the project they were made in.
   useEffect(() => {
     setQaSession(NEW_QA_SESSION)
@@ -353,10 +388,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   // The notices scroll with the tab, so a new result banner or edited-during-preview question is brought into view
   // when the tab was scrolled down (e.g. Reset in the header while reading the Preview results).
   useEffect(() => {
-    if (banner !== null || editedPrompt !== null || pageSyncState.auto !== null) {
+    if (banner !== null || editedPrompt !== null || pageSyncState.auto !== null || refreshState.outcome !== null) {
       noticesRef.current?.scrollIntoView({ block: "nearest" })
     }
-  }, [banner, editedPrompt, pageSyncState.auto])
+  }, [banner, editedPrompt, pageSyncState.auto, refreshState.outcome])
 
   function updatePrefs(patch: Partial<Prefs>) {
     setPrefs((current) => ({ ...current, ...patch }))
@@ -384,6 +419,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     const changed = settings?.projectId !== picked.id || settings?.apiBase !== init.apiBase
     await saveSettings(next)
     pageSync.reset()
+    refreshRequests.reset()
     contextRef.current = { apiBase: init.apiBase, settings: next, locked: workLocked }
     if (changed) {
       workspace.clear(true)
@@ -505,6 +541,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setActiveProject(null)
     setLink(null)
     pageSync.reset()
+    refreshRequests.reset()
     workspace.clear(true)
     go(event === "not-me" ? { type: "not-me" } : { type: "signed-out", notice: null })
   }
@@ -693,6 +730,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   // The automatic page sync's progress and result for the open page.
   const autoSyncNote = pageSyncState.auto !== null && pageSyncState.auto.pageId === pageRef.current ? pageSyncState.auto : null
   const autoSyncRunning = pageSyncState.running === "auto"
+  // Update screenshots waits like the automatic page sync: for a canvas task, a reset, a scan, a page sync or a Layers
+  // action (its detached scan would cancel a shown scan's, or be cancelled by one).
+  const refreshBusy = workLocked || resetting || layersBusy || pageSyncState.running !== null || space.status === "scanning"
+  const refreshShown = refreshNotesShown(refreshState)
 
   async function applyOffer(): Promise<void> {
     if (offer === null) return
@@ -709,7 +750,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   // The notices about this file and the last action. Each tab shows them first in its scroll area (ScreenBody), in
   // normal flow, so they take their own space above the tab's content and scroll with it.
   const notices =
-    offer !== null || fileNotice !== null || autoSyncRunning || autoSyncNote !== null || editedPrompt !== null || leftover !== null || banner !== null ? (
+    offer !== null || fileNotice !== null || autoSyncRunning || autoSyncNote !== null || refreshShown || editedPrompt !== null || leftover !== null || banner !== null ? (
       <div ref={noticesRef} style={{ ...styles.stack, scrollMarginTop: styles.body.padding }}>
         {offer !== null && <SettingsOfferNote offer={offer} disabled={readOnly || offerSaving} onApply={() => void applyOffer()} onDismiss={() => setOfferDismissedOn(pageRef.current)} />}
         {fileNotice !== null && (
@@ -729,6 +770,25 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
           >
             {autoPageSyncNote(autoSyncNote)}
           </Note>
+        )}
+        {refreshShown && (
+          <RefreshRequestsNote
+            state={refreshState}
+            busy={refreshBusy}
+            resetting={resetting}
+            onRun={() => void refreshRequests.run()}
+            onNotNow={() => refreshRequests.notNow()}
+            onStop={() => refreshRequests.stop()}
+            onResetPreviews={(nodeIds) =>
+              void resetPreviews(space.scope, nodeIds)
+                .then(() => refreshRequests.dismissOutcome())
+                .catch((caught: unknown) => setBanner({ tone: "warning", message: userMessage(caught), errors: [] }))
+            }
+            onRemove={(screenshotId) => void refreshRequests.removeRequest(screenshotId)}
+            onRemoveAll={() => void refreshRequests.removeAll()}
+            onDismiss={() => refreshRequests.dismissOutcome()}
+            onSelect={selectNodes}
+          />
         )}
         {editedPrompt !== null && (
           <Note
@@ -803,6 +863,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             pageId={pageRef.current}
             pageSync={pageSync}
             onBusy={setLayersBusy}
+            locked={workLocked}
           />
         )}
         {screen === "push" && (
@@ -824,9 +885,10 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onResetPreviews={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
             onAvailableKeys={(availableKeys) => setActiveProject({ ...project, available_keys: availableKeys })}
             onBusy={pushBusy}
+            locked={workTask !== null && workTask !== "push"}
             fileKey={pushFileKey(usable, rootName)}
             syncLinks={(nodeIds) => linkSyncer.syncNodes(nodeIds, knownNodes())}
-            screenshots={screenshotUploader}
+            screenshots={pushUploader}
           />
         )}
         {screen === "preview" && (

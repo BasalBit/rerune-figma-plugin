@@ -771,7 +771,7 @@ describe("the page sync in the app and on Layers", () => {
   })
 
   it("drops the request and the note on sign-out and when a project is picked", () => {
-    expect(appSource.match(/setLink\(null\)\n {4}pageSync\.reset\(\)\n {4}workspace\.clear\(true\)/g)).toHaveLength(2)
+    expect(appSource.match(/setLink\(null\)\n {4}pageSync\.reset\(\)\n {4}refreshRequests\.reset\(\)\n {4}workspace\.clear\(true\)/g)).toHaveLength(2)
     expect(body(appSource, "async function pickProject(")).toContain("pageSync.reset()")
   })
 
@@ -779,9 +779,12 @@ describe("the page sync in the app and on Layers", () => {
     expect(layersSource).not.toContain("createPageSync")
     expect(body(layersSource, "async function syncPage()")).toContain("props.pageSync.start(props.pageId)")
     expect(layersSource).toContain("const syncing = useStore(props.pageSync.store).running !== null")
-    expect(layersSource).toContain("<SegmentedControl value={state.scope} disabled={syncing}")
-    expect(layersSource).toContain("const writeDisabled = props.readOnly || busy !== null || scanning || syncing")
-    expect(layersSource).toContain("openDisabled={syncing}")
+    // Update screenshots (screenshot freshness) holds the work lock from the notices: Layers waits for it the same way.
+    expect(layersSource).toContain("const held = syncing || props.locked")
+    expect(layersSource).toContain("<SegmentedControl value={state.scope} disabled={held}")
+    expect(layersSource).toContain("const writeDisabled = props.readOnly || busy !== null || scanning || held")
+    expect(layersSource).toContain("openDisabled={held}")
+    expect(appSource).toContain("locked={workLocked}")
     expect(layersSource).toContain("props.onBusy(busy !== null)")
     expect(appSource).toContain("onBusy={setLayersBusy}")
   })

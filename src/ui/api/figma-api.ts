@@ -21,6 +21,8 @@ import type {
   FigmaResolveResponse,
   FigmaScreenshotContentType,
   FigmaScreenshotMeta,
+  FigmaScreenshotsQuery,
+  FigmaScreenshotsResponse,
   FigmaScreenshotUploadResponse,
   FigmaSearchResponse,
 } from "../../shared/api-types"
@@ -29,8 +31,9 @@ import { canonicalPairingCode } from "../../shared/pairing-code"
 import { firstRunes } from "../../shared/text"
 import type { ApiClient } from "./client"
 
-// One function per endpoint (Phase 1: E1–E13; Phase 2 files, links and screenshot upload: E14–E19; §4). Paths are
-// relative to __API_BASE__ (nginx strips /api).
+// One function per endpoint (Phase 1: E1–E13; Phase 2 files, links and screenshot upload: E14–E19; §4; screenshot
+// freshness: the E20 list and E25, for the frames ReRune asks new screenshots of). Paths are relative to __API_BASE__
+// (nginx strips /api).
 
 export interface SearchParams { q: string; cursor?: string | null; limit?: number }
 
@@ -63,6 +66,13 @@ export interface FigmaApi {
   upsertLinks(projectId: string, request: FigmaLinksRequest): Promise<FigmaLinksResponse>     // E17
   links(projectId: string, query: FigmaLinksQuery): Promise<FigmaLinksListResponse>           // E18
   uploadScreenshot(projectId: string, upload: ScreenshotUpload): Promise<FigmaScreenshotUploadResponse> // E19
+  screenshots(projectId: string, query: FigmaScreenshotsQuery): Promise<FigmaScreenshotsResponse>    // E20
+  cancelRefreshRequest(projectId: string, screenshotId: string): Promise<void>                       // E25
+}
+
+// E20 takes `refresh_requested` as the string "true" or "false" (the client's query values have no booleans).
+function booleanParam(value: boolean | null | undefined): string | null {
+  return value === undefined || value === null ? null : value ? "true" : "false"
 }
 
 function segment(value: string): string {
@@ -156,5 +166,21 @@ export function createFigmaApi(client: ApiClient): FigmaApi {
     // gives multipart requests the 60 s upload timeout.
     uploadScreenshot: (projectId, upload) =>
       client.request<FigmaScreenshotUploadResponse>("POST", projectPath(projectId, "/screenshots"), { form: screenshotForm(upload), retry: "none" }),
+    screenshots: (projectId, query) =>
+      client.request<FigmaScreenshotsResponse>("GET", projectPath(projectId, "/screenshots"), {
+        query: {
+          file_key: query.file_key ?? null,
+          frame_id: query.frame_id ?? null,
+          key_id: query.key_id ?? null,
+          refresh_requested: booleanParam(query.refresh_requested),
+          cursor: query.cursor ?? null,
+          limit: query.limit ?? null,
+        },
+      }),
+    // E25 answers 204 (also when there was no request). A 429 is reported at once, so Remove all stops with the
+    // rate-limit message instead of waiting up to a minute without a word.
+    cancelRefreshRequest: async (projectId, screenshotId) => {
+      await client.request<unknown>("DELETE", projectPath(projectId, "/screenshots/" + segment(screenshotId) + "/refresh-request"), { retry: "none" })
+    },
   }
 }
