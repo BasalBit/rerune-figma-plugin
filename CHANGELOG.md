@@ -55,6 +55,11 @@ Needs a paid Figma plan with a Dev or Full seat. Dev Mode is read-only.
 - **Inspect panel:** the linked keys of the selection with status, max length and values in every language (Draft or Published), code snippets for React (i18next), Flutter, Android, iOS and Angular with **Copy code**, and **Open in ReRune**.
 - **Code section:** the same snippets, built from the file's links and a local cache, without network requests.
 
+#### Look and feel
+
+- **ReRune branding** on Figma's own controls and colours, in Figma light and dark: the ReRune mark and wordmark in the header, a "ReRune for Figma" sign-in with the pairing code on a ticket, key names as `‹ key ›` tags, state chips with a shape next to each label (amber for ReRune-side states such as "Changed in ReRune" and "New key"), a postmark beside a clean push, and a visible focus ring on every control. Muted text, links and chips now meet WCAG contrast. Inter, IBM Plex Mono and Bricolage Grotesque are bundled, so the plugin no longer falls back to Helvetica or Arial and loads no font from the network.
+- **Community listing art:** the icon, cover and five carousel images in `listing/`, rendered from the plugin's real screens (`node scripts/listing-art.mjs`).
+
 #### Help and releases
 
 - **Diagnostics** (Settings → Advanced): Figma behaviour tests and a Network check, each with Copy report.

@@ -109,7 +109,7 @@ Unit tests sit next to the code (`*.test.ts`). A few tests check the repository 
 - `test/dev-mode-policy.test.ts` and `src/ui/dev-mode-ui.test.ts`: Dev Mode refuses every write, the messages it accepts leave a file unchanged, codegen never writes or calls the network, and the Dev Mode UI never builds a message Dev Mode refuses.
 - `test/docs.test.ts` and `src/ui/api/readme.test.ts`: this README and `TESTING.md` match the build, the screens and the endpoints the plugin calls.
 - `test/build-hooks.test.ts` and `test/release.test.ts`: both manifest variants, the npm scripts, the CI workflow and the release check in `scripts/check-build.mjs`.
-- `test/listing.test.ts`: `COMMUNITY_LISTING.md` matches the manifest and the code, and the images in `listing/` have Figma's sizes.
+- `test/listing.test.ts`: `COMMUNITY_LISTING.md` matches the manifest and the code, and the images in `listing/` are the rendered art (opaque 8-bit PNGs at Figma's sizes) and are all listed.
 
 Some of these read the sources through `import.meta.glob`. Vitest caches module graphs in `node_modules/.vitest-cache`; after adding or removing source files, run `rm -rf node_modules/.vitest-cache` (or `npm ci`) if a contract test reports a file list that looks stale.
 
@@ -131,6 +131,17 @@ There are two release builds. Both use the plugin ID `1697181748239106841`, the 
 1. CI (`.github/workflows/ci.yml`, Node 24) runs typecheck, lint and tests on every push to `main` and every pull request, builds both archives, checks each with `node scripts/check-build.mjs full` / `design-only` (production hosts only, no `localhost` in the bundles, the manifest of that variant) and uploads them as the artifacts `rerune-figma-plugin` and `rerune-figma-plugin-design-only`. Locally, the same zip command followed by the same check does the same.
 2. Put the chosen build where Figma desktop imported the plugin from: run its build command (`npm run build:design-only` or `npm run build`) in this folder, or unzip the CI archive here over `manifest.json` and `build/`, and check it with `node scripts/check-build.mjs design-only` (or `full`). Then publish from the Figma desktop app (2FA required) under the BasalBit/ReRune profile. Figma publishes the files the imported `manifest.json` points at, so don't rebuild (for example `npm run build:dev`) until the publish is done.
 3. The listing text, assets, data security answers and reviewer notes are in [`COMMUNITY_LISTING.md`](COMMUNITY_LISTING.md); changes go in [`CHANGELOG.md`](CHANGELOG.md).
+
+### Listing images
+
+The Community icon, cover and carousel images in `listing/` are rendered from `listing/src/art.html` (one template per image, in the look of the dashboard's /figma page and share card) with the plugin's real screens. Both steps need Chromium or Chrome: set `CHROME_BIN` to its binary, or leave it out to use the installed Google Chrome. They are not run in CI.
+
+```bash
+CHROME_BIN=… node scripts/listing-art.mjs capture   # builds the design-only and the full plugin, captures the screens into listing/src/shots
+CHROME_BIN=… node scripts/listing-art.mjs render    # writes listing/*.png
+```
+
+`capture` runs `scripts/ui-harness.mjs`: the built `build/ui.js` in headless Chromium inside a page that plays Figma's main thread on fixture layers, with Figma's light or dark theme variables, and answers for the ReRune API from fixtures (nothing leaves the machine). Run it alone for review screenshots of every screen in light and dark, at 400 × 640 and 300 × 480: `node scripts/ui-harness.mjs <out dir> [scenario …]` after `npm run build`; it also reports horizontal scrolling, text under 4.5:1 and whether the brand fonts loaded (`checks.json`). Capture again before publishing, from the build you publish, so the carousel shows that version.
 
 ## Architecture
 
@@ -225,6 +236,10 @@ The plugin calls only these endpoints of the ReRune API (`/api` on rerune.io), w
 | `GET /figma/projects/{project_id}/screenshots` | the frames of this file that ReRune asks new screenshots of |
 | `DELETE /figma/projects/{project_id}/screenshots/{screenshot_id}/refresh-request` | Remove request, for a requested frame that is not in the file anymore |
 
+### Look and feel
+
+Figma does the controls and surfaces; ReRune does identity, data and states. Buttons, text fields, dropdowns, segmented controls and toggles are Create Figma Plugin's, the surfaces are Figma's theme colours (`themeColors: true`, light and dark follow the editor), and `src/ui/brand` adds the ReRune layer in one stylesheet (`brand-css.ts`, injected by `GlobalStyle`): the mark and wordmark in the header, key names as `‹ key ›` tags, one recipe for state chips and notes (a shape next to each label, amber for ReRune-side states), text links with an amber underline, mono labels, and a focus ring on every control the plugin draws itself. `tokens.ts` holds the colours (the dashboard's tokens) and `tokens.test.ts` checks every pair the plugin draws against WCAG contrast in both themes. The fonts are bundled in `build/ui.js` and registered from bytes (`src/ui/brand/fonts.ts`): Inter for text, IBM Plex Mono for keys and codes, and Bricolage Grotesque for the wordmark; no font is fetched. They make `build/ui.js` about 120 KB larger; `scripts/check-build.mjs` fails a release whose `build/ui.js` is over 420,000 bytes or carries no fonts, and one whose `build/main.js` carries any. The mark's sources are in `assets/brand`.
+
 ## Privacy
 
 The plugin talks only to the ReRune API (the endpoints above), and only while it is open and you use it. It sends the texts you push (with the frame name as the new key's description) and the texts you search for. To find keys that already have a layer's text, it also sends texts it does not push: opening **Push** sends the text of every unlinked text layer in scope and the key names it suggests for them, and the Link dialog and **Link exact matches** send the text of the selected layers (the Link dialog also searches for the first 100 characters of the layer's text). These lookups create nothing in ReRune. The plugin also sends the IDs of the keys it shows (the Dev Mode inspect panel loads the values of the selected layers' keys; the Code section sends nothing). When you paste the file's Figma link, it also sends the file's key, link and name, and for linked layers their layer IDs and the layer, frame and page names. With **Upload screenshots of changed frames** on, a push or an update from ReRune also uploads an image of each frame it changed, with the frame and page names, the positions of the linked layers and, with a ReRune server that supports it, each linked layer's text; ReRune stores the images in its EU image storage and the rest with the project. With such a server the plugin also reads which frames of the file ReRune asks new screenshots of (frame and page names and who asked), and **Update screenshots** uploads those frames the same way, whatever the setting says. Sandbox accounts never upload images. Sign-in pairs the plugin with your ReRune session in the browser; the plugin stores its token only in Figma's local plugin storage on your machine and sends it only to the ReRune API. See the [ReRune privacy policy](https://rerune.io/privacy).
@@ -232,3 +247,5 @@ The plugin talks only to the ReRune API (the endpoints above), and only while it
 ## Licence
 
 [MIT](LICENSE), Copyright (c) 2026 BasalBit.
+
+Third-party fonts: the plugin bundles Inter, IBM Plex Mono and Bricolage Grotesque, and the listing art uses Bricolage Grotesque, Hanken Grotesk, Newsreader and IBM Plex Mono, all under the SIL Open Font License 1.1. Their licences and sources are next to them in `src/ui/assets/fonts` and `listing/src/fonts`.

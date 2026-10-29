@@ -346,6 +346,16 @@ QA tab: **Apply to** selection / page, **Languages** (one checkbox per project l
 
 ---
 
+### 6.1 Look and feel
+
+In Figma desktop, with the build you publish. `node scripts/ui-harness.mjs <out dir>` (README → Listing images) renders every screen in Figma light and dark for comparison.
+
+- [ ] **Fonts:** the header's "ReRune" wordmark is in Bricolage (narrow and heavy), the text in Inter, key tags and codes in IBM Plex Mono, also with Wi-Fi off (no font is loaded from the web). Without Inter installed on the machine, the text is still Inter, not Helvetica or Arial.
+- [ ] **Light and dark:** with the plugin open, switch Figma's theme (main menu → Preferences → Theme) → the plugin follows at once: surfaces stay Figma's grey, and the mark tile, key tags, chips, notes and amber accents switch with it. In dark, warning chips and notes are easy to read.
+- [ ] **Small window:** resize the plugin window to its smallest size → the header keeps the mark, the project name and **Change** on one line (below 340 px without the wordmark and the selection count), the tabs fit, and no tab scrolls sideways. Long key names wrap after `.`, `_` or `-`.
+- [ ] **Keyboard:** Tab through Sign in, Layers and Push → every focused control shows a blue ring, including text links, tabs, layer rows, checkboxes and choices.
+- [ ] **States:** a layer changed in ReRune shows the amber "Changed in ReRune" chip, one changed in Figma the blue "Changed in Figma" chip, and warnings a triangle; a clean push shows the postmark beside its summary.
+
 ## 7. Browser Figma and Figma for VS Code
 
 Figma runs an imported development build only in the desktop app; browser Figma runs published plugins only (organisation-private plugins need a paid organisation plan). So this section runs on the **published Community build**, right after approval, as part of the post-publish smoke test (§10): the Design-mode checks in browser Figma, the Dev Mode checks in Figma for VS Code. Figma for VS Code is a Dev Mode surface and needs a paid Figma plan and the full build; with the design-only build run only the browser Figma checks.

@@ -12,7 +12,7 @@ import { pathToFileURL } from "node:url"
 export const VARIANTS = ["full", "design-only"]
 export const PRODUCTION_API_BASE = "https://rerune.io/api"
 
-// build/ui.js was 299,034 bytes before the brand fonts and styles (+120,506: three WOFF2 fonts as base64, their
+// build/ui.js was 299,034 bytes before the brand fonts and styles (+120,452: three WOFF2 fonts as base64, their
 // licence, the brand stylesheet and components). Raise it only on purpose: Figma loads ui.js every time the plugin opens.
 export const UI_JS_BUDGET = 420000
 // "wOF2", the WOFF2 signature, as it starts a base64 font in the bundle.
