@@ -952,6 +952,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             linkGate={gate}
             onSaveFileLink={saveFileLink}
             onConfirmSameFile={confirmFile}
+            locked={workLocked}
             screenshots={screenshotSetting(
               screenshotGate({ pref: prefs.uploadScreenshotsOnPush, availability, settings: usable, rootName, permissions: project.permissions }),
               availability,

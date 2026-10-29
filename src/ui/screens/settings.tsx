@@ -39,6 +39,9 @@ export interface SettingsScreenProps {
   onConfirmSameFile(): Promise<string | null>
   // "Upload screenshots of changed frames" (§7.16, SF1b): whether the toggle shows and what it says.
   screenshots: ScreenshotSetting
+  // A canvas task holds the work lock (Update screenshots starts from the notices on this tab too): saving the file's
+  // settings or link, confirming the file and signing out wait for it, since the task reads them while it runs.
+  locked: boolean
 }
 
 const EMPTY_EDIT: SettingsEdit = { keyTemplate: "", caseStyle: "auto", ignoreUnderscoreLayers: true, includeLocked: false }
@@ -75,7 +78,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
 
   const issues = templateIssues(edit.keyTemplate)
   const dirty = !sameEdit(edit, saved)
-  const canSave = props.settings !== null && !props.readOnly && dirty && issues.length === 0 && saving === null
+  const canSave = props.settings !== null && !props.readOnly && !props.locked && dirty && issues.length === 0 && saving === null
 
   async function save(settings: FileSettings, label: string) {
     setSaving(label)
@@ -104,17 +107,26 @@ export function SettingsScreen(props: SettingsScreenProps) {
               <Small muted>This file is connected to</Small>
               <div style={{ fontWeight: "600" }}>{props.settings.projectName}</div>
             </div>
-            <TextButton onClick={props.onChangeProject}>Change project</TextButton>
+            <TextButton disabled={props.locked} onClick={props.onChangeProject}>
+              Change project
+            </TextButton>
           </div>
         ) : (
           <Note tone="info" actions={<TextButton onClick={props.onChangeProject}>Choose a project</TextButton>}>
             This file isn't connected to a ReRune project yet.
           </Note>
         )}
-        {offer !== null && <SettingsOfferNote offer={offer} disabled={props.readOnly || saving !== null} onApply={() => void save(offer.settings, offer.kind)} />}
+        {offer !== null && <SettingsOfferNote offer={offer} disabled={props.readOnly || props.locked || saving !== null} onApply={() => void save(offer.settings, offer.kind)} />}
 
         {props.settings !== null && (
-          <FileSection settings={props.settings} gate={props.linkGate} readOnly={props.readOnly} onSave={props.onSaveFileLink} onConfirmSameFile={props.onConfirmSameFile} />
+          <FileSection
+            settings={props.settings}
+            gate={props.linkGate}
+            readOnly={props.readOnly}
+            locked={props.locked}
+            onSave={props.onSaveFileLink}
+            onConfirmSameFile={props.onConfirmSameFile}
+          />
         )}
 
         <SectionTitle>Key names</SectionTitle>
@@ -174,7 +186,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
         <SectionTitle>Account</SectionTitle>
         <div style={styles.row}>
           <div style={{ ...styles.grow, overflowWrap: "anywhere" }}>{props.auth.user.email}</div>
-          <TextButton onClick={props.onSignOut}>Sign out</TextButton>
+          <TextButton disabled={props.locked} onClick={props.onSignOut}>
+            Sign out
+          </TextButton>
         </div>
         <Small muted>ReRune for Figma {props.version}</Small>
       </ScreenBody>
@@ -188,6 +202,7 @@ function FileSection(props: {
   settings: FileSettings
   gate: LinkSyncGate
   readOnly: boolean
+  locked: boolean
   onSave(link: ParsedFigmaUrl): Promise<string | null>
   onConfirmSameFile(): Promise<string | null>
 }) {
@@ -222,14 +237,14 @@ function FileSection(props: {
       </Small>
       {props.gate.reason === "possible_copy" && (
         <div>
-          <Button secondary disabled={props.readOnly || confirming} loading={confirming} onClick={() => void confirm()}>
+          <Button secondary disabled={props.readOnly || props.locked || confirming} loading={confirming} onClick={() => void confirm()}>
             This is the same file
           </Button>
         </div>
       )}
       {message !== null && <Note tone={message.tone}>{message.text}</Note>}
       <Small muted>{linked ? "Paste a new link to replace it (Share → Copy link):" : "Paste this file's link (Share → Copy link):"}</Small>
-      <FileLinkForm disabled={props.readOnly} saveLabel={linked ? "Replace link" : "Save link"} onSave={props.onSave} />
+      <FileLinkForm disabled={props.readOnly || props.locked} saveLabel={linked ? "Replace link" : "Save link"} onSave={props.onSave} />
     </div>
   )
 }

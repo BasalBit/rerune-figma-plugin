@@ -1,5 +1,9 @@
+/// <reference types="vite/client" />
 import { h, type ComponentChildren, type VNode } from "preact"
 import { describe, expect, it, vi } from "vitest"
+import appSource from "../app.tsx?raw"
+import pushSource from "../screens/push.tsx?raw"
+import settingsSource from "../screens/settings.tsx?raw"
 import { emptyRefreshState, type RefreshRequest, type RefreshState } from "../state/refresh-requests"
 import { emptyScreenshotRun } from "../state/screenshots"
 import { RefreshRequestsNote, refreshNotesShown, type RefreshRequestsNoteProps } from "./refresh-requests"
@@ -192,5 +196,29 @@ describe("RefreshRequestsNote", () => {
     expect(buttons(view(props({ outcome: { kind: "previews", nodeIds: ["10:2"] } }, { resetting: true })))[0]).toMatchObject({ label: "Reset previews", disabled: true })
     expect(lines(view(props({ outcome: { kind: "none" } })))).toEqual(["ReRune no longer asks for new screenshots of this file.", "Dismiss"])
     expect(lines(view(props({ outcome: { kind: "error", message: "The scan didn't finish. Try again." } })))[0]).toBe("Screenshots weren't updated: The scan didn't finish. Try again.")
+  })
+})
+
+// Update screenshots starts from the notices of any tab and holds the work lock. The tabs whose actions do not take
+// the lock wait for it explicitly (Layers: link-sync.test.ts).
+describe("tabs while Update screenshots runs", () => {
+  it("Push opens no Link dialog: it would replace the tabs, and closing it rescans, which cancels the run's scan", () => {
+    expect(pushSource).toContain("const busy = running || props.locked")
+    expect(pushSource).toContain("<TextButton disabled={props.busy} onClick={() => props.taken !== null && props.onLinkExisting(")
+    expect(pushSource).toContain("<TextButton disabled={props.busy} onClick={() => screen.onOpenLink(")
+    expect(pushSource).toContain("busy={busy}\n                onSelect={() => props.onSelect(create.nodeIds)}")
+    // The only ways into the Link dialog: CreateCard's button (through onLinkExisting) and the results' button.
+    expect(pushSource.match(/\.onOpenLink\(/g)).toHaveLength(2)
+    expect(pushSource.match(/\.onLinkExisting\(/g)).toHaveLength(1)
+  })
+
+  it("Settings saves no settings or link, confirms no file and does not sign out: the run reads them", () => {
+    expect(appSource).toContain("onConfirmSameFile={confirmFile}\n            locked={workLocked}")
+    expect(settingsSource).toContain("const canSave = props.settings !== null && !props.readOnly && !props.locked &&")
+    expect(settingsSource).toContain("disabled={props.readOnly || props.locked || saving !== null}")
+    expect(settingsSource).toContain("disabled={props.readOnly || props.locked || confirming}")
+    expect(settingsSource).toContain("<FileLinkForm disabled={props.readOnly || props.locked}")
+    expect(settingsSource).toContain("<TextButton disabled={props.locked} onClick={props.onSignOut}>")
+    expect(settingsSource).toContain("<TextButton disabled={props.locked} onClick={props.onChangeProject}>")
   })
 })

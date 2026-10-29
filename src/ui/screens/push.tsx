@@ -398,6 +398,7 @@ export function PushScreen(props: PushScreenProps) {
                 key={create.ref}
                 create={create}
                 taken={prepared?.taken.get(create.name) ?? null}
+                busy={busy}
                 onSelect={() => props.onSelect(create.nodeIds)}
                 onDecide={decide}
                 onRename={(name) => rename(create.ref, name)}
@@ -586,6 +587,8 @@ function Counts(props: { plan: PushPlan }) {
 function CreateCard(props: {
   create: PlanCreate
   taken: { id: string; key: string; type: string } | null
+  // A run or a locked task (Update screenshots) is going on: the Link dialog would replace the tabs and rescan.
+  busy: boolean
   onSelect(): void
   onDecide(decision: PlanDecision): void
   onRename(name: string): void
@@ -637,7 +640,7 @@ function CreateCard(props: {
           {props.taken !== null && props.taken.type === "key" && create.nameIssues.length > 0 && (
             <div>
               {/* The Link dialog compares the layer text with the key's text and asks when they differ (§7.11). */}
-              <TextButton onClick={() => props.taken !== null && props.onLinkExisting({ id: props.taken.id, key: props.taken.key })}>
+              <TextButton disabled={props.busy} onClick={() => props.taken !== null && props.onLinkExisting({ id: props.taken.id, key: props.taken.key })}>
                 Link to existing key {props.taken.key}
               </TextButton>
             </div>
@@ -721,7 +724,7 @@ function Results(props: {
           <Small style={{ color: "var(--figma-color-text-danger)" }}>{failure.message}</Small>
           {failure.reason === "duplicate_key" && failure.keyId !== null && failure.keyName !== null && (
             <div style={styles.wrapRow}>
-              <TextButton onClick={() => screen.onOpenLink(props.nodesOf(failure.nodeIds), { id: failure.keyId ?? "", key: failure.keyName ?? "" })}>
+              <TextButton disabled={props.busy} onClick={() => screen.onOpenLink(props.nodesOf(failure.nodeIds), { id: failure.keyId ?? "", key: failure.keyName ?? "" })}>
                 Link to existing {failure.keyName}
               </TextButton>
               <Small muted>or choose Review again to rename it.</Small>
