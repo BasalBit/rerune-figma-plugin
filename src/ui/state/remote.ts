@@ -42,15 +42,25 @@ export function linkedKeyIds(nodes: readonly ScannedNode[], projectId: string): 
   return [...ids]
 }
 
+// How a load is cut up: keys per E12 call (E1 max_batch_size, at most 100) and calls at once (4). Background reads
+// send fewer at once.
+export interface ChunkOptions { chunkSize?: number; inFlight?: number }
+
+// Keys per E12 call: E1's max_batch_size when it has one, at most 100.
+export function resolveChunkSize(wanted?: number): number {
+  return typeof wanted === "number" && Number.isFinite(wanted) ? Math.max(1, Math.min(RESOLVE_CHUNK_SIZE, Math.floor(wanted))) : RESOLVE_CHUNK_SIZE
+}
+
 export async function resolveInChunks(
   api: Pick<FigmaApi, "resolveKeys">,
   projectId: string,
   keyIds: readonly string[],
   request: Omit<FigmaResolveRequest, "key_ids">,
+  options: ChunkOptions = {},
 ): Promise<{ responses: FigmaResolveResponse[]; error: unknown }> {
   const responses: FigmaResolveResponse[] = []
   let error: unknown = null
-  await mapPool(chunk(keyIds, RESOLVE_CHUNK_SIZE), MAX_REQUESTS_IN_FLIGHT, async (ids) => {
+  await mapPool(chunk(keyIds, resolveChunkSize(options.chunkSize)), options.inFlight ?? MAX_REQUESTS_IN_FLIGHT, async (ids) => {
     try {
       responses.push(await api.resolveKeys(projectId, { ...request, key_ids: ids }))
     } catch (caught) {
@@ -65,13 +75,14 @@ export async function loadRemoteStates(
   projectId: string,
   mainLanguage: string,
   keyIds: readonly string[],
+  options: ChunkOptions = {},
 ): Promise<RemoteLoad> {
   const remote = new Map<string, RemoteWithMaxLength>()
   const resolved = new Map<string, FigmaResolvedKey>()
   if (keyIds.length === 0 || mainLanguage === "") {
     return { remote, resolved, error: null }
   }
-  const { responses, error } = await resolveInChunks(api, projectId, keyIds, { languages: [mainLanguage], source: "draft", variation_option_id: null })
+  const { responses, error } = await resolveInChunks(api, projectId, keyIds, { languages: [mainLanguage], source: "draft", variation_option_id: null }, options)
   for (const response of responses) {
     for (const key of response.keys) {
       resolved.set(key.id, key)

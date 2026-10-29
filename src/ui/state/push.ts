@@ -1,4 +1,4 @@
-import type { FigmaPushResult } from "../../shared/api-types"
+import type { FigmaKeyRef, FigmaPushResult } from "../../shared/api-types"
 import { CODEGEN_SOURCE_TEXT_MAX_CHARS } from "../../shared/constants"
 import { src } from "../../shared/hash"
 import { placeholderNames } from "../../shared/icu"
@@ -21,23 +21,28 @@ import {
   writeTargets,
   type PlanContext,
   type PlanCreate,
+  type PlanDecision,
   type PushFollowUp,
   type PushPlan,
   type PushRequestChunk,
   type RemoteWithMaxLength,
 } from "../../shared/push-plan"
-import { computeSyncState } from "../../shared/sync-state"
+import { computeSyncState, type SyncState } from "../../shared/sync-state"
 import { truncateUtf16 } from "../../shared/text"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
-import type { LinkSyncResult } from "./link-sync"
+import { SCAN_UNFINISHED, type LinkSyncResult } from "./link-sync"
 import { styleFor, suggesterFor } from "./naming"
-import { mainsFirst, removeLinksBatched, runBatched, type BatchOutcome } from "./ops"
+import { mainsFirst, removeLinksBatched, runBatched, type BatchOutcome, type ScanResult } from "./ops"
 import { fetchTakenNames, fetchTextMatches, type TakenName } from "./remote"
+import type { WorkspaceChange, WorkspaceState } from "./workspace"
 
 // Push screen orchestration (§7.13): E11 text and name lookups, the plan with explicit choices from the Link
-// dialog applied, and the push itself with every follow-up write.
+// dialog applied, and the push itself with every follow-up write. While the plan is shown it follows the workspace
+// as long as it shows the plan's layers: built again from the same scan when ReRune's values change (followShown,
+// keeping the designer's choices), and from a fresh scan of the plan's layers by id before a push or a pull
+// (checkPlan), which stops when the plan changed (planSignature).
 
 export interface PushInput {
   projectId: string
@@ -55,7 +60,14 @@ export interface PreparedPush {
   context: PlanContext
   taken: Map<string, TakenName>
   userRefs: Set<string>
+  // The E11 answers of this review (texts with their matching keys, names looked up), so a plan built again from the
+  // same layers asks nothing again.
+  textMatches: Map<string, FigmaKeyRef[]>
+  looked: { texts: Set<string>; names: Set<string> }
 }
+
+// What a plan built again keeps from the review before: its E11 answers.
+export type PushLookups = Pick<PreparedPush, "taken" | "textMatches" | "looked">
 
 const RENAME_ROUNDS = 3
 
@@ -134,10 +146,14 @@ export function renameTakenSuggestions(
   return { plan: next, renamed }
 }
 
-export async function preparePush(api: Pick<FigmaApi, "keysByName">, input: PushInput): Promise<PreparedPush> {
+// `previous`: the review the plan is built again from; texts and names it looked up are not asked again. Its `taken`
+// and `looked` are shared with the new plan (answers are only ever added), so a name lookup still running for the plan
+// before reaches the new one too.
+export async function preparePush(api: Pick<FigmaApi, "keysByName">, input: PushInput, previous: PushLookups | null = null): Promise<PreparedPush> {
   const suggester = suggesterFor(input.sample, input.settings)
   const sample = new Set(input.sample)
-  const taken = new Map<string, TakenName>()
+  const taken = previous?.taken ?? new Map<string, TakenName>()
+  const looked = previous?.looked ?? { texts: new Set<string>(), names: new Set<string>() }
   const nodes = new Map(input.nodes.map((node) => [node.nodeId, node]))
   const suggestName = (node: ScannedNode) => suggester.suggest(nameSourceOf(node))
   const context: PlanContext = {
@@ -148,7 +164,21 @@ export async function preparePush(api: Pick<FigmaApi, "keysByName">, input: Push
     isTaken: (name) => sample.has(name) || taken.has(name),
     suggestName,
   }
-  const textMatches = await fetchTextMatches(api, input.projectId, unlinkedGroupTexts(input.nodes, input.projectId, input.remote))
+  const texts = unlinkedGroupTexts(input.nodes, input.projectId, input.remote)
+  const unknownTexts = texts.filter((text) => !looked.texts.has(text))
+  const textMatches = new Map<string, FigmaKeyRef[]>()
+  for (const text of texts) {
+    const known = previous?.textMatches.get(text)
+    if (known !== undefined && looked.texts.has(text)) {
+      textMatches.set(text, known)
+    }
+  }
+  for (const [text, keys] of await fetchTextMatches(api, input.projectId, unknownTexts)) {
+    textMatches.set(text, keys)
+  }
+  for (const text of unknownTexts) {
+    looked.texts.add(text)
+  }
   let plan = buildPushPlan({
     projectId: input.projectId,
     scope: input.scope,
@@ -163,14 +193,20 @@ export async function preparePush(api: Pick<FigmaApi, "keysByName">, input: Push
   const bases = new Map<string, string>()
   let toCheck = plan.creates.map((create) => create.name)
   for (let round = 0; round < RENAME_ROUNDS && toCheck.length > 0; round++) {
-    for (const [name, key] of await fetchTakenNames(api, input.projectId, toCheck)) {
-      taken.set(name, key)
+    const unknown = toCheck.filter((name) => !looked.names.has(name.trim()))
+    if (unknown.length > 0) {
+      for (const [name, key] of await fetchTakenNames(api, input.projectId, unknown)) {
+        taken.set(name, key)
+      }
+      for (const name of unknown) {
+        looked.names.add(name.trim())
+      }
     }
     const result = renameTakenSuggestions(plan, context, pendingApplied.userRefs, bases)
     plan = result.plan
     toCheck = result.renamed
   }
-  return { plan: withNameIssues(plan, context.isTaken), context, taken, userRefs: pendingApplied.userRefs }
+  return { plan: withNameIssues(plan, context.isTaken), context, taken, userRefs: pendingApplied.userRefs, textMatches, looked }
 }
 
 // After the designer edits a name: look it up (E11). The answers go into `taken`, which every later state of the
@@ -187,6 +223,311 @@ export async function lookUpNames(api: Pick<FigmaApi, "keysByName">, prepared: P
 
 export function withCheckedNames(prepared: PreparedPush): PreparedPush {
   return { ...prepared, plan: withNameIssues(prepared.plan, prepared.context.isTaken) }
+}
+
+// Entries indexed by what makes them the same entry, so carrying the choices stays linear on large plans.
+function indexBy<T>(entries: readonly T[], key: (entry: T) => string): Map<string, T> {
+  return new Map(entries.map((entry) => [key(entry), entry]))
+}
+
+const divergentKey = (entry: PushPlan["divergent"][number]) =>
+  JSON.stringify([entry.keyId, entry.remoteText, entry.variants.map((variant) => [variant.text, variant.nodeIds])])
+const conflictKey = (entry: PushPlan["conflicts"][number]) => JSON.stringify([entry.keyId, entry.figmaText, entry.remoteText, entry.nodeIds])
+const missingKey = (entry: PushPlan["missing"][number]) => JSON.stringify([entry.keyId, entry.nodeIds, entry.text])
+const createKey = (entry: PlanCreate) => JSON.stringify([entry.origin, entry.nodeIds, entry.text])
+
+// The designer's choices on a plan, carried to the plan built again (`next`), on the entries that are still the same:
+// the same layers with the same texts, in Figma and in ReRune. An entry that changed starts again from its default
+// (a conflict whose ReRune text changed is skipped again, so a push never overwrites a text nobody saw).
+export function carryDecisions(previous: PushPlan, next: PreparedPush): PreparedPush {
+  const { context } = next
+  let plan = next.plan
+  const apply = (decision: PlanDecision) => {
+    plan = applyDecision(plan, decision, context)
+  }
+  const divergent = indexBy(previous.divergent, divergentKey)
+  for (const entry of plan.divergent) {
+    divergent.get(divergentKey(entry))?.variants.forEach((variant, index) => {
+      if (variant.decision !== null) {
+        apply({ kind: "divergent", keyId: entry.keyId, variant: index, decision: variant.decision })
+      }
+    })
+  }
+  const conflicts = indexBy(previous.conflicts, conflictKey)
+  for (const entry of plan.conflicts) {
+    const before = conflicts.get(conflictKey(entry))
+    if (before !== undefined && before.decision !== entry.decision) {
+      apply({ kind: "conflict", keyId: entry.keyId, figmaText: entry.figmaText, decision: before.decision })
+    }
+  }
+  const copied = indexBy(previous.copied, (entry) => entry.nodeId + "\n" + entry.keyId)
+  for (const entry of plan.copied) {
+    const before = copied.get(entry.nodeId + "\n" + entry.keyId)
+    if (before !== undefined && before.decision !== null) {
+      apply({ kind: "copied", nodeId: entry.nodeId, decision: before.decision })
+    }
+  }
+  const missing = indexBy(previous.missing, missingKey)
+  for (const entry of plan.missing) {
+    const before = missing.get(missingKey(entry))
+    if (before !== undefined && before.decision !== entry.decision) {
+      apply({ kind: "missing", keyId: entry.keyId, decision: before.decision })
+    }
+  }
+  // Creates last: the ones made by the choices above exist now too.
+  const creates = indexBy(previous.creates, createKey)
+  for (const create of plan.creates) {
+    const before = creates.get(createKey(create))
+    if (before === undefined) {
+      continue
+    }
+    if (before.name !== create.name) {
+      apply({ kind: "create-name", ref: create.ref, name: before.name })
+    }
+    if (before.match.decision === "link" && before.match.linkKeyId !== create.match.linkKeyId) {
+      const key = create.match.candidates.find((candidate) => candidate.id === before.match.linkKeyId)
+      if (key !== undefined) {
+        apply({ kind: "create-match", ref: create.ref, decision: "link", key })
+      }
+    } else if (before.match.decision === "create" && create.match.decision !== "create") {
+      apply({ kind: "create-match", ref: create.ref, decision: "create" })
+    }
+    if (before.selected !== create.selected) {
+      apply({ kind: "create-selected", ref: create.ref, selected: before.selected })
+    }
+  }
+  return { ...next, plan: withNameIssues(plan, context.isTaken) }
+}
+
+// The plan built again from the workspace as it is now (same or newer scan), with the review's E11 answers and the
+// designer's choices.
+export async function replanPush(api: Pick<FigmaApi, "keysByName">, previous: PreparedPush, input: PushInput): Promise<PreparedPush> {
+  return carryDecisions(previous.plan, await preparePush(api, input, previous))
+}
+
+// Two plans that list the same work and the same choices have the same signature, whatever the order of their entries
+// or the refs that number them.
+export function planSignature(plan: PushPlan): string {
+  const strip = (value: unknown) => JSON.stringify(value, (key, entry: unknown) => (key === "ref" ? undefined : entry))
+  const list = (entries: readonly unknown[]) => entries.map(strip).sort()
+  return JSON.stringify({
+    creates: list(plan.creates),
+    updates: list(plan.updates),
+    divergent: list(plan.divergent),
+    conflicts: list(plan.conflicts),
+    pulls: list(plan.pulls),
+    copied: list(plan.copied),
+    missing: list(plan.missing),
+    counts: [plan.unchanged, plan.readonly, plan.otherProject, plan.invalid, plan.unknown],
+    blockedByPreview: [...plan.blockedByPreview].sort(),
+    maxLengthViolations: list(plan.maxLengthViolations),
+  })
+}
+
+// A plan built again in the background (ReRune changed, or a task wrote layers) while the plan is shown: it replaces the
+// shown one until the designer makes a choice; after that only when nothing they see changes, otherwise the screen
+// says "ReRune has new changes" and waits for Refresh.
+export function followStep(touched: boolean, shown: PushPlan, next: PushPlan): "adopt" | "note" {
+  return !touched || planSignature(shown) === planSignature(next) ? "adopt" : "note"
+}
+
+// What Update layers from ReRune would write: a pull goes ahead when a fresh scan finds the same.
+export function pullSignature(plan: PushPlan): string {
+  return JSON.stringify({ pulls: plan.pulls.map((pull) => JSON.stringify(pull)).sort(), blocked: [...plan.blockedByPreview].sort() })
+}
+
+// The rest of the plan, besides what Update layers from ReRune writes: when it changed, the pull says so.
+export function restSignature(plan: PushPlan): string {
+  return planSignature({ ...plan, pulls: [] })
+}
+
+export const KEYS_LOADING = "The layers' state in ReRune is still loading. Try again."
+export const LAYERS_CHANGED = "The layers in view changed since this review. Choose Review again."
+
+// The workspace state a plan was built from: the scan (its number, its layers) and the keys' state.
+export interface PlanBase { scanId: number; result: WorkspaceState["result"]; remote: WorkspaceState["remote"] }
+
+export function planBase(state: Pick<WorkspaceState, "scanId" | "result" | "remote">): PlanBase {
+  return { scanId: state.scanId, result: state.result, remote: state.remote }
+}
+
+// The layers a plan was built from, in scan order: a push or a pull checks these again, wherever the selection is now.
+export function planLayerIds(prepared: Pick<PreparedPush, "context">): string[] {
+  return [...prepared.context.nodes.keys()]
+}
+
+// The workspace shows the plan's layers: the scan the plan was built from (with ReRune's values read again and what
+// actions wrote), or a scan of the same layers since. Another selection's scan (the header's Reset scans the selection
+// as it is now) or a page change is not followed.
+export function showsPlanLayers(state: Pick<WorkspaceState, "scanId" | "result">, prepared: Pick<PreparedPush, "context">, base: Pick<PlanBase, "scanId">): boolean {
+  if (state.result === null) {
+    return false
+  }
+  if (state.scanId === base.scanId) {
+    return true
+  }
+  const nodes = prepared.context.nodes
+  return state.result.nodes.length === nodes.size && state.result.nodes.every((node) => nodes.has(node.nodeId))
+}
+
+export interface ReplanDeps {
+  api: Pick<FigmaApi, "keysByName">
+  state(): WorkspaceState
+  // The plan's input from the workspace state (the screen's project, settings and preferences).
+  input(state: WorkspaceState): PushInput
+}
+
+// A plan built again from the workspace, or why there is none: a scan or the keys' state is loading ("waiting"),
+// either failed ("error"), or the workspace shows other layers than the plan's ("other").
+export type Replanned = { kind: "ready"; prepared: PreparedPush; base: PlanBase } | { kind: "waiting" } | { kind: "error"; message: string } | { kind: "other" }
+
+// The plan built again from the workspace as it is now, with the E11 answers and choices of `from`. With `base`, only
+// while the workspace shows the plan's layers; without, the caller just scanned them.
+export async function replanShown(deps: ReplanDeps, from: PreparedPush, base: Pick<PlanBase, "scanId"> | null): Promise<Replanned> {
+  const state = deps.state()
+  if (state.status === "error") {
+    return { kind: "error", message: state.error ?? SCAN_UNFINISHED }
+  }
+  if (state.status === "scanning" || state.remoteStatus === "loading") {
+    return { kind: "waiting" }
+  }
+  if (state.result === null || state.status !== "ready" || (base !== null && !showsPlanLayers(state, from, base))) {
+    return { kind: "other" }
+  }
+  const remoteError = remoteLoadError(state)
+  if (remoteError !== null) {
+    return { kind: "error", message: remoteError }
+  }
+  return { kind: "ready", prepared: await replanPush(deps.api, from, deps.input(state)), base: planBase(state) }
+}
+
+// The workspace moved on while the plan is shown (a background read, an action's outcome): the plan built again
+// replaces the shown one ("adopt") until the designer makes a choice (`touched`); after that, when anything they see
+// changed, the screen keeps the plan and says "ReRune has new changes" ("note", with the base it would follow). null:
+// nothing to follow (other layers, or the workspace is loading).
+export async function followShown(
+  deps: ReplanDeps,
+  from: PreparedPush,
+  base: Pick<PlanBase, "scanId">,
+  touched: boolean,
+): Promise<{ kind: "adopt"; prepared: PreparedPush; base: PlanBase } | { kind: "note"; base: PlanBase } | null> {
+  const next = await replanShown(deps, from, base)
+  if (next.kind !== "ready") {
+    return null
+  }
+  return followStep(touched, from.plan, next.prepared.plan) === "adopt" ? { kind: "adopt", prepared: next.prepared, base: next.base } : { kind: "note", base: next.base }
+}
+
+export interface PushCheckDeps extends ReplanDeps {
+  // A shown scan of these layers by id, with their keys' state (workspace.scanLayers); null when it did not finish.
+  scanLayers(nodeIds: readonly string[]): Promise<ScanResult | null>
+}
+
+export type PushCheck = { kind: "same" | "changed"; prepared: PreparedPush; base: PlanBase } | { kind: "error"; message: string }
+
+// Before a push or a pull: the plan's layers scanned again by id (wherever the selection is now: Select on a row or
+// typing into a layer changes it) with ReRune's state, and the plan built again with the choices made. "same" when
+// `signature` (what the action acts on) did not change.
+export async function checkPlan(deps: PushCheckDeps, from: PreparedPush, signature: (plan: PushPlan) => string): Promise<PushCheck> {
+  const scanned = await deps.scanLayers(planLayerIds(from))
+  if (scanned === null) {
+    return { kind: "error", message: deps.state().error ?? SCAN_UNFINISHED }
+  }
+  const next = await replanShown(deps, from, null)
+  if (next.kind === "waiting") {
+    return { kind: "error", message: KEYS_LOADING }
+  }
+  if (next.kind === "other") {
+    return { kind: "error", message: SCAN_UNFINISHED }
+  }
+  if (next.kind === "error") {
+    return next
+  }
+  return { kind: signature(next.prepared.plan) === signature(from.plan) ? "same" : "changed", prepared: next.prepared, base: next.base }
+}
+
+// The state the listed layers show now in the workspace (the Push screen's chips): null when none of them is in the
+// shown scan or they differ.
+export function liveState(nodeIds: readonly string[], state: Pick<WorkspaceState, "result" | "remote">, projectId: string): SyncState | null {
+  const nodes = new Map((state.result?.nodes ?? []).map((node) => [node.nodeId, node]))
+  let common: SyncState | null = null
+  for (const nodeId of nodeIds) {
+    const node = nodes.get(nodeId)
+    if (node === undefined) {
+      continue
+    }
+    const sync = computeSyncState(projectId, node, node.link === null ? undefined : state.remote.get(node.link.id))
+    if (common !== null && common !== sync) {
+      return null
+    }
+    common = sync
+  }
+  return common
+}
+
+// The layers a write group changed: those of `nodeIds` without an error of their own (warnings aside).
+function withoutErrors(nodeIds: readonly string[], errors: readonly NodeError[]): string[] {
+  const failed = new Set(errors.filter((error) => !isWarning(error)).map((error) => error.nodeId))
+  return nodeIds.filter((nodeId) => !failed.has(nodeId))
+}
+
+// Update layers from ReRune as the workspace should show it at once: the layers written show the key's text, and
+// their links its src.
+export function pullChanges(plan: PushPlan, run: Pick<PullRun, "affectedNodeIds">): WorkspaceChange {
+  const affected = new Set(run.affectedNodeIds)
+  const layers: WorkspaceChange["layers"][number][] = []
+  for (const pull of plan.pulls) {
+    for (const nodeId of pull.groupNodeIds) {
+      if (affected.has(nodeId)) {
+        layers.push({ nodeId, text: pull.remoteText, src: src(pull.remoteText) })
+      }
+    }
+  }
+  return { layers }
+}
+
+type PushConflict = PushFollowUp["conflicts"][number]
+
+// A conflict the push reported, with ReRune's newest text of the key as the workspace knows it (the background reads,
+// and a read of the key just before Overwrite or Take ReRune text): the card shows it, and both act on it.
+export function currentConflict(conflict: PushConflict, remote: ReadonlyMap<string, RemoteWithMaxLength>): PushConflict {
+  const text = remote.get(conflict.keyId)?.found === true ? remote.get(conflict.keyId)?.mainText ?? null : null
+  return text === null || text === conflict.currentText ? conflict : { ...conflict, currentText: text }
+}
+
+export const CHANGED_SINCE_PUSH = "This layer changed in Figma since the push, so ReRune was left as it is. Choose Review again."
+
+// Before Overwrite: every layer of the conflict still shows the text the push sent (a scan of them by id). A layer
+// that was edited, deleted or hidden since stops it.
+export function unchangedSincePush(conflict: Pick<PushConflict, "nodeIds" | "text">, scanned: Pick<ScanResult, "nodes">): boolean {
+  const nodes = new Map(scanned.nodes.map((node) => [node.nodeId, node]))
+  const expected = src(conflict.text)
+  return conflict.nodeIds.every((nodeId) => {
+    const node = nodes.get(nodeId)
+    return node !== undefined && src(nodeText(node)) === expected
+  })
+}
+
+// Take ReRune text on a conflict the push reported: its layers show ReRune's current text.
+export function takeReRuneChanges(conflict: PushFollowUp["conflicts"][number], run: Pick<TakeReRuneRun, "affectedNodeIds">): WorkspaceChange {
+  const affected = new Set(run.affectedNodeIds)
+  return {
+    layers: conflict.nodeIds.filter((nodeId) => affected.has(nodeId)).map((nodeId) => ({ nodeId, text: conflict.currentText, src: src(conflict.currentText) })),
+    mainTexts: new Map([[conflict.keyId, conflict.currentText]]),
+  }
+}
+
+// Overwrite: when ReRune took the text, the key's text is the layer's and the links written carry its src; when it
+// changed again meanwhile, the key shows its newest text.
+export function overwriteChanges(conflict: PushFollowUp["conflicts"][number], run: Pick<PushRun, "updated" | "unchanged" | "conflicts" | "linkedNodeIds" | "writeErrors">): WorkspaceChange {
+  if (run.updated + run.unchanged > 0) {
+    return {
+      layers: withoutErrors(run.linkedNodeIds, run.writeErrors).map((nodeId) => ({ nodeId, src: src(conflict.text) })),
+      mainTexts: new Map([[conflict.keyId, conflict.text]]),
+    }
+  }
+  const again = run.conflicts.find((entry) => entry.keyId === conflict.keyId)
+  return { layers: [], mainTexts: again === undefined ? new Map() : new Map([[conflict.keyId, again.currentText]]) }
 }
 
 // The plan needs the remote state (E12) of every linked layer in scope (§7.10). When it failed to load, linked
@@ -291,12 +632,14 @@ export interface ConflictResolution {
 }
 
 // Merges one resolved post-push conflict into the latest run (functional update): each result must land on the
-// run as it is now, not on the run its click started from.
+// run as it is now, not on the run its click started from. The resolved card stays where it is (its chip shows the
+// layers' state now); an Overwrite that met a newer ReRune text again replaces it with the new conflict.
 export function resolveConflictInRun(run: PushRun, ref: string, result: ConflictResolution): PushRun {
+  const again = result.conflicts ?? []
   return {
     ...run,
     updated: run.updated + (result.updated ?? 0),
-    conflicts: run.conflicts.filter((entry) => entry.ref !== ref).concat(result.conflicts ?? []),
+    conflicts: run.conflicts.flatMap((entry) => (entry.ref !== ref ? [entry] : again.length > 0 ? again : [entry])),
     failures: run.failures.concat(result.failures ?? []),
     writeErrors: run.writeErrors.concat(result.writeErrors ?? []),
     linkSync: mergeLinkSync(run.linkSync, result.linkSync ?? null),
@@ -503,9 +846,10 @@ export async function executeOverwrite(deps: PushDeps, conflict: PushFollowUp["c
   return finishPush(deps, run, context)
 }
 
+// A layer edited in Figma since the push (it no longer shows the text the push sent) is left alone (changed_meanwhile).
 export function takeReRuneItems(conflict: PushFollowUp["conflicts"][number], nodes: Map<string, ScannedNode>): TextApplyItem[] {
   const targets = conflict.nodeIds.map((nodeId) => nodes.get(nodeId)).filter((node): node is ScannedNode => node !== undefined)
-  return writeTargets(targets).map((nodeId) => ({ nodeId, text: conflict.currentText, src: src(conflict.currentText) }))
+  return writeTargets(targets).map((nodeId) => ({ nodeId, text: conflict.currentText, src: src(conflict.currentText), expectedSrc: src(conflict.text) }))
 }
 
 export interface TakeReRuneRun {

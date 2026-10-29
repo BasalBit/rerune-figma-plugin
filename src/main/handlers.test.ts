@@ -333,6 +333,18 @@ describe("document handlers through the bus", () => {
     expect(sent).toEqual([{ type: "handler-error", forType: "scan-request", requestId: "f2", message: "frameIds must be a list of frame ids" }])
   })
 
+  it("scans text layers by id the same way (the layers of a Push review), whatever the selection", async () => {
+    const bus = setup()
+    // Text layers export too (ExportMixin), as in Figma.
+    const exportable = { exportAsync: vi.fn() }
+    const texts = [fakeText("1:1", "Pay now", exportable), fakeText("1:2", "Total", exportable), fakeText("1:3", "Hidden", { ...exportable, visible: false })]
+    onPage(figmaMock, [fakeFrame("1:0", "Checkout", texts)], [])
+    await bus.dispatch({ type: "scan-request", requestId: "t1", scope: "selection", frameIds: ["1:2", "1:1", "1:3", "99:1"] })
+    const scanned = sent.flatMap((message) => (message.type === "scan-batch" ? message.nodes : []))
+    expect(scanned.map((node) => [node.nodeId, node.characters])).toEqual([["1:2", "Total"], ["1:1", "Pay now"]])
+    expect(sent[sent.length - 1]).toMatchObject({ type: "scan-done", requestId: "t1", total: 2, missingFrameIds: ["99:1"], hiddenFrameIds: ["1:3"] })
+  })
+
   it("answers screenshots-export with frame-images-done (and refuses ids that are not a list)", async () => {
     const bus = setup()
     await bus.dispatch({ type: "screenshots-export", requestId: "s1", frameIds: ["99:1"] })

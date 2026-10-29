@@ -330,7 +330,7 @@ describe("executePush", () => {
 describe("after-push choices and pulls", () => {
   const conflict = { ref: "u1", keyId: keyId(1), keyName: "checkout_title", nodeIds: ["1:3", "I7:1;1:5", "I8:1;1:5"], text: "Checkout now", currentText: "Checkout!" }
 
-  it("merges conflicts resolved at the same time into the latest run", () => {
+  it("merges conflicts resolved at the same time into the latest run, keeping the resolved cards in place", () => {
     const other = { ...conflict, ref: "u2", keyId: keyId(2), keyName: "checkout_total" }
     const failure = { ref: "u2", reason: "source_changed" as const, message: "The source text changed in ReRune.", keyId: keyId(2), keyName: "checkout_total", nodeIds: ["1:4"] }
     const writeError = { nodeId: "1:3", code: "missing_font" as const, message: "A font in this layer is missing. Install or replace it first." }
@@ -338,7 +338,11 @@ describe("after-push choices and pulls", () => {
     // Both clicks start from `start`; the results arrive one after the other.
     const afterFirst = resolveConflictInRun(start, "u1", { writeErrors: [writeError] })
     const afterSecond = resolveConflictInRun(afterFirst, "u2", { updated: 0, conflicts: [], failures: [failure], writeErrors: [] })
-    expect(afterSecond.conflicts).toEqual([])
+    // The cards stay (their chips show the layers' state now).
+    expect(afterSecond.conflicts).toEqual([conflict, other])
+    // An Overwrite that met a newer ReRune text replaces its card with the new conflict, in place.
+    const newer = { ...conflict, currentText: "Checkout!!" }
+    expect(resolveConflictInRun(afterSecond, "u1", { conflicts: [newer] }).conflicts).toEqual([newer, other])
     expect(afterSecond.failures).toEqual([failure])
     expect(afterSecond.writeErrors).toEqual([writeError])
     expect(resolveConflictInRun(afterSecond, "u9", { updated: 1 }).updated).toBe(1)
@@ -394,9 +398,10 @@ describe("after-push choices and pulls", () => {
       ["I7:1;1:5", linkedNode("I7:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
       ["I8:1;1:5", linkedNode("I8:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
     ])
+    // A layer edited in Figma since the push (it no longer shows the pushed text) is left alone.
     expect(takeReRuneItems(conflict, nodes)).toEqual([
-      { nodeId: "1:3", text: "Checkout!", src: src("Checkout!") },
-      { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!") },
+      { nodeId: "1:3", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
+      { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
     ])
   })
 
@@ -441,9 +446,9 @@ describe("after-push choices and pulls", () => {
         type: "text-apply",
         requestId: expect.any(String),
         items: [
-          { nodeId: "1:3", text: "Checkout!", src: src("Checkout!") },
-          { nodeId: "1:9", text: "Checkout!", src: src("Checkout!") },
-          { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!") },
+          { nodeId: "1:3", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
+          { nodeId: "1:9", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
+          { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
         ],
       },
     ])

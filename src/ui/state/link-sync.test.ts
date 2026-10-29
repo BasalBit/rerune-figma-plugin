@@ -770,8 +770,8 @@ describe("the page sync in the app and on Layers", () => {
     expect(AUTO_SYNC_RUNNING).toBe("Link sync is on. Syncing the links on this page…")
   })
 
-  it("drops the request and the note on sign-out and when a project is picked", () => {
-    expect(appSource.match(/setLink\(null\)\n {4}pageSync\.reset\(\)\n {4}refreshRequests\.reset\(\)\n {4}workspace\.clear\(true\)/g)).toHaveLength(2)
+  it("drops the request and the note on sign-out, when a project is picked and when the project is gone", () => {
+    expect(appSource.match(/setLink\(null\)\n {4}pageSync\.reset\(\)\n {4}refreshRequests\.reset\(\)\n {4}workspace\.clear\(true\)/g)).toHaveLength(3)
     expect(body(appSource, "async function pickProject(")).toContain("pageSync.reset()")
   })
 
