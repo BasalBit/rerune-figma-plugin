@@ -470,6 +470,25 @@ describe("createRefreshRequests: Update screenshots (§6.4)", () => {
     ])
   })
 
+  it("keeps the requests of step 6 when a read that started before the run answers after it", async () => {
+    const before = [screenshot(1, "10:1"), screenshot(3, "12:1")]
+    const during = screenshot(3, "12:1", { at: "2026-10-29T10:05:00Z", by: "Grace Hopper" })
+    // Step 1 and step 6 (the late read below answers on its own).
+    const h = harness({ reads: [before, [during]] })
+    let answer: () => void = () => {}
+    h.api.screenshots.mockImplementationOnce(
+      () => new Promise<FigmaScreenshotsResponse>((resolve) => (answer = () => resolve({ screenshots: before, next_cursor: null, has_more: false }))),
+    )
+    // A push's upload ended: its refetch is still waiting for E20 when Update screenshots starts.
+    const late = h.refresh.fetch()
+    await h.refresh.run()
+    answer()
+    await late
+    const state = h.refresh.store.get()
+    expect(state.requests.map(requestKey)).toEqual([requestKey(refreshRequestOf(during) as RefreshRequest)])
+    expect(refreshNotice(state.requests, state.dismissed)?.message).toBe("ReRune asks for new screenshots of 1 frame in this file.")
+  })
+
   it("puts every request of a stopped run aside, also the frames it did not reach", async () => {
     const h = harness({
       reads: [[screenshot(1, "10:1"), screenshot(3, "12:1")]],

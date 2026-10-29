@@ -340,6 +340,8 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
       return
     }
     const mine = generation
+    // A read that started before the run answers with older requests than the run's own reads: it is dropped.
+    fetches++
     stopped = false
     store.set((state) => ({ ...state, running: { step: "scanning" }, stopping: false, outcome: null }))
     let outcome: RefreshOutcome = { kind: "error", message: SCAN_UNFINISHED }
