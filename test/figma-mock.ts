@@ -431,8 +431,9 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
       if (field === "fontName") {
         requireLoaded(next as FakeFont)
       }
+      const detach = TEXT_STYLE_FIELDS.has(field) ? { textStyleId: "" } : {}
       for (let i = start; i < end; i++) {
-        styles[i] = { ...styles[i], [field]: clone(next) }
+        styles[i] = { ...styles[i], [field]: clone(next), ...detach }
       }
     })
   Object.defineProperties(text, {
@@ -551,7 +552,7 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
         } else {
           bound[field] = { type: "VARIABLE_ALIAS", id: variable.id }
         }
-        styles[i] = { ...styles[i], boundVariables: bound }
+        styles[i] = { ...styles[i], boundVariables: bound, textStyleId: "" }
       }
     }),
   })
@@ -616,6 +617,10 @@ function storedOverrides(instance: FakeInstance): FakeOverride[] | undefined {
   const list = typeof stored === "function" ? (stored as () => unknown)() : stored
   return Array.isArray(list) ? (list as FakeOverride[]) : undefined
 }
+
+// Setting a property that a text style governs detaches the style from that range, as in Figma (also when the
+// value equals the style's). Every variable-bindable text field is one of them.
+const TEXT_STYLE_FIELDS: ReadonlySet<keyof FakeStyle> = new Set<keyof FakeStyle>(["fontName", "fontSize", "letterSpacing", "lineHeight", "textCase", "textDecoration", "paragraphSpacing"])
 
 function uniqueFonts(styles: FakeStyle[]): FakeFont[] {
   const seen = new Map<string, FakeFont>()

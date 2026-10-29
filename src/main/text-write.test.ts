@@ -331,6 +331,41 @@ describe("preview-reset (§7.14 reset)", () => {
     expect(node.setRangeBoundVariable).toHaveBeenLastCalledWith(6, 11, "fontSize", { id: "V:size", name: "size" })
   })
 
+  it("keeps a whole-text style after reset: the style goes on after the paragraph and variable setters", async () => {
+    figmaMock.textStyles.set("S:title", { fontName: BOLD, fontSize: 28, lineHeight: { unit: "PIXELS", value: 34 }, paragraphSpacing: 0 })
+    figmaMock.loadedFonts.add("Inter\u0000Bold")
+    const node = fakeText("1:1", "Find your next world.")
+    await node.setRangeTextStyleIdAsync(0, node.characters.length, "S:title")
+    onPage(figmaMock, [node])
+    const original = segmentsOf(node)
+    await previewed(node, "Finde deine nächste Welt.")
+
+    expect(await resetPreview("page", undefined, undefined)).toEqual({ done: 1, errors: [] })
+    expect(node.characters).toBe("Find your next world.")
+    expect(segmentsOf(node)).toEqual(original)
+    expect(node.getStyledTextSegments(["textStyleId"]).map((segment) => segment.textStyleId)).toEqual(["S:title"])
+    expect(node.setRangeParagraphSpacing).not.toHaveBeenCalled()
+  })
+
+  it("restores the style of one styled segment last, so a following setter cannot detach it", async () => {
+    figmaMock.textStyles.set("S:heading", { fontName: BOLD, fontSize: 24 })
+    figmaMock.loadedFonts.add("Inter\u0000Bold")
+    const node = fakeText("1:1", "Hello brave world")
+    await node.setRangeTextStyleIdAsync(0, 5, "S:heading")
+    node.setRangeHyperlink(0, 5, { type: "URL", value: "https://rerune.io" })
+    onPage(figmaMock, [node])
+    const original = segmentsOf(node)
+    await previewed(node, "Hallo mutige Welt")
+    node.setRangeTextStyleIdAsync.mockClear()
+    node.setRangeHyperlink.mockClear()
+
+    expect(await resetPreview("page", undefined, undefined)).toEqual({ done: 1, errors: [] })
+    expect(segmentsOf(node)).toEqual(original)
+    const styleCall = node.setRangeTextStyleIdAsync.mock.invocationCallOrder.at(-1) ?? 0
+    const linkCall = node.setRangeHyperlink.mock.invocationCallOrder.find((order, index) => node.setRangeHyperlink.mock.calls[index][0] === 0) ?? Infinity
+    expect(styleCall).toBeGreaterThan(linkCall)
+  })
+
   it("resets only the selection in selection scope", async () => {
     const a = fakeText("1:1", "A text")
     const b = fakeText("1:2", "B text")
