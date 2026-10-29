@@ -9,6 +9,7 @@ import { nodeText } from "../../shared/push-plan"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
+import { KeyTag } from "../brand/key-tag"
 import { Chip, ErrorGroups, ErrorNote, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { keyNameOf } from "../state/layers"
 import {
@@ -291,7 +292,7 @@ export function LinkDialog(props: LinkDialogProps) {
           {currentKey !== null && (
             <div style={styles.wrapRow}>
               <Small>Linked to</Small>
-              <span style={styles.mono}>{currentKey}</span>
+              <KeyTag name={currentKey} />
               {single?.linkState === "inherited" && <Chip>From main component</Chip>}
               {single?.linkState === "copied" && <Chip tone="warning">Copied</Chip>}
               {single?.linkState === "inherited_overridden" && <Chip tone="warning">Text overridden</Chip>}
@@ -314,7 +315,9 @@ export function LinkDialog(props: LinkDialogProps) {
         <div style={styles.tightStack}>
           {exact.candidates.map((candidate) => (
             <div key={candidate.id} style={{ ...styles.row, ...styles.card, flexDirection: "row" }}>
-              <span style={{ ...styles.grow, ...styles.mono }}>{candidate.key}</span>
+              <span style={styles.grow}>
+                <KeyTag name={candidate.key} />
+              </span>
               <Button disabled={busy || props.readOnly} onClick={() => choose(candidate)}>
                 Link to {candidate.key.length > 24 ? candidate.key.slice(0, 23) + "…" : candidate.key}
               </Button>
@@ -333,10 +336,13 @@ export function LinkDialog(props: LinkDialogProps) {
               type="button"
               disabled={busy || props.readOnly}
               onClick={() => choose({ id: item.id, key: item.key, main_content: item.main_content })}
+              class="rr-focus"
               style={{ ...styles.card, textAlign: "left", cursor: "pointer", background: "transparent", color: "var(--figma-color-text)", font: "inherit" }}
             >
               <div style={styles.wrapRow}>
-                <span style={{ ...styles.grow, ...styles.mono }}>{item.key}</span>
+                <span style={styles.grow}>
+                  <KeyTag name={item.key} />
+                </span>
                 {MATCH_LABELS[item.match] !== "" && <Chip tone="info">{MATCH_LABELS[item.match]}</Chip>}
                 {item.max_length !== null && <Chip>max {item.max_length}</Chip>}
               </div>

@@ -9,7 +9,8 @@ import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { copyText } from "../clipboard"
 import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
-import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { KeyTag } from "../brand/key-tag"
+import { CheckInput, Chip, ErrorGroups, ErrorNote, FieldLabel, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import { buildPseudoPreview, languageLabel, type PseudoBuild, type RenderChoices } from "../state/preview"
@@ -95,7 +96,8 @@ const NO_VARIATION = "__none__"
 
 export const PSEUDO_EXAMPLE = "Pay now"
 
-const KIND_TONES: Record<ReportKind, "warning" | "danger" | "info"> = { clipped: "danger", truncated: "warning", exceeds_parent: "warning", max_length: "info" }
+// Text cut off (clipped, truncated) is danger; text that runs outside its frame or past the key's max length, warning.
+const KIND_TONES: Record<ReportKind, "warning" | "danger"> = { clipped: "danger", truncated: "danger", exceeds_parent: "warning", max_length: "warning" }
 
 interface PseudoApplied { build: PseudoBuild; done: number; errors: ErrorGroup[] }
 
@@ -279,11 +281,11 @@ export function QaScreen(props: QaScreenProps) {
       <ScreenBody notices={props.notices} stack>
         {props.readOnly && <Note tone="warning">This file is connected to a different ReRune server.</Note>}
         <div style={styles.tightStack}>
-          <Small muted>Apply to</Small>
+          <FieldLabel>Apply to</FieldLabel>
           <SegmentedControl value={scope} options={SCOPE_OPTIONS} disabled={busy !== null} onValueChange={(value) => setScope(value as Scope)} />
         </div>
         <div style={styles.tightStack}>
-          <Small muted>Languages</Small>
+          <FieldLabel>Languages</FieldLabel>
           {project.languages.length === 0 ? (
             <Note tone="warning">This project has no languages yet.</Note>
           ) : (
@@ -296,12 +298,12 @@ export function QaScreen(props: QaScreenProps) {
           )}
         </div>
         <div style={styles.tightStack}>
-          <Small muted>Source</Small>
+          <FieldLabel>Source</FieldLabel>
           <SegmentedControl value={source} options={SOURCE_OPTIONS} disabled={busy !== null} onValueChange={(value) => onSession({ source: value as ResolveSource })} />
         </div>
         {project.variation_options.length > 0 && (
           <div style={styles.tightStack}>
-            <Small muted>Variation</Small>
+            <FieldLabel>Variation</FieldLabel>
             <Dropdown value={variation ?? NO_VARIATION} options={variationOptions} disabled={busy !== null} onValueChange={(value) => onSession({ variation: value === NO_VARIATION ? null : value })} />
           </div>
         )}
@@ -377,7 +379,7 @@ export function QaScreen(props: QaScreenProps) {
             real translations arrive. Placeholders like {"{{name}}"} stay as they are.
           </Small>
           <Small muted>
-            {PSEUDO_EXAMPLE} → {pseudoLocalize(PSEUDO_EXAMPLE)}
+            <span class="rr-code">{PSEUDO_EXAMPLE}</span> → <span class="rr-code">{pseudoLocalize(PSEUDO_EXAMPLE)}</span>
           </Small>
           <Small muted>Every text layer in scope is changed until you reset it, linked or not. Pseudo text is never pushed.</Small>
         </div>
@@ -457,7 +459,11 @@ function LanguageReportView(props: { language: LanguageReport; report: OverflowR
                 {preview(node?.name ?? row.nodeId, 60)}
                 {node?.frameName ? " · " + preview(node.frameName, 40) : ""}
               </Small>
-              {node?.keyName ? <div style={styles.mono}>{node.keyName}</div> : null}
+              {node?.keyName ? (
+                <div>
+                  <KeyTag name={node.keyName} />
+                </div>
+              ) : null}
             </div>
             <TextButton onClick={() => props.onSelect([row.nodeId])}>Select</TextButton>
           </div>

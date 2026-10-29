@@ -6,7 +6,10 @@ import type { ScannedNode, Scope } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
-import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, Small, styles, TextButton } from "../components/ui"
+import { EmptyState } from "../brand/empty-state"
+import { KeyTag } from "../brand/key-tag"
+import { BADGE_TONE, LAYER_CHIP_TONE } from "../brand/status"
+import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import {
   BADGE_LABELS,
@@ -21,7 +24,6 @@ import {
   searchRows,
   skippedSummary,
   STATE_LABELS,
-  STATE_TONES,
   unlinkableIds,
   unlinkedTexts,
   type LayerRow,
@@ -263,6 +265,8 @@ export function LayersScreen(props: LayersScreenProps) {
               <button
                 key={entry}
                 type="button"
+                class="rr-focus"
+                aria-pressed={filter === entry}
                 onClick={() => setFilter(entry)}
                 style={{
                   border: "1px solid " + (filter === entry ? "var(--figma-color-border-brand-strong)" : "var(--figma-color-border)"),
@@ -290,12 +294,12 @@ export function LayersScreen(props: LayersScreenProps) {
         <ErrorNote message={error} />
         {scanning && <Loading label={state.progress > 0 ? "Scanning… " + state.progress + " layers" : "Scanning…"} />}
         {state.status === "idle" && (
-          <Note tone="info">
+          <EmptyState>
             {state.scope === "selection" ? "Select frames or text layers, then scan." : "Scan this page to list its text layers."}
-          </Note>
+          </EmptyState>
         )}
         {state.status === "ready" && rows.length === 0 && (
-          <Note tone="info">{state.scope === "selection" ? "No text layers in the selection. Select frames or text, then scan again." : "No text layers on this page."}</Note>
+          <EmptyState>{state.scope === "selection" ? "No text layers in the selection. Select frames or text, then scan again." : "No text layers on this page."}</EmptyState>
         )}
         {state.result?.truncated === true && <Note tone="warning">Only the first 5,000 text layers are listed. Scan a smaller selection to see the rest.</Note>}
         {state.remoteStatus === "loading" && <Small muted>Loading key status from ReRune…</Small>}
@@ -333,7 +337,7 @@ export function LayersScreen(props: LayersScreenProps) {
         )}
         {groups.map((group) => (
           <div key={group.key} style={{ marginBottom: "8px" }}>
-            <div style={{ ...styles.sectionTitle, margin: "8px 0 4px" }}>{group.title}</div>
+            <SectionTitle style={{ margin: "8px 0 4px" }}>{group.title}</SectionTitle>
             <div style={styles.tightStack}>
               {group.rows.map((row) => (
                 <LayerRowView key={row.node.nodeId} row={row} checked={checked.has(row.node.nodeId)} openDisabled={held} onToggle={() => toggle(row.node.nodeId)} onOpen={() => props.onOpenLink([row.node])} />
@@ -392,17 +396,19 @@ function LayerRowView(props: { row: LayerRow; checked: boolean; openDisabled: bo
       <CheckInput checked={props.checked} onChange={props.onToggle} style={{ marginTop: "2px" }} label={"Select " + row.node.name} />
       <button
         type="button"
+        class="rr-focus"
         disabled={props.openDisabled}
         onClick={props.onOpen}
         style={{ ...styles.grow, background: "none", border: "none", padding: "0", textAlign: "left", cursor: props.openDisabled ? "default" : "pointer", color: "var(--figma-color-text)", font: "inherit" }}
       >
         <div style={{ ...styles.clamp, fontSize: "12px" }}>{preview(row.text, 160) || "(empty)"}</div>
-        <div style={{ ...styles.wrapRow, marginTop: "2px" }}>
-          <Chip tone={STATE_TONES[row.state]}>{STATE_LABELS[row.state]}</Chip>
-          {row.keyName !== null && <span style={{ ...styles.mono, ...styles.muted }}>{row.keyName}</span>}
-          {row.pendingName !== null && <span style={{ ...styles.mono, ...styles.muted }}>→ {row.pendingName}</span>}
+        <div style={{ ...styles.wrapRow, gap: "4px", marginTop: "4px" }}>
+          <Chip tone={LAYER_CHIP_TONE[row.state]}>{STATE_LABELS[row.state]}</Chip>
+          {row.keyName !== null && <KeyTag name={row.keyName} />}
+          {row.pendingName !== null && <Chip tone={BADGE_TONE.pending}>{BADGE_LABELS.pending}</Chip>}
+          {row.pendingName !== null && <KeyTag name={row.pendingName} pending />}
           {row.badges.filter((badge) => badge !== "pending").map((badge) => (
-            <Chip key={badge} tone={badge === "missing_font" ? "danger" : badge === "preview" ? "info" : "neutral"}>
+            <Chip key={badge} tone={BADGE_TONE[badge]}>
               {BADGE_LABELS[badge]}
             </Chip>
           ))}
@@ -438,7 +444,7 @@ function UnresolvedLinks(props: { links: readonly FigmaLink[]; disabled: boolean
         {shown.map((link) => (
           <div key={link.node_id} style={styles.row}>
             <span style={styles.grow}>
-              <span style={styles.mono}>{link.key}</span>
+              <KeyTag name={link.key} />
               <span style={styles.muted}> · {[link.node_name, link.frame_name].filter((name) => name !== "").join(" in ") || link.node_id}</span>
             </span>
             <TextButton disabled={props.disabled} onClick={() => props.onRemove([link])}>

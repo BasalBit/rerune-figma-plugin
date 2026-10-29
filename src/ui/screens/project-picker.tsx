@@ -6,6 +6,7 @@ import type { ParsedFigmaUrl } from "../../shared/figma-url"
 import type { StoredAuth } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
+import { EmptyState } from "../brand/empty-state"
 import { FILE_LINK_PLACEHOLDER, FileLinkFeedback } from "../components/file-link"
 import { Chip, ErrorNote, Loading, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { readFileLinkInput } from "../state/file-link"
@@ -13,7 +14,7 @@ import { groupProjects, permissionLabel } from "../state/projects"
 
 // Project (§7.8): organisations and projects from E8 with permission badges; picking one connects the file
 // (settings-save), with the pasted Figma file link when one is given (Phase 2, §7.7). Account and Sign out at
-// the bottom.
+// the bottom. The connected project's card has ReRune's amber edge and a ReRune "Connected" chip.
 
 export interface ProjectScreenProps {
   api: Pick<FigmaApi, "projects">
@@ -86,7 +87,7 @@ export function ProjectScreen(props: ProjectScreenProps) {
   return (
     <div style={styles.page}>
       <div style={styles.body}>
-        <div style={{ fontSize: "13px", fontWeight: "600", marginBottom: "4px" }}>Choose a ReRune project</div>
+        <div style={{ fontSize: "13px", lineHeight: "18px", fontWeight: "600", marginBottom: "4px", color: "var(--rr-ink)" }}>Choose a ReRune project</div>
         <Small muted>The file remembers this project for everyone who opens it with the plugin.</Small>
         <div style={{ height: "8px" }} />
         {props.banner !== null && <Note tone="warning">{props.banner}</Note>}
@@ -127,7 +128,7 @@ export function ProjectScreen(props: ProjectScreenProps) {
           </div>
         )}
         {data !== null && data.projects.length === 0 && (
-          <Note tone="info">You aren't a member of any ReRune project yet. Ask a project owner to invite you, or create a project in ReRune.</Note>
+          <EmptyState>You aren't a member of any ReRune project yet. Ask a project owner to invite you, or create a project in ReRune.</EmptyState>
         )}
         {groups.map((group) => (
           <div key={group.organisation}>
@@ -141,19 +142,21 @@ export function ProjectScreen(props: ProjectScreenProps) {
                     key={project.id}
                     type="button"
                     disabled={picking !== null}
+                    class="rr-focus"
                     onClick={() => choose(project)}
                     style={{
                       ...styles.card,
                       textAlign: "left",
                       cursor: picking !== null ? "default" : "pointer",
-                      background: current ? "var(--figma-color-bg-brand-tertiary)" : "transparent",
+                      background: "transparent",
+                      borderColor: current ? "var(--rr-amber)" : "var(--figma-color-border)",
                       color: "var(--figma-color-text)",
                       font: "inherit",
                     }}
                   >
                     <div style={styles.row}>
-                      <span style={{ ...styles.grow, fontWeight: "600", overflowWrap: "anywhere" }}>{project.name}</span>
-                      {current && <Chip tone="info">Connected</Chip>}
+                      <span style={{ ...styles.grow, fontWeight: "600", fontSize: "12px", overflowWrap: "anywhere" }}>{project.name}</span>
+                      {current && <Chip tone="rerune">Connected</Chip>}
                       {picking === project.id && <Small muted>Connecting…</Small>}
                     </div>
                     <div style={styles.wrapRow}>
@@ -172,7 +175,7 @@ export function ProjectScreen(props: ProjectScreenProps) {
       </div>
       <div style={styles.footer}>
         <div style={{ ...styles.grow, ...styles.small }}>
-          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={props.auth.user.email}>
+          <div style={{ ...styles.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={props.auth.user.email}>
             {props.auth.user.email}
           </div>
           <TextButton onClick={props.onSignOut}>Sign out</TextButton>

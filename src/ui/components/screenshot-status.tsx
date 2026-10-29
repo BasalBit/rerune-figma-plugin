@@ -15,7 +15,7 @@ export function ScreenshotStatus(props: { state: ShotsState; stopping: boolean; 
   if (state.kind === "running") {
     return (
       <Note
-        tone="info"
+        tone="rerune"
         actions={
           <TextButton disabled={props.stopping} onClick={props.onStop}>
             {props.stopping ? "Stopping…" : "Stop"}

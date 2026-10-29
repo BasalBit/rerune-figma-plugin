@@ -19,5 +19,4 @@ export const styles = {
   small: { fontSize: "11px", lineHeight: "16px" } as JSX.CSSProperties,
   stack: { display: "flex", flexDirection: "column", gap: "8px" } as JSX.CSSProperties,
   tightStack: { display: "flex", flexDirection: "column", gap: "4px" } as JSX.CSSProperties,
-  sectionTitle: { fontWeight: "600", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--figma-color-text-secondary)", margin: "12px 0 6px" } as JSX.CSSProperties,
 }

@@ -1,5 +1,6 @@
 import { Button } from "@create-figma-plugin/ui"
 import { h } from "preact"
+import { Mark } from "../brand/mark"
 import { groupErrors } from "../state/ops"
 import {
   framesLine,
@@ -51,7 +52,7 @@ export function RefreshRequestsNote(props: RefreshRequestsNoteProps) {
     if (step.step === "uploading") {
       return <ScreenshotStatus state={{ kind: "running", run: step.run }} stopping={state.stopping} onStop={props.onStop} onSelect={props.onSelect} />
     }
-    return <Note tone="info">{refreshStepText(step)}</Note>
+    return <Note tone="rerune">{refreshStepText(step)}</Note>
   }
   if (state.outcome === null && notice === null) {
     return null
@@ -61,7 +62,8 @@ export function RefreshRequestsNote(props: RefreshRequestsNoteProps) {
       {state.outcome !== null && <Outcome outcome={state.outcome} props={props} />}
       {notice !== null && (
         <Note
-          tone="info"
+          tone="rerune"
+          icon={<Mark size={18} />}
           actions={
             <div style={styles.wrapRow}>
               <Button disabled={props.busy} onClick={props.onRun}>
@@ -88,7 +90,7 @@ function Outcome(props: { outcome: RefreshOutcome; props: RefreshRequestsNotePro
   switch (outcome.kind) {
     case "none":
       return (
-        <Note tone="info" actions={dismiss}>
+        <Note tone="rerune" actions={dismiss}>
           {NO_REQUESTS_LEFT}
         </Note>
       )
@@ -145,6 +147,7 @@ function DoneOutcome(props: { outcome: Extract<RefreshOutcome, { kind: "done" }>
     <div style={styles.stack}>
       <Note
         tone={warning ? "warning" : "good"}
+        postmark={!warning}
         actions={
           <div style={styles.row}>
             {left.length > 1 && (

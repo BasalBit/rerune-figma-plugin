@@ -2,12 +2,16 @@ import { Dropdown, SegmentedControl } from "@create-figma-plugin/ui"
 import { h, type JSX } from "preact"
 import { CODEGEN_PLATFORMS, type CodegenPlatform } from "../../codegen/snippets"
 import type { FigmaResolveSource } from "../../shared/api-types"
+import { EmptyState } from "../brand/empty-state"
+import { KeyTag } from "../brand/key-tag"
+import { BrandMark } from "../brand/mark"
 import { Chip, ErrorNote, Loading, Note, Small, styles, TextButton } from "../components/ui"
 import { INSPECT_TRUNCATED_NOTE, NO_LANGUAGES_NOTE, valueMarker, type InspectKeyView, type InspectLoadStatus, type InspectModel, type InspectValueView } from "../state/inspect"
 
 // Dev Mode inspect panel (§7.17): per linked key its name with Copy, status, max length, values for every project
 // language (Draft/Published) with inherited/missing markers, the snippet for the chosen platform with Copy, and
-// Open in ReRune. Read-only. Laid out for the 300 px minimum width of the inspect panel.
+// Open in ReRune. Read-only. Laid out for the 300 px minimum width of the inspect panel: the header has the mark tile
+// without the wordmark, key names are key tags that wrap after their separators.
 
 export interface InspectScreenProps {
   projectName: string
@@ -47,7 +51,7 @@ const codeStyle: JSX.CSSProperties = {
 }
 
 const valueRowStyle: JSX.CSSProperties = { display: "flex", gap: "8px", alignItems: "flex-start" }
-const langStyle: JSX.CSSProperties = { ...styles.mono, flexShrink: "0", width: "52px", color: "var(--figma-color-text-secondary)", paddingTop: "1px" }
+const langStyle: JSX.CSSProperties = { ...styles.mono, flexShrink: "0", width: "52px", color: "var(--rr-muted)", paddingTop: "1px" }
 
 function copyId(kind: "name" | "snippet", keyId: string): string {
   return kind + ":" + keyId
@@ -83,7 +87,9 @@ function KeyCard(props: { view: InspectKeyView; copied: string | null; onCopy(id
   return (
     <div style={styles.card}>
       <div style={{ ...styles.row, alignItems: "flex-start" }}>
-        <div style={{ ...styles.grow, ...styles.mono, fontWeight: "600", fontSize: "12px" }}>{view.keyName}</div>
+        <div style={styles.grow}>
+          <KeyTag name={view.keyName} large />
+        </div>
         <TextButton onClick={() => props.onCopy(nameId, view.keyName)}>{props.copied === nameId ? "Copied" : "Copy"}</TextButton>
       </div>
       {view.chips.length > 0 && (
@@ -125,6 +131,7 @@ export function InspectScreen(props: InspectScreenProps) {
     <div style={styles.page}>
       <div style={{ borderBottom: "1px solid var(--figma-color-border)", padding: "8px 12px", ...styles.stack }}>
         <div style={styles.row}>
+          <BrandMark wordmark={false} />
           <div style={{ ...styles.grow, fontWeight: "600", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={props.projectName}>
             {props.projectName}
           </div>
@@ -142,8 +149,8 @@ export function InspectScreen(props: InspectScreenProps) {
       <div style={{ ...styles.body, ...styles.stack }}>
         {props.noLanguages && <Note tone="warning">{NO_LANGUAGES_NOTE}</Note>}
         <ErrorNote message={props.status === "error" ? props.error : null} onRetry={props.onRefresh} />
-        {model.kind === "empty" && <Small muted>Select a text layer or a frame to see its ReRune keys.</Small>}
-        {model.kind === "unlinked" && <Small muted>No ReRune key is linked to this layer.</Small>}
+        {model.kind === "empty" && <EmptyState>Select a text layer or a frame to see its ReRune keys.</EmptyState>}
+        {model.kind === "unlinked" && <EmptyState>No ReRune key is linked to this layer.</EmptyState>}
         {model.kind === "keys" && props.status === "loading" && props.views.every((view) => view.loading) && <Loading label="Loading values…" />}
         {props.views.map((view) => (
           <KeyCard key={view.keyId} view={view} copied={props.copied} onCopy={props.onCopy} onOpen={props.onOpen} />

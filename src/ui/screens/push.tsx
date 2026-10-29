@@ -8,6 +8,7 @@ import { applyDecision, blockedUpdateNodeIds, maxLengthCheck, type PlanCreate, t
 import { userMessage } from "../api/client"
 import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
+import { KeyTag } from "../brand/key-tag"
 import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { ScreenshotStatus, type ShotsState } from "../components/screenshot-status"
@@ -411,12 +412,12 @@ export function PushScreen(props: PushScreenProps) {
               return (
                 <div key={update.ref} style={styles.card}>
                   <div style={styles.wrapRow}>
-                    <span style={{ ...styles.grow, ...styles.mono }}>{update.keyName}</span>
+                    <span style={styles.grow}><KeyTag name={update.keyName} /></span>
                     {update.origin.kind === "conflict" && <Chip tone="warning">Overwrite</Chip>}
                     <TextButton onClick={() => props.onSelect(update.nodeIds)}>Select</TextButton>
                   </div>
-                  <Small muted>ReRune: {preview(update.expectedText, 160) || "(empty)"}</Small>
-                  <Small>Figma: {preview(update.text, 160)}</Small>
+                  <Small muted><Side>ReRune:</Side> {preview(update.expectedText, 160) || "(empty)"}</Small>
+                  <Small><Side>Figma:</Side> {preview(update.text, 160)}</Small>
                   {violation !== undefined && (
                     <Small style={{ color: "var(--figma-color-text-danger)" }}>
                       Longer than the key's max length ({violation.length}/{violation.maxLength}). Shorten the text before pushing.
@@ -429,9 +430,9 @@ export function PushScreen(props: PushScreenProps) {
             {plan.divergent.map((entry) => (
               <div key={entry.keyId} style={styles.card}>
                 <div style={styles.wrapRow}>
-                  <span style={{ ...styles.grow, ...styles.mono }}>{entry.keyName}</span>
+                  <span style={styles.grow}><KeyTag name={entry.keyName} /></span>
                 </div>
-                <Small muted>ReRune: {preview(entry.remoteText, 160) || "(empty)"}</Small>
+                <Small muted><Side>ReRune:</Side> {preview(entry.remoteText, 160) || "(empty)"}</Small>
                 {entry.variants.map((variant, index) => (
                   <div key={index} style={styles.tightStack}>
                     <div style={styles.row}>
@@ -458,11 +459,11 @@ export function PushScreen(props: PushScreenProps) {
             {plan.conflicts.map((conflict) => (
               <div key={conflict.keyId + conflict.figmaText} style={styles.card}>
                 <div style={styles.wrapRow}>
-                  <span style={{ ...styles.grow, ...styles.mono }}>{conflict.keyName}</span>
+                  <span style={styles.grow}><KeyTag name={conflict.keyName} /></span>
                   <TextButton onClick={() => props.onSelect(conflict.nodeIds)}>Select</TextButton>
                 </div>
-                <Small muted>ReRune: {preview(conflict.remoteText, 160) || "(empty)"}</Small>
-                <Small>Figma: {preview(conflict.figmaText, 160)}</Small>
+                <Small muted><Side>ReRune:</Side> {preview(conflict.remoteText, 160) || "(empty)"}</Small>
+                <Small><Side>Figma:</Side> {preview(conflict.figmaText, 160)}</Small>
                 <TooLong text={conflict.figmaText} maxLength={conflict.maxLength} action="Overwrite ReRune is blocked." />
                 <Choice
                   value={conflict.decision}
@@ -479,7 +480,7 @@ export function PushScreen(props: PushScreenProps) {
             {plan.copied.map((entry) => (
               <div key={entry.nodeId} style={styles.card}>
                 <div style={styles.wrapRow}>
-                  <span style={{ ...styles.grow, ...styles.mono }}>{entry.keyName}</span>
+                  <span style={styles.grow}><KeyTag name={entry.keyName} /></span>
                   <TextButton onClick={() => props.onSelect([entry.nodeId])}>Select</TextButton>
                 </div>
                 <Small muted>{preview(nodesOf([entry.nodeId])[0]?.characters ?? "", 160)}</Small>
@@ -497,7 +498,7 @@ export function PushScreen(props: PushScreenProps) {
             {plan.missing.map((entry) => (
               <div key={entry.keyId} style={styles.card}>
                 <div style={styles.wrapRow}>
-                  <span style={{ ...styles.grow, ...styles.mono }}>{entry.keyName}</span>
+                  <span style={styles.grow}><KeyTag name={entry.keyName} /></span>
                   <TextButton onClick={() => props.onSelect(entry.nodeIds)}>Select</TextButton>
                 </div>
                 <Small muted>The key no longer exists. {preview(entry.text, 120)}</Small>
@@ -516,7 +517,7 @@ export function PushScreen(props: PushScreenProps) {
               <div>
                 <SectionTitle>Changed in ReRune ({plan.pulls.length})</SectionTitle>
                 <Note
-                  tone="info"
+                  tone="rerune"
                   actions={
                     <Button secondary disabled={busy || props.readOnly || pulled !== null || !canPull(plan)} loading={pulling} onClick={() => void pull()}>
                       Update layers from ReRune
@@ -552,6 +553,11 @@ export function PushScreen(props: PushScreenProps) {
       </div>
     </div>
   )
+}
+
+// "ReRune:" / "Figma:" before the two texts of a change: which side each one is.
+function Side(props: { children: string }) {
+  return <span style={{ fontWeight: "600", color: "var(--figma-color-text)" }}>{props.children}</span>
 }
 
 // max_length (§7.13 rule 9, §7.18.3): the Figma text is longer than the key allows, so the update is held back.
@@ -675,9 +681,11 @@ function Results(props: {
     run.textsApplied > 0 ? plural(run.textsApplied, "layer updated from ReRune", "layers updated from ReRune") : null,
     run.unlinked > 0 ? plural(run.unlinked, "layer unlinked", "layers unlinked") : null,
   ].filter((part): part is string => part !== null)
+  // A clean run (nothing failed, no conflicts) gets the postmark.
+  const clean = run.failures.length === 0 && run.conflicts.length === 0
   return (
     <div style={styles.stack}>
-      <Note tone={run.failures.length === 0 && run.conflicts.length === 0 ? "good" : "info"}>
+      <Note tone={clean ? "good" : "info"} postmark={clean}>
         {done.length > 0 ? done.join(" · ") + "." : "Nothing was changed."} Drafts are never published from Figma.
       </Note>
       {linkSyncWarning(run.linkSync) !== null && <Note tone="warning">{linkSyncWarning(run.linkSync)}</Note>}
@@ -692,11 +700,11 @@ function Results(props: {
         return (
           <div key={conflict.ref} style={styles.card}>
             <div style={styles.wrapRow}>
-              <span style={{ ...styles.grow, ...styles.mono }}>{conflict.keyName}</span>
+              <span style={styles.grow}><KeyTag name={conflict.keyName} /></span>
               <TextButton onClick={() => screen.onSelect(conflict.nodeIds)}>Select</TextButton>
             </div>
-            <Small muted>ReRune now: {preview(conflict.currentText, 160) || "(empty)"}</Small>
-            <Small>Figma: {preview(conflict.text, 160)}</Small>
+            <Small muted><Side>ReRune now:</Side> {preview(conflict.currentText, 160) || "(empty)"}</Small>
+            <Small><Side>Figma:</Side> {preview(conflict.text, 160)}</Small>
             {state === "skip" ? (
               <Small muted>Skipped.</Small>
             ) : (
@@ -718,7 +726,7 @@ function Results(props: {
       {run.failures.map((failure) => (
         <div key={failure.ref} style={styles.card}>
           <div style={styles.wrapRow}>
-            {failure.keyName !== null && <span style={{ ...styles.grow, ...styles.mono }}>{failure.keyName}</span>}
+            {failure.keyName !== null && <span style={styles.grow}><KeyTag name={failure.keyName} /></span>}
             <TextButton onClick={() => screen.onSelect(failure.nodeIds)}>{plural(failure.nodeIds.length, "layer", "layers")}</TextButton>
           </div>
           <Small style={{ color: "var(--figma-color-text-danger)" }}>{failure.message}</Small>
