@@ -1,56 +1,52 @@
 import { Button, LoadingIndicator, Text } from "@create-figma-plugin/ui"
 import { h, type ComponentChildren, type JSX } from "preact"
+import { BRAND_CSS } from "../brand/brand-css"
+import { Postmark } from "../brand/postmark"
+import { TONE_GLYPH, toneClasses, type Tone } from "../brand/status"
 import type { ErrorGroup } from "../state/ops"
 import { layerCount } from "../state/ops"
 import { styles } from "./styles"
 
-// Small presentational pieces shared by the Design-mode screens. Colours come from Figma's theme variables
-// (themeColors: true), so light and dark mode follow the editor.
+// Small presentational pieces shared by the Design-mode screens. Surfaces and semantic hues come from Figma's theme
+// variables (themeColors: true), so light and dark mode follow the editor; the ReRune layer (type, links, chips,
+// notes, key tags) comes from one stylesheet, BRAND_CSS (src/ui/brand).
 
-export type Tone = "neutral" | "good" | "info" | "warning" | "danger"
-
-const TONE_COLORS: Record<Tone, { text: string; background: string; border: string }> = {
-  neutral: { text: "var(--figma-color-text-secondary)", background: "var(--figma-color-bg-secondary)", border: "var(--figma-color-border)" },
-  good: { text: "var(--figma-color-text-success)", background: "var(--figma-color-bg-success-tertiary)", border: "var(--figma-color-border-success)" },
-  info: { text: "var(--figma-color-text-brand)", background: "var(--figma-color-bg-brand-tertiary)", border: "var(--figma-color-border-brand)" },
-  warning: { text: "var(--figma-color-text-warning)", background: "var(--figma-color-bg-warning-tertiary)", border: "var(--figma-color-border-warning)" },
-  danger: { text: "var(--figma-color-text-danger)", background: "var(--figma-color-bg-danger-tertiary)", border: "var(--figma-color-border-danger)" },
-}
-
-// The plugin fills the iframe; CFP's base CSS removes the native look of inputs, so the plain checkboxes used
-// in long lists (cheaper than the CFP component) get it back through the rr-check class.
-export const GLOBAL_CSS = [
-  "html, body, #create-figma-plugin { height: 100%; }",
-  "input.rr-check { -webkit-appearance: checkbox; appearance: auto; width: 12px; height: 12px; margin: 0; flex-shrink: 0; cursor: pointer; accent-color: var(--figma-color-bg-brand); }",
-].join("\n")
+export type { Tone }
 
 export function GlobalStyle() {
-  return <style>{GLOBAL_CSS}</style>
+  return <style>{BRAND_CSS}</style>
 }
 
 export function CheckInput(props: { checked: boolean; onChange(): void; label: string; style?: JSX.CSSProperties }) {
-  return <input type="checkbox" class="rr-check" checked={props.checked} onChange={props.onChange} aria-label={props.label} style={props.style} />
+  return <input type="checkbox" class="rr-check rr-focus" checked={props.checked} onChange={props.onChange} aria-label={props.label} style={props.style} />
 }
 
 export { styles }
 
-export function Note(props: { tone?: Tone; children: ComponentChildren; actions?: ComponentChildren }) {
-  const colors = TONE_COLORS[props.tone ?? "info"]
+// `icon`: a glyph before the text (the ReRune mark on ReRune's own requests). `postmark`: the postmark of a clean
+// result beside the text (its room is reserved, so nothing moves when it stamps in).
+export function Note(props: { tone?: Tone; children: ComponentChildren; actions?: ComponentChildren; icon?: ComponentChildren; postmark?: boolean }) {
   return (
-    <div style={{ border: "1px solid " + colors.border, background: colors.background, borderRadius: "6px", padding: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
-      <div style={{ color: "var(--figma-color-text)", fontSize: "11px", lineHeight: "16px", overflowWrap: "anywhere" }}>{props.children}</div>
-      {props.actions !== undefined && <div style={styles.wrapRow}>{props.actions}</div>}
+    <div class={"rr-note " + toneClasses(props.tone ?? "info") + (props.postmark === true ? " rr-postmarked" : "")}>
+      {props.icon !== undefined && (
+        <span class="rr-note__icon" aria-hidden="true">
+          {props.icon}
+        </span>
+      )}
+      <div class="rr-note__main">
+        <div class="rr-note__body">{props.children}</div>
+        {props.actions !== undefined && <div style={styles.wrapRow}>{props.actions}</div>}
+      </div>
+      {props.postmark === true && <Postmark />}
     </div>
   )
 }
 
 export function Chip(props: { tone?: Tone; children: ComponentChildren; title?: string }) {
-  const colors = TONE_COLORS[props.tone ?? "neutral"]
+  const tone = props.tone ?? "neutral"
   return (
-    <span
-      title={props.title}
-      style={{ color: colors.text, background: colors.background, borderRadius: "10px", padding: "0 6px", fontSize: "10px", lineHeight: "16px", whiteSpace: "nowrap", flexShrink: "0" }}
-    >
+    <span title={props.title} class={"rr-chip " + toneClasses(tone)}>
+      <i class={"rr-glyph rr-glyph--" + TONE_GLYPH[tone]} aria-hidden="true" />
       {props.children}
     </span>
   )
@@ -61,29 +57,29 @@ export function TextButton(props: { onClick(): void; children: ComponentChildren
   return (
     <button
       type="button"
+      class={"rr-link rr-focus" + (props.danger === true ? " rr-link--danger" : "")}
       title={props.title}
       aria-label={props.ariaLabel}
       disabled={props.disabled}
       onClick={props.onClick}
-      style={{
-        background: "none",
-        border: "none",
-        padding: "0",
-        cursor: props.disabled === true ? "default" : "pointer",
-        color: props.danger === true ? "var(--figma-color-text-danger)" : "var(--figma-color-text-brand)",
-        opacity: props.disabled === true ? "0.5" : "1",
-        font: "inherit",
-        fontSize: "11px",
-        textAlign: "left",
-      }}
     >
       {props.children}
     </button>
   )
 }
 
-export function SectionTitle(props: { children: ComponentChildren }) {
-  return <div style={styles.sectionTitle}>{props.children}</div>
+// A section heading: the dashboard's mono-cap label with a short amber bar.
+export function SectionTitle(props: { children: ComponentChildren; style?: JSX.CSSProperties }) {
+  return (
+    <div class="rr-eyebrow" style={props.style}>
+      {props.children}
+    </div>
+  )
+}
+
+// A field's label above its control (Language, Source, Template…): mono caps, muted.
+export function FieldLabel(props: { children: ComponentChildren }) {
+  return <div class="rr-label">{props.children}</div>
 }
 
 export function Small(props: { children: ComponentChildren; muted?: boolean; style?: JSX.CSSProperties }) {
@@ -136,6 +132,7 @@ export function Choice<T extends string>(props: { value: T | null; options: { va
             key={option.value}
             type="button"
             disabled={props.disabled}
+            class="rr-focus"
             onClick={() => props.onChange(option.value)}
             style={{
               border: "1px solid " + (active ? "var(--figma-color-border-brand-strong)" : "var(--figma-color-border)"),

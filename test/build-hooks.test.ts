@@ -137,10 +137,12 @@ describe("build-figma-plugin.{main,ui}.js", () => {
   it.each([
     ["main", overrideMain],
     ["ui", overrideUi],
-  ])("defines production constants by default (%s)", (_name, override) => {
+  ])("defines production constants by default (%s)", (name, override) => {
     delete env.RERUNE_ENV
     expect(override({ target: "es2017", define: { existing: "1" } })).toEqual({
       target: "es2017",
+      // The UI bundles the brand fonts as bytes (src/ui/brand/fonts.ts).
+      ...(name === "ui" ? { loader: { ".woff2": "binary" } } : {}),
       define: {
         existing: "1",
         __RERUNE_ENV__: '"production"',
@@ -150,6 +152,12 @@ describe("build-figma-plugin.{main,ui}.js", () => {
         __RERUNE_DEV_MODE__: "true",
       },
     })
+  })
+
+  it("loads the UI's .woff2 fonts as binary and keeps Create Figma Plugin's loaders", () => {
+    delete env.RERUNE_ENV
+    expect(overrideUi({ loader: { ".png": "dataurl", ".svg": "dataurl" } }).loader).toEqual({ ".png": "dataurl", ".svg": "dataurl", ".woff2": "binary" })
+    expect(overrideMain({ loader: { ".png": "dataurl" } }).loader).toEqual({ ".png": "dataurl" })
   })
 
   it.each([

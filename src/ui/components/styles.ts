@@ -11,9 +11,11 @@ export const styles = {
   wrapRow: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } as JSX.CSSProperties,
   grow: { flex: "1", minWidth: "0" } as JSX.CSSProperties,
   card: { border: "1px solid var(--figma-color-border)", borderRadius: "6px", padding: "8px", display: "flex", flexDirection: "column", gap: "6px" } as JSX.CSSProperties,
+  // --font-family-code is ReRune Mono (IBM Plex Mono 500, bundled; brand-css.ts).
   mono: { fontFamily: "var(--font-family-code, ui-monospace, monospace)", fontSize: "11px", overflowWrap: "anywhere" } as JSX.CSSProperties,
   clamp: { display: "-webkit-box", WebkitLineClamp: "2", WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" } as JSX.CSSProperties,
-  muted: { color: "var(--figma-color-text-secondary)" } as JSX.CSSProperties,
+  // ReRune's --ink-3 in light mode (Figma's text-secondary is 3.98:1 on white), Figma's text-secondary in dark.
+  muted: { color: "var(--rr-muted)" } as JSX.CSSProperties,
   small: { fontSize: "11px", lineHeight: "16px" } as JSX.CSSProperties,
   stack: { display: "flex", flexDirection: "column", gap: "8px" } as JSX.CSSProperties,
   tightStack: { display: "flex", flexDirection: "column", gap: "4px" } as JSX.CSSProperties,

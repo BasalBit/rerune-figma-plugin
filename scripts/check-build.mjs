@@ -4,12 +4,19 @@
 //   node scripts/check-build.mjs full          the build with Dev Mode (npm run build)
 //   node scripts/check-build.mjs design-only   the design-only build (npm run build:design-only)
 //
-// It fails on a development build, on the wrong variant, and on any manifest field that differs from package.json.
+// It fails on a development build, on the wrong variant, on any manifest field that differs from package.json, and on
+// a build/ui.js over its size budget or without the bundled brand fonts (fonts belong to the UI, never to main.js).
 import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 
 export const VARIANTS = ["full", "design-only"]
 export const PRODUCTION_API_BASE = "https://rerune.io/api"
+
+// build/ui.js was 299,034 bytes before the brand fonts and styles (+120,506: three WOFF2 fonts as base64, their
+// licence, the brand stylesheet and components). Raise it only on purpose: Figma loads ui.js every time the plugin opens.
+export const UI_JS_BUDGET = 420000
+// "wOF2", the WOFF2 signature, as it starts a base64 font in the bundle.
+const FONT_DATA = /d09GMg/
 
 const RELAUNCH_BUTTONS = [{ command: "open", name: "Open ReRune", multipleSelection: true }]
 const LOCAL_HOSTS = /localhost|127\.0\.0\.1/
@@ -51,6 +58,10 @@ export function releaseProblems({ variant, manifest, pkg, mainJs, uiJs }) {
   check(mainJs.includes(PRODUCTION_API_BASE), `build/main.js does not call ${PRODUCTION_API_BASE} (not a production build)`)
   check(!LOCAL_HOSTS.test(mainJs), "build/main.js mentions localhost or 127.0.0.1 (development build?)")
   check(!LOCAL_HOSTS.test(uiJs), "build/ui.js mentions localhost or 127.0.0.1 (development build?)")
+  const uiBytes = Buffer.byteLength(uiJs, "utf8")
+  check(uiBytes <= UI_JS_BUDGET, `build/ui.js is ${uiBytes} bytes, over its budget of ${UI_JS_BUDGET}`)
+  check(FONT_DATA.test(uiJs), "build/ui.js has no bundled fonts (the .woff2 loader of build-figma-plugin.ui.js?)")
+  check(!FONT_DATA.test(mainJs), "build/main.js has font data (the brand fonts belong to build/ui.js only)")
   return problems
 }
 

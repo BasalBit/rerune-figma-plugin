@@ -15,6 +15,8 @@ export default function (buildOptions) {
   const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"))
   return {
     ...buildOptions,
+    // The brand fonts are bundled as bytes and registered with FontFace (src/ui/brand/fonts.ts): no url(), no fetch.
+    loader: { ...buildOptions.loader, ".woff2": "binary" },
     define: {
       ...buildOptions.define,
       __RERUNE_ENV__: JSON.stringify(env),

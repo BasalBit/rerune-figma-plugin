@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 import overrideManifest from "../build-figma-plugin.manifest.js"
 import pkg from "../package.json"
-import { PRODUCTION_API_BASE, releaseProblems, VARIANTS } from "../scripts/check-build.mjs"
+import { PRODUCTION_API_BASE, releaseProblems, UI_JS_BUDGET, VARIANTS } from "../scripts/check-build.mjs"
 import ci from "../.github/workflows/ci.yml?raw"
 import changelog from "../CHANGELOG.md?raw"
 import gitignore from "../.gitignore?raw"
@@ -36,7 +36,8 @@ function builtManifest(variables: { RERUNE_ENV?: string; RERUNE_DEV_MODE?: strin
 }
 
 const PRODUCTION_MAIN = 'var a="' + PRODUCTION_API_BASE + '",b="https://rerune.io";'
-const PRODUCTION_UI = "function render(){}"
+// A production UI bundle carries the brand fonts as base64 WOFF2 ("wOF2" → d09GMg).
+const PRODUCTION_UI = 'var f="d09GMgABAAAA";function render(){}'
 
 function problems(variant: string, manifest: Manifest, mainJs = PRODUCTION_MAIN, uiJs = PRODUCTION_UI): string[] {
   return releaseProblems({ variant, manifest, pkg, mainJs, uiJs })
@@ -47,6 +48,17 @@ describe("scripts/check-build.mjs", () => {
     expect(VARIANTS).toEqual(["full", "design-only"])
     expect(problems("full", builtManifest({}))).toEqual([])
     expect(problems("design-only", builtManifest({ RERUNE_DEV_MODE: "off" }))).toEqual([])
+  })
+
+  it("keeps build/ui.js within its budget, with the brand fonts in the UI and none in main", () => {
+    const manifest = builtManifest({})
+    expect(UI_JS_BUDGET).toBe(420000)
+    expect(problems("full", manifest, PRODUCTION_MAIN, PRODUCTION_UI + " ".repeat(UI_JS_BUDGET - PRODUCTION_UI.length))).toEqual([])
+    expect(problems("full", manifest, PRODUCTION_MAIN, PRODUCTION_UI + " ".repeat(UI_JS_BUDGET - PRODUCTION_UI.length + 1))).toEqual([
+      "build/ui.js is 420001 bytes, over its budget of 420000",
+    ])
+    expect(problems("full", manifest, PRODUCTION_MAIN, "function render(){}")).toEqual(["build/ui.js has no bundled fonts (the .woff2 loader of build-figma-plugin.ui.js?)"])
+    expect(problems("full", manifest, PRODUCTION_MAIN + 'var f="d09GMgAB";', PRODUCTION_UI)).toEqual(["build/main.js has font data (the brand fonts belong to build/ui.js only)"])
   })
 
   it("refuses the other variant's manifest", () => {
@@ -74,7 +86,7 @@ describe("scripts/check-build.mjs", () => {
     expect(problems("full", builtManifest({}), PRODUCTION_MAIN + "/^http:\\/\\/(localhost|127\\.0\\.0\\.1)/")).toEqual([
       "build/main.js mentions localhost or 127.0.0.1 (development build?)",
     ])
-    expect(problems("full", builtManifest({}), PRODUCTION_MAIN, 'fetch("http://127.0.0.1:8080")')).toEqual([
+    expect(problems("full", builtManifest({}), PRODUCTION_MAIN, PRODUCTION_UI + 'fetch("http://127.0.0.1:8080")')).toEqual([
       "build/ui.js mentions localhost or 127.0.0.1 (development build?)",
     ])
   })
