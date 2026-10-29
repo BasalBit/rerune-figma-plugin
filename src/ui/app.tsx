@@ -45,6 +45,7 @@ import { createPairingFlow, type PairingFlow, type PairingState } from "./state/
 import { leftoverPreviewNotice, previewStatus, resetOutcome } from "./state/preview"
 import { createRefreshRequests, refetchAfterUpload, refreshGate } from "./state/refresh-requests"
 import { cacheEntriesFromResolved } from "./state/remote"
+import { availabilityRead, browserWindow, createRequestWatch } from "./state/request-watch"
 import type { ProjectPluralChoice } from "./state/samples"
 import {
   createAvailability,
@@ -362,6 +363,54 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       void refreshRequests.fetch()
     }
   }, [auth, project?.id, freshnessGate.enabled, freshnessGate.fileKey, usable?.updatedAt])
+  // While the plugin stays open, the requests are also read when its window is shown or gets the user's attention and
+  // every minute while it is visible and in use, so a request made in the dashboard shows without reopening the
+  // plugin. Not while a task runs: a push's uploads read them again when they end.
+  const requestWatch = useMemo(
+    () =>
+      createRequestWatch({
+        fetch: () => refreshRequests.fetch(),
+        busy: () => refreshRequests.busy() || workLock.holder() !== null,
+        window: browserWindow(document, window),
+      }),
+    [],
+  )
+  const watching = auth !== null && project !== null && freshnessGate.enabled
+  useEffect(() => {
+    if (!watching) {
+      return
+    }
+    requestWatch.start()
+    return () => requestWatch.stop()
+  }, [watching, project?.id, freshnessGate.fileKey])
+  // When E1 or E8 failed as the workspace opened (a brief network or server error), the refresh gate stays closed:
+  // they are read again on the watch's schedule, so the requests show without reopening the plugin.
+  const availabilityWatch = useMemo(
+    () =>
+      createRequestWatch({
+        fetch: availabilityRead(() => availabilityLoader.load(), setAvailability),
+        busy: () => false,
+        window: browserWindow(document, window),
+      }),
+    [],
+  )
+  const availabilityFailed = auth !== null && project !== null && availability.error !== null
+  useEffect(() => {
+    if (!availabilityFailed) {
+      return
+    }
+    availabilityWatch.start()
+    return () => availabilityWatch.stop()
+  }, [availabilityFailed, project?.id])
+  // A selection or page change means someone uses Figma: the watches keep reading every minute.
+  useEffect(
+    () =>
+      bus.on("selection-changed", () => {
+        requestWatch.activity()
+        availabilityWatch.activity()
+      }),
+    [],
+  )
 
   // QA picks and results belong to the project they were made in.
   useEffect(() => {

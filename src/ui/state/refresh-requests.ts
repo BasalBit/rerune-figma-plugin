@@ -212,11 +212,18 @@ export interface RefreshDeps {
   lock: Pick<WorkLock, "acquire" | "release">
 }
 
+// What a fetch did: read the requests (none while the gate is closed), skipped them because a run is going on, or
+// failed (the notice keeps the last known requests).
+export type RefreshFetch = { kind: "read" } | { kind: "skipped" } | { kind: "failed"; error: unknown }
+
 export interface RefreshRequests {
   store: Store<RefreshState>
   // Reads the requests again (when the workspace opens on a confirmed file, after the file link is saved, after every
-  // upload run). Silent on errors (401 signs out through the client); nothing while a run is going on.
-  fetch(): Promise<void>
+  // upload run, and while the plugin is open: request-watch.ts). Silent on errors (401 signs out through the client):
+  // the result only tells the watch when to try again. Nothing while a run is going on.
+  fetch(): Promise<RefreshFetch>
+  // A run or a fetch is going on.
+  busy(): boolean
   notNow(): void
   // Update screenshots (§6.4 steps 1–7): holds the work lock ("refresh"); does nothing while it is held.
   run(): Promise<void>
@@ -235,6 +242,7 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
   const store = createStore<RefreshState>(emptyRefreshState())
   let generation = 0
   let fetches = 0
+  let reading = 0
   let stopped = false
 
   const current = (mine: number) => mine === generation
@@ -247,20 +255,25 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
     return loadRefreshRequests(deps.api, context.projectId, context.gate.fileKey)
   }
 
-  async function fetch(): Promise<void> {
+  async function fetch(): Promise<RefreshFetch> {
     if (store.get().running !== null) {
-      return
+      return { kind: "skipped" }
     }
     const mine = generation
     const attempt = ++fetches
     const context = deps.context()
+    reading++
     try {
       const requests = context === null ? [] : await load(context)
       if (current(mine) && attempt === fetches && store.get().running === null) {
         store.set((state) => ({ ...state, requests }))
       }
-    } catch {
+      return { kind: "read" }
+    } catch (error) {
       // Errors are silent: the notice keeps the last known requests.
+      return { kind: "failed", error }
+    } finally {
+      reading--
     }
   }
 
@@ -405,16 +418,22 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
     })
   }
 
+  // The request is gone: a read that started before E25 answered may still list it, so its answer is dropped.
+  function removed(mine: number, screenshotId: string): void {
+    fetches++
+    patchMissing(mine, screenshotId, { removal: "removed", error: null })
+  }
+
   // E25 for one missing frame; false when Remove all should stop (429).
   async function removeOne(mine: number, projectId: string, screenshotId: string): Promise<boolean> {
     patchMissing(mine, screenshotId, { removal: "removing", error: null })
     try {
       await deps.api.cancelRefreshRequest(projectId, screenshotId)
-      patchMissing(mine, screenshotId, { removal: "removed", error: null })
+      removed(mine, screenshotId)
       return true
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 404 && caught.reason === "screenshot_not_found") {
-        patchMissing(mine, screenshotId, { removal: "removed", error: null })
+        removed(mine, screenshotId)
         return true
       }
       patchMissing(mine, screenshotId, { removal: null, error: userMessage(caught) })
@@ -450,6 +469,7 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
   return {
     store,
     fetch,
+    busy: () => store.get().running !== null || reading > 0,
     notNow() {
       store.set((state) => ({ ...state, dismissed: new Set([...state.dismissed, ...state.requests.map(requestKey)]) }))
     },
@@ -476,7 +496,7 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
 
 // The uploader every other upload run uses (push, pull, Overwrite, Take ReRune text): when a run ends, the requests
 // are read again, so frames it uploaded leave the notice.
-export function refetchAfterUpload(uploader: ScreenshotUploader, refetch: () => Promise<void>): ScreenshotUploader {
+export function refetchAfterUpload(uploader: ScreenshotUploader, refetch: () => Promise<unknown>): ScreenshotUploader {
   return {
     prepare: (options) => uploader.prepare(options),
     async upload(frames, options) {

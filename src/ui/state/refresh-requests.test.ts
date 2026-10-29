@@ -357,6 +357,21 @@ describe("createRefreshRequests: fetch", () => {
     expect(h.refresh.store.get().outcome).toBeNull()
   })
 
+  it("tells the watch what a fetch did and whether a fetch or a run is going on", async () => {
+    const h = harness()
+    expect(h.refresh.busy()).toBe(false)
+    const reading = h.refresh.fetch()
+    expect(h.refresh.busy()).toBe(true)
+    expect(await reading).toEqual({ kind: "read" })
+    expect(h.refresh.busy()).toBe(false)
+    const error = new ApiError(429, null, "Too Many Requests", 30)
+    h.api.screenshots.mockRejectedValueOnce(error)
+    expect(await h.refresh.fetch()).toEqual({ kind: "failed", error })
+    expect(h.refresh.busy()).toBe(false)
+    h.context.value = { ...(h.context.value as RefreshContext), gate: { enabled: false, fileKey: null } }
+    expect(await h.refresh.fetch()).toEqual({ kind: "read" })
+  })
+
   it("Not now dismisses the current requests for the session", async () => {
     const h = harness()
     await h.refresh.fetch()
@@ -606,7 +621,8 @@ describe("createRefreshRequests: Update screenshots (§6.4)", () => {
     const uploads = h.uploads
     const running = h.refresh.run()
     await vi.waitFor(() => expect(h.prepare).toHaveBeenCalled())
-    await h.refresh.fetch()
+    expect(h.refresh.busy()).toBe(true)
+    expect(await h.refresh.fetch()).toEqual({ kind: "skipped" })
     expect(h.api.screenshots).toHaveBeenCalledTimes(1)
     h.refresh.stop()
     expect(h.refresh.store.get().stopping).toBe(true)
@@ -671,6 +687,27 @@ describe("createRefreshRequests: Remove request (E25)", () => {
       ["22:1", "removed", null],
     ])
     expect(h.api.cancelRefreshRequest).toHaveBeenCalledTimes(4)
+  })
+
+  it("drops a read that started before a request was removed, so the removed request does not come back", async () => {
+    const h = await withMissing(["20:1", "21:1"])
+    let answer: () => void = () => {}
+    h.api.screenshots.mockImplementationOnce(
+      () =>
+        new Promise<FigmaScreenshotsResponse>(
+          (resolve) => (answer = () => resolve({ screenshots: [screenshot(1, "20:1"), screenshot(2, "21:1")], next_cursor: null, has_more: false })),
+        ),
+    )
+    const reading = h.refresh.fetch()
+    await h.refresh.removeRequest(screenshot(1, "").id)
+    expect(h.refresh.store.get().requests.map((entry) => entry.frameId)).toEqual(["21:1"])
+    answer()
+    expect(await reading).toEqual({ kind: "read" })
+    expect(h.refresh.store.get().requests.map((entry) => entry.frameId)).toEqual(["21:1"])
+    // A read that starts after it lists what ReRune lists then.
+    h.api.screenshots.mockResolvedValueOnce({ screenshots: [screenshot(2, "21:1")], next_cursor: null, has_more: false })
+    await h.refresh.fetch()
+    expect(h.refresh.store.get().requests.map((entry) => entry.frameId)).toEqual(["21:1"])
   })
 
   it("forgets the result and the requests on reset (sign-out, another project)", async () => {
