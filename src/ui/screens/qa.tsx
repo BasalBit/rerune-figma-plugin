@@ -1,6 +1,6 @@
 import { Button, Dropdown, SegmentedControl, Toggle } from "@create-figma-plugin/ui"
 import { h, type ComponentChildren } from "preact"
-import { useMemo, useRef, useState } from "preact/hooks"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import type { FigmaProjectDetail } from "../../shared/api-types"
 import type { ResolveSource, Scope } from "../../shared/messages"
 import { pseudoLocalize } from "../../shared/pseudo"
@@ -31,6 +31,7 @@ import {
   type QaDeps,
   type ReportKind,
 } from "../state/qa"
+import { languageRemovedNote, VARIATION_REMOVED_NOTE } from "../state/project-watch"
 import { activePluralChoice, projectSamples, samplePlaceholders, type ProjectPluralChoice } from "../state/samples"
 import type { Prefs } from "../state/settings"
 import type { WorkLock } from "../state/work-lock"
@@ -120,6 +121,16 @@ export function QaScreen(props: QaScreenProps) {
   const [copiesError, setCopiesError] = useState<{ message: string; nodeIds: string[] } | null>(null)
   const [copied, setCopied] = useState(false)
   const stopRef = useRef(false)
+  // Picks the project no longer has (removed in ReRune while the plugin was open) are dropped, with a note.
+  const [pickNote, setPickNote] = useState<string | null>(null)
+  useEffect(() => {
+    const removed = session.languages.filter((code) => !project.languages.some((language) => language.code === code))
+    const variationGone = session.variation !== undefined && session.variation !== null && !project.variation_options.some((option) => option.id === session.variation)
+    if (removed.length > 0 || variationGone) {
+      onSession({ ...(removed.length > 0 ? { languages } : {}), ...(variationGone ? { variation: null } : {}) })
+      setPickNote(removed.length > 0 ? languageRemovedNote(removed, null) : VARIATION_REMOVED_NOTE)
+    }
+  }, [project.languages, project.variation_options])
 
   const label = (lang: string) => reportLanguageLabel(lang, project.languages)
   const ordered = project.languages.map((language) => language.code).filter((code) => languages.includes(code))
@@ -142,6 +153,7 @@ export function QaScreen(props: QaScreenProps) {
   )
 
   function toggleLanguage(code: string) {
+    setPickNote(null)
     onSession({ languages: languages.includes(code) ? languages.filter((entry) => entry !== code) : [...languages, code] })
   }
 
@@ -296,6 +308,7 @@ export function QaScreen(props: QaScreenProps) {
               </label>
             ))
           )}
+          {pickNote !== null && <Small muted>{pickNote}</Small>}
         </div>
         <div style={styles.tightStack}>
           <Small muted>Source</Small>

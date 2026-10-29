@@ -17,8 +17,20 @@ export function GlobalStyle() {
   return <style>{BRAND_CSS}</style>
 }
 
-export function CheckInput(props: { checked: boolean; onChange(): void; label: string; style?: JSX.CSSProperties }) {
-  return <input type="checkbox" class="rr-check rr-focus" checked={props.checked} onChange={props.onChange} aria-label={props.label} style={props.style} />
+// `mixed`: partly ticked (a Select all over a list where only some rows are ticked); browsers show and announce it so.
+export function CheckInput(props: { checked: boolean; onChange(): void; label: string; style?: JSX.CSSProperties; disabled?: boolean; mixed?: boolean }) {
+  return (
+    <input
+      type="checkbox"
+      class="rr-check rr-focus"
+      checked={props.checked}
+      indeterminate={props.mixed}
+      disabled={props.disabled}
+      onChange={props.onChange}
+      aria-label={props.label}
+      style={props.disabled === true ? { cursor: "default", ...props.style } : props.style}
+    />
+  )
 }
 
 export { styles }

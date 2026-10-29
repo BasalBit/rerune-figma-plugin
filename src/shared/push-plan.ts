@@ -73,8 +73,11 @@ export interface PlanContext {
   suggestName: (n: ScannedNode) => string
 }
 
+// "creates-selected": Select all in the New text header (every create), or many at once (`refs`), in one step. It
+// changes only whether each create is in the push; its match decision (Link to / Create new key) and name stay.
 export type PlanDecision =
   | { kind: "create-selected"; ref: string; selected: boolean }
+  | { kind: "creates-selected"; selected: boolean; refs?: readonly string[] }
   | { kind: "create-name"; ref: string; name: string }
   | { kind: "create-match"; ref: string; decision: "create" }
   | { kind: "create-match"; ref: string; decision: "link"; key: FigmaKeyRef }
@@ -444,6 +447,16 @@ export function applyDecision(plan: PushPlan, decision: PlanDecision, context: P
     case "create-selected":
       next = { ...plan, creates: plan.creates.map((create) => (create.ref === decision.ref ? { ...create, selected: decision.selected } : create)) }
       break
+    case "creates-selected": {
+      const refs = decision.refs === undefined ? null : new Set(decision.refs)
+      next = {
+        ...plan,
+        creates: plan.creates.map((create) =>
+          create.selected === decision.selected || (refs !== null && !refs.has(create.ref)) ? create : { ...create, selected: decision.selected },
+        ),
+      }
+      break
+    }
     case "create-name":
       next = { ...plan, creates: plan.creates.map((create) => (create.ref === decision.ref ? { ...create, name: decision.name.trim() } : create)) }
       break

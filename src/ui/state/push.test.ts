@@ -15,7 +15,9 @@ import {
   executePulls,
   executePush,
   executeTakeReRune,
+  includedCreates,
   mergeLinkSync,
+  overQuota,
   overwriteChunk,
   preparePush,
   pushChunks,
@@ -330,7 +332,7 @@ describe("executePush", () => {
 describe("after-push choices and pulls", () => {
   const conflict = { ref: "u1", keyId: keyId(1), keyName: "checkout_title", nodeIds: ["1:3", "I7:1;1:5", "I8:1;1:5"], text: "Checkout now", currentText: "Checkout!" }
 
-  it("merges conflicts resolved at the same time into the latest run", () => {
+  it("merges conflicts resolved at the same time into the latest run, keeping the resolved cards in place", () => {
     const other = { ...conflict, ref: "u2", keyId: keyId(2), keyName: "checkout_total" }
     const failure = { ref: "u2", reason: "source_changed" as const, message: "The source text changed in ReRune.", keyId: keyId(2), keyName: "checkout_total", nodeIds: ["1:4"] }
     const writeError = { nodeId: "1:3", code: "missing_font" as const, message: "A font in this layer is missing. Install or replace it first." }
@@ -338,7 +340,11 @@ describe("after-push choices and pulls", () => {
     // Both clicks start from `start`; the results arrive one after the other.
     const afterFirst = resolveConflictInRun(start, "u1", { writeErrors: [writeError] })
     const afterSecond = resolveConflictInRun(afterFirst, "u2", { updated: 0, conflicts: [], failures: [failure], writeErrors: [] })
-    expect(afterSecond.conflicts).toEqual([])
+    // The cards stay (their chips show the layers' state now).
+    expect(afterSecond.conflicts).toEqual([conflict, other])
+    // An Overwrite that met a newer ReRune text replaces its card with the new conflict, in place.
+    const newer = { ...conflict, currentText: "Checkout!!" }
+    expect(resolveConflictInRun(afterSecond, "u1", { conflicts: [newer] }).conflicts).toEqual([newer, other])
     expect(afterSecond.failures).toEqual([failure])
     expect(afterSecond.writeErrors).toEqual([writeError])
     expect(resolveConflictInRun(afterSecond, "u9", { updated: 1 }).updated).toBe(1)
@@ -394,9 +400,10 @@ describe("after-push choices and pulls", () => {
       ["I7:1;1:5", linkedNode("I7:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
       ["I8:1;1:5", linkedNode("I8:1;1:5", "Checkout now", { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout", nid: "1:5", state: "inherited" })],
     ])
+    // A layer edited in Figma since the push (it no longer shows the pushed text) is left alone.
     expect(takeReRuneItems(conflict, nodes)).toEqual([
-      { nodeId: "1:3", text: "Checkout!", src: src("Checkout!") },
-      { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!") },
+      { nodeId: "1:3", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
+      { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
     ])
   })
 
@@ -441,9 +448,9 @@ describe("after-push choices and pulls", () => {
         type: "text-apply",
         requestId: expect.any(String),
         items: [
-          { nodeId: "1:3", text: "Checkout!", src: src("Checkout!") },
-          { nodeId: "1:9", text: "Checkout!", src: src("Checkout!") },
-          { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!") },
+          { nodeId: "1:3", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
+          { nodeId: "1:9", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
+          { nodeId: "I7:1;1:5", text: "Checkout!", src: src("Checkout!"), expectedSrc: src("Checkout now") },
         ],
       },
     ])
@@ -546,6 +553,38 @@ describe("after-push choices and pulls", () => {
     expect(counts).toMatchObject({ creates: 1, nameIssues: 1, links: 0, updates: 0 })
     expect(canSubmit(ready.plan, true)).toBe(true)
     expect(canSubmit(ready.plan, false)).toBe(false)
+  })
+
+  it("Select all: the header is ticked, partly ticked or not, and the quota warning follows at once", async () => {
+    const nodes = Array.from({ length: 5 }, (_, index) => scannedNode("1:" + index, "Text " + index, { name: "Label " + index, autoRename: false }))
+    const ready = await preparePush({ keysByName: byName({}, []) }, input(nodes, { scope: "page" }))
+    const { plan, context } = ready
+    expect(includedCreates(plan)).toBe("none")
+    expect(overQuota(pushCounts(plan), 3)).toBe(false)
+    const one = applyDecision(plan, { kind: "create-selected", ref: "c2", selected: true }, context)
+    expect(includedCreates(one)).toBe("some")
+    // Ticking a partly ticked header includes every new text: 5 new keys with 3 left on the plan.
+    const all = applyDecision(one, { kind: "creates-selected", selected: true }, context)
+    expect(includedCreates(all)).toBe("all")
+    expect(pushCounts(all).creates).toBe(5)
+    expect(overQuota(pushCounts(all), 3)).toBe(true)
+    expect(overQuota(pushCounts(all), 5)).toBe(false)
+    expect(overQuota(pushCounts(all), null)).toBe(false)
+    // New keys whose name has an issue are not counted: they are held back.
+    const clash = applyDecision(applyDecision(all, { kind: "create-name", ref: "c0", name: "same" }, context), { kind: "create-name", ref: "c1", name: "same" }, context)
+    expect(pushCounts(clash)).toMatchObject({ creates: 3, nameIssues: 2 })
+    expect(overQuota(pushCounts(clash), 3)).toBe(false)
+    const none = applyDecision(all, { kind: "creates-selected", selected: false }, context)
+    expect(includedCreates(none)).toBe("none")
+    expect(overQuota(pushCounts(none), 0)).toBe(false)
+    expect(canSubmit(none, true)).toBe(false)
+  })
+
+  it("Select all on a page review starts partly ticked when a text is marked Create on push (it starts ticked)", async () => {
+    const nodes = Array.from({ length: 3 }, (_, index) => scannedNode("1:" + index, "Text " + index, { name: "Label " + index, autoRename: false }))
+    const ready = await preparePush({ keysByName: byName({}, []) }, input(nodes, { scope: "page", pending: new Map([["1:1", "checkout_cta"]]) }))
+    expect(ready.plan.creates.map((create) => create.selected)).toEqual([false, true, false])
+    expect(includedCreates(ready.plan)).toBe("some")
   })
 
   it("counts updates held back by max_length apart and pushes nothing when they are all that is left (§7.18.3)", async () => {

@@ -32,7 +32,8 @@ export class ScanCancelledError extends Error {
 }
 
 export interface ScanRunner {
-  // With `frameIds` main scans those frames instead of the scope (screenshot freshness, contract §6.4 step 2).
+  // With `frameIds` main scans those frames (screenshot freshness, contract §6.4 step 2) or text layers by id instead
+  // of the scope.
   run(scope: Scope, onProgress?: (scanned: number) => void, frameIds?: readonly string[]): Promise<ScanResult>
   cancel(): void
 }

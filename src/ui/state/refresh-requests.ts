@@ -8,7 +8,7 @@ import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { SCAN_UNFINISHED } from "./link-sync"
 import type { ScanResult } from "./ops"
-import { executePulls } from "./push"
+import { executePulls, pullChanges } from "./push"
 import { linkedKeyIds, loadRemoteStates } from "./remote"
 import {
   emptyScreenshotRun,
@@ -23,7 +23,7 @@ import {
 } from "./screenshots"
 import { createStore, type Store } from "./store"
 import type { WorkLock } from "./work-lock"
-import { NO_MAIN_LANGUAGE } from "./workspace"
+import { NO_MAIN_LANGUAGE, type WorkspaceChange } from "./workspace"
 
 // Screenshot freshness (SF6, contract §6.4): the frames of this file that ReRune asks new screenshots of (requested
 // in the dashboard, E24/E26), the notice that names them, and Update screenshots, which brings ReRune's changed
@@ -210,6 +210,8 @@ export interface RefreshDeps {
   scanFrames(frameIds: readonly string[]): Promise<ScanResult | null>
   uploader: ScreenshotUploader
   lock: Pick<WorkLock, "acquire" | "release">
+  // The layers the run gave ReRune's text, so the shown scan follows at once (workspace.applyChanges).
+  pulled?(change: WorkspaceChange): void
 }
 
 // What a fetch did: read the requests (none while the gate is closed), skipped them because a run is going on, or
@@ -335,6 +337,9 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
       suggestName: () => "",
     })
     const pulled = await executePulls(deps, plan, { projectId, nodes: new Map(scanned.nodes.map((node) => [node.nodeId, node])) })
+    if (pulled.affectedNodeIds.length > 0) {
+      deps.pulled?.(pullChanges(plan, pulled))
+    }
     // A layer edited in Figma since the scan was left alone (changed_meanwhile): it counts with the Figma-side changes.
     const changedMeanwhile = new Set(pulled.errors.filter((error) => error.code === "changed_meanwhile").map((error) => error.nodeId))
     const errors = pulled.errors.filter((error) => error.code !== "changed_meanwhile")

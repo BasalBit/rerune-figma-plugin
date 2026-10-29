@@ -1,6 +1,6 @@
 import { Button, Dropdown, SegmentedControl, Toggle } from "@create-figma-plugin/ui"
 import { h, type ComponentChildren } from "preact"
-import { useMemo, useState } from "preact/hooks"
+import { useEffect, useMemo, useState } from "preact/hooks"
 import type { FigmaProjectDetail } from "../../shared/api-types"
 import type { ResolveSource, Scope } from "../../shared/messages"
 import { userMessage } from "../api/client"
@@ -16,10 +16,12 @@ import {
   defaultLanguage,
   languageLabel,
   previewKeyIds,
+  previewStatus,
   resolveForPreview,
   type PreviewBuild,
   type PreviewMode,
 } from "../state/preview"
+import { keptLanguage, keptVariation, languageRemovedNote, removedPreviewNote, VARIATION_REMOVED_NOTE } from "../state/project-watch"
 import { activePluralChoice, projectSamples, samplePlaceholders, type ProjectPluralChoice } from "../state/samples"
 import type { Prefs } from "../state/settings"
 import type { WorkLock } from "../state/work-lock"
@@ -27,7 +29,8 @@ import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // Preview (§7.8, §7.14, D24): language (with its inheritance chain), Draft/Published, variation, "Show key names",
 // sample values and plural forms (§7.18.5), Apply to selection/page, Reset, the missing list with Select/Zoom and
-// the values longer than their key's max length (§7.18.3).
+// the values longer than their key's max length (§7.18.3). The lists follow the project's details while the plugin is
+// open: a removed language or variation that was picked falls back to the main language or no variation, with a note.
 
 export interface PreviewScreenProps {
   notices: ComponentChildren               // the workspace notices, shown first in the scroll area (ScreenBody)
@@ -75,6 +78,8 @@ export function PreviewScreen(props: PreviewScreenProps) {
   const [error, setError] = useState<string | null>(null)
   const [applied, setApplied] = useState<Applied | null>(null)
   const [showInherited, setShowInherited] = useState(false)
+  // Why the picked language or variation changed by itself (removed from the project in ReRune).
+  const [pickNote, setPickNote] = useState<string | null>(null)
   const sampleDrafts = useSampleDrafts(project.id, prefs, props.onPrefs)
   const nodes = useMemo(() => props.state.result?.nodes ?? [], [props.state.result])
   // The plural selector lists the forms of the language previewed, with the counts they render (§7.18.5).
@@ -91,6 +96,22 @@ export function PreviewScreen(props: PreviewScreenProps) {
     [nodes, props.state.resolved, project.id, project.main_language, shapes],
   )
   const activePlural = activePluralChoice(props.pluralChoice, project.id, lang)
+
+  useEffect(() => {
+    const keptLang = keptLanguage(project, lang, prefs.lastLanguage)
+    const keptVar = keptVariation(project, variation)
+    if (keptLang.lang !== lang) {
+      setLang(keptLang.lang)
+    }
+    if (keptVar.removed) {
+      setVariation(null)
+    }
+    if (keptLang.removed !== null) {
+      setPickNote(languageRemovedNote([keptLang.removed], keptLang.lang))
+    } else if (keptVar.removed) {
+      setPickNote(VARIATION_REMOVED_NOTE)
+    }
+  }, [project.languages, project.main_language, project.variation_options])
 
   async function apply() {
     if (lang === null || props.resetting || !props.work.acquire("preview")) return
@@ -141,6 +162,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
   const languageOptions = project.languages.map((language) => ({ value: language.code, text: languageLabel(language) }))
   const variationOptions = [{ value: NO_VARIATION, text: "No variation" }, ...project.variation_options.map((option) => ({ value: option.id, text: option.value }))]
   const disabled = props.readOnly || busy !== null || props.resetting || props.locked
+  const removedPreview = removedPreviewNote(previewStatus(nodes), project)
 
   return (
     <div style={styles.page}>
@@ -151,8 +173,17 @@ export function PreviewScreen(props: PreviewScreenProps) {
           {languageOptions.length === 0 ? (
             <Note tone="warning">This project has no languages yet.</Note>
           ) : (
-            <Dropdown value={lang} options={languageOptions} onValueChange={setLang} />
+            <Dropdown
+              value={lang}
+              options={languageOptions}
+              onValueChange={(value) => {
+                setLang(value)
+                setPickNote(null)
+              }}
+            />
           )}
+          {pickNote !== null && <Small muted>{pickNote}</Small>}
+          {removedPreview !== null && <Note tone="info">{removedPreview}</Note>}
         </div>
         <div style={styles.tightStack}>
           <Small muted>Source</Small>
@@ -161,7 +192,15 @@ export function PreviewScreen(props: PreviewScreenProps) {
         {project.variation_options.length > 0 && (
           <div style={styles.tightStack}>
             <Small muted>Variation</Small>
-            <Dropdown value={variation ?? NO_VARIATION} options={variationOptions} disabled={keysMode} onValueChange={(value) => setVariation(value === NO_VARIATION ? null : value)} />
+            <Dropdown
+              value={variation ?? NO_VARIATION}
+              options={variationOptions}
+              disabled={keysMode}
+              onValueChange={(value) => {
+                setVariation(value === NO_VARIATION ? null : value)
+                setPickNote(null)
+              }}
+            />
           </div>
         )}
         <Toggle value={keysMode} onValueChange={setKeysMode}>

@@ -392,6 +392,65 @@ describe("rule 9: client-side checks", () => {
   })
 })
 
+describe("Select all new texts (creates-selected)", () => {
+  // A page review: every new text starts left out. "Pay now" exists once in ReRune (Link to), "Total" twice (a choice
+  // to make), the others are new keys.
+  function pageReview(options: { taken?: string[] } = {}) {
+    const candidates = [
+      { id: K2, key: "total" },
+      { id: K3, key: "sum" },
+    ]
+    return setup([scannedNode("1:1", "Pay now"), scannedNode("1:2", "Total"), scannedNode("1:3", "Cancel"), scannedNode("1:4", "Back")], {
+      scope: "page",
+      textMatches: [["Pay now", [{ id: K1, key: "checkout_pay_button" }]], ["Total", candidates]],
+      taken: options.taken,
+    })
+  }
+
+  it("includes every new text in one step and leaves each card's match decision and name as they were", () => {
+    const { plan, context } = pageReview()
+    expect(plan.creates.map((create) => create.selected)).toEqual([false, false, false, false])
+    const all = applyDecision(plan, { kind: "creates-selected", selected: true }, context)
+    expect(all.creates.map((create) => create.selected)).toEqual([true, true, true, true])
+    expect(all.creates.map((create) => [create.name, create.match])).toEqual(plan.creates.map((create) => [create.name, create.match]))
+    // Pay now links to its key, Total still needs a choice, Cancel and Back are created.
+    expect(planLinkApplies(all, context).map((item) => [item.nodeId, item.keyId])).toEqual([["1:1", K1]])
+    expect(planToRequests(all)[0].items.map((item) => item.op === "create" && item.text)).toEqual(["Cancel", "Back"])
+    const none = applyDecision(all, { kind: "creates-selected", selected: false }, context)
+    expect(none.creates.map((create) => create.selected)).toEqual([false, false, false, false])
+    expect(planToRequests(none)).toEqual([])
+    expect(planLinkApplies(none, context)).toEqual([])
+  })
+
+  it("changes only the listed creates when given refs", () => {
+    const { plan, context } = pageReview()
+    const some = applyDecision(plan, { kind: "creates-selected", selected: true, refs: ["c1", "c3"] }, context)
+    expect(some.creates.map((create) => create.selected)).toEqual([false, true, false, true])
+    expect(some.creates[0]).toEqual(plan.creates[0])
+    const cleared = applyDecision(some, { kind: "creates-selected", selected: false, refs: ["c3"] }, context)
+    expect(cleared.creates.map((create) => create.selected)).toEqual([false, true, false, false])
+  })
+
+  it("keeps name issues on their cards, and an issue holds back only its own card", () => {
+    const { plan, context } = pageReview({ taken: ["taken_name"] })
+    let next = applyDecision(plan, { kind: "create-name", ref: "c2", name: "same" }, context)
+    next = applyDecision(next, { kind: "create-name", ref: "c3", name: "same" }, context)
+    // Left out, two new keys with one name are no clash yet; a taken name shows its issue either way.
+    expect(next.creates.map((create) => create.nameIssues)).toEqual([[], [], [], []])
+    next = applyDecision(next, { kind: "create-name", ref: "c3", name: "taken_name" }, context)
+    expect(next.creates[3].nameIssues).toEqual([KEY_NAME_ISSUES.taken])
+    next = applyDecision(next, { kind: "create-name", ref: "c3", name: "same" }, context)
+    const all = applyDecision(next, { kind: "creates-selected", selected: true }, context)
+    expect(all.creates.map((create) => create.nameIssues)).toEqual([[], [], [KEY_NAME_ISSUES.duplicate], [KEY_NAME_ISSUES.duplicate]])
+    expect(planToRequests(all)).toEqual([])
+    expect(planLinkApplies(all, context).map((item) => item.keyId)).toEqual([K1])
+    // Renamed, Back goes into the push; the bad name of Cancel still holds only Cancel back.
+    const fixed = applyDecision(applyDecision(all, { kind: "create-name", ref: "c3", name: "checkout_back" }, context), { kind: "create-name", ref: "c2", name: "bad name" }, context)
+    expect(fixed.creates.map((create) => create.nameIssues)).toEqual([[], [], [KEY_NAME_ISSUES.invalid], []])
+    expect(planToRequests(fixed)[0].items.map((item) => item.op === "create" && item.key)).toEqual(["checkout_back"])
+  })
+})
+
 describe("planToRequests", () => {
   it("chunks at 100 items and maps refs to node ids", () => {
     const nodes = Array.from({ length: 205 }, (_, index) => scannedNode("1:" + index, "Text " + index, { name: "Label " + index, autoRename: false }))

@@ -4,6 +4,7 @@ import overrideMain from "../build-figma-plugin.main.js"
 import overrideManifest from "../build-figma-plugin.manifest.js"
 import pkg from "../package.json"
 import { CODEGEN_CACHE_MAX_ENTRIES, CODEGEN_CACHE_MAX_PROJECTS, CODEGEN_SOURCE_TEXT_MAX_CHARS, DATA_KEYS, STORAGE_KEYS } from "../src/shared/constants"
+import { KEY_NAME_ISSUES } from "../src/shared/key-names"
 import { isAllowed, MESSAGE_IMPACT } from "../src/shared/message-policy"
 import { MAIN_TO_UI_TYPES, type UiToMainType } from "../src/shared/messages"
 import { LANGUAGE_COPY_MESSAGES } from "../src/shared/node-errors"
@@ -33,6 +34,7 @@ import previewState from "../src/ui/state/preview.ts?raw"
 import testing from "../TESTING.md?raw"
 import listing from "../COMMUNITY_LISTING.md?raw"
 import pushState from "../src/ui/state/push.ts?raw"
+import projectWatchState from "../src/ui/state/project-watch.ts?raw"
 import { snippetLines } from "../src/codegen/snippets"
 
 // README and TESTING.md must match what the build and the plugin actually do (P1.5: "present and accurate").
@@ -135,10 +137,14 @@ describe("public docs stand on their own", () => {
     expect(privacy).toContain("opening **Push** sends the text of every unlinked text layer in scope and the key names it suggests for them")
     expect(privacy).toContain("the Link dialog and **Link exact matches** send the text of the selected layers")
     expect(privacy).toContain("These lookups create nothing in ReRune.")
-    // The Push review posts every unlinked text in scope (E11 texts) and the suggested names (E11 names).
+    // The Push review posts every unlinked text in scope (E11 texts) and the suggested names (E11 names); a plan built
+    // again while Push is open leaves out those it already asked about.
     const prepare = pushState.slice(pushState.indexOf("export async function preparePush"))
-    expect(prepare).toMatch(/fetchTextMatches\(api, input\.projectId, unlinkedGroupTexts\(input\.nodes/)
-    expect(prepare).toMatch(/fetchTakenNames\(api, input\.projectId, toCheck\)/)
+    expect(prepare).toMatch(/const texts = unlinkedGroupTexts\(input\.nodes/)
+    expect(prepare).toMatch(/const unknownTexts = texts\.filter\(\(text\) => !looked\.texts\.has\(text\)\)/)
+    expect(prepare).toMatch(/fetchTextMatches\(api, input\.projectId, unknownTexts\)/)
+    expect(prepare).toMatch(/const unknown = toCheck\.filter\(\(name\) => !looked\.names\.has\(name\.trim\(\)\)\)/)
+    expect(prepare).toMatch(/fetchTakenNames\(api, input\.projectId, unknown\)/)
     expect(listing).toContain("these lookups create nothing in ReRune")
   })
 
@@ -365,6 +371,58 @@ describe("TESTING.md", () => {
     expect(check).toContain('"Updated 1 layer from ReRune."')
     expect(check).toContain('"1 layer changed in Figma or in both wasn\'t changed. Review it on Push."')
     expect(readme).toContain("**Update screenshots** uploads those frames the same way, whatever the setting says.")
+  })
+
+  it("names the notes about ReRune changes while the plugin is open, as the plugin shows them", () => {
+    const constant = (source: string, name: string) => {
+      const match = source.match(new RegExp("export const " + name + ' = "([^"]+)"'))
+      expect(match, name).not.toBeNull()
+      return match?.[1] ?? ""
+    }
+    for (const name of ["REMOTE_CHANGED_NOTE", "CHANGED_BEFORE_PUSH", "CHANGED_BEFORE_PULL", "OTHER_ROWS_CHANGED"]) {
+      expect(testing).toContain(constant(pushScreen, name))
+    }
+    expect(testing).toContain(constant(pushState, "CHANGED_SINCE_PUSH"))
+    expect(readme).toContain(constant(pushState, "CHANGED_SINCE_PUSH"))
+    expect(readme).toContain(constant(pushScreen, "OTHER_ROWS_CHANGED"))
+    expect(testing).toContain(constant(projectWatchState, "VARIATION_REMOVED_NOTE"))
+    // languageRemovedNote, removedPreviewNote and projectGoneMessage, with the values TESTING.md names.
+    expect(projectWatchState).toContain('" removed from this project."')
+    expect(projectWatchState).toContain('" Language set to " + fallback + "."')
+    expect(testing).toContain('"{code} was removed from this project. Language set to {main}."')
+    expect(projectWatchState).toContain('"The layers still show the " + status.lang + " preview, but " + status.lang + " was removed from this project. Reset brings back the original text."')
+    expect(testing).toContain('"The layers still show the de preview, but de was removed from this project. Reset brings back the original text."')
+    expect(projectWatchState).toContain(`"This file's ReRune project isn't available to " + (email ?? "this account") + ". Choose a project."`)
+    expect(testing).toContain(`"This file's ReRune project isn't available to {email}. Choose a project."`)
+    for (const check of ["**Edit in ReRune → pull:**", "**ReRune edits while the plugin is open:**", "**Languages changed in ReRune:**", "**Chips after resolving:**"]) {
+      expect(testing).toContain("- [ ] " + check)
+    }
+    expect(readme).toContain("ReRune has new changes.")
+  })
+
+  it("checks Select all new texts on Push as the plugin shows it, with the 60-text Push load frame", () => {
+    expect(pushScreen).toContain('label={"Select all new texts (" + count + ")"}')
+    expect(pushScreen).toMatch(/\/>\s*Select all\s*<\/label>/)
+    const check = testing.split("\n").find((line) => line.startsWith("- [ ] **Select all new texts:**")) ?? ""
+    for (const part of [
+      "scope **Page**",
+      "except texts marked **Create on push**",
+      "partly ticked",
+      KEY_NAME_ISSUES.duplicate,
+      "Only N keys are left on your plan",
+      "ReRune has new changes.",
+      "**Push load** frame (60 new texts)",
+      "Stress (500+ texts)",
+      "Then Push with scope **Page** on that page",
+      "While **Update layers from ReRune** runs",
+      "**Select all shown**",
+    ]) {
+      expect(check, part).toContain(part)
+    }
+    expect(pushScreen).toContain("Only {plural(available, \"key is\", \"keys are\")} left on your plan.")
+    expect(readme).toContain("**Select all** in the \"New text\" header")
+    expect(readme).toContain("(except texts marked **Create on push** on Layers)")
+    expect(layersScreen).toContain('label="Select all shown"')
   })
 
   it("names the Dev Mode inspect controls, notes and codegen lines the plugin shows (P2.4, P2.5)", () => {

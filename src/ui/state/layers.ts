@@ -249,6 +249,16 @@ export function linkedCount(rows: readonly LayerRow[]): number {
   return rows.filter((row) => row.state !== "unlinked" && row.state !== "invalid_link").length
 }
 
+// Select all shown: ticked when every shown row is ticked, partly ticked ("some") when only some are, like Select all
+// in the Push tab's New text header.
+export function shownTicks(rows: readonly LayerRow[], checked: ReadonlySet<string>): "all" | "some" | "none" {
+  let ticked = 0
+  for (const row of rows) {
+    if (checked.has(row.node.nodeId)) ticked++
+  }
+  return ticked === 0 ? "none" : ticked === rows.length ? "all" : "some"
+}
+
 const SKIP_LABELS: Record<keyof SkipCounts, string> = {
   hidden: "hidden",
   locked: "locked",

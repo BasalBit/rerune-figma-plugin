@@ -45,7 +45,8 @@ import { createPairingFlow, type PairingFlow, type PairingState } from "./state/
 import { leftoverPreviewNotice, previewStatus, resetOutcome } from "./state/preview"
 import { createRefreshRequests, refetchAfterUpload, refreshGate } from "./state/refresh-requests"
 import { cacheEntriesFromResolved } from "./state/remote"
-import { availabilityRead, browserWindow, createRequestWatch } from "./state/request-watch"
+import { projectGoneMessage, projectRead } from "./state/project-watch"
+import { availabilityRead, browserWindow, createWatchSchedule } from "./state/request-watch"
 import type { ProjectPluralChoice } from "./state/samples"
 import {
   createAvailability,
@@ -225,7 +226,7 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       }
     } catch (caught) {
       if (caught instanceof ApiError && (caught.status === 403 || caught.status === 404)) {
-        setProjectError("This file's ReRune project isn't available to " + (authRef.current?.user.email ?? "this account") + ". Choose a project.")
+        setProjectError(projectGoneMessage(authRef.current?.user.email ?? null))
         go({ type: "change-project" })
       } else if (!(caught instanceof ApiError && caught.status === 401)) {
         setProjectError(userMessage(caught))
@@ -235,6 +236,17 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         loadingProject.current = null
       }
     }
+  }
+
+  // The file's project was deleted, or this account lost access to it, while the plugin was open: as when it opens.
+  function projectGone() {
+    setActiveProject(null)
+    setLink(null)
+    pageSync.reset()
+    refreshRequests.reset()
+    workspace.clear(true)
+    setProjectError(projectGoneMessage(authRef.current?.user.email ?? null))
+    go({ type: "change-project" })
   }
 
   // Loads the project detail (E9) unless it is already loaded or loading.
@@ -352,6 +364,13 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
         scanFrames: (frameIds) => workspace.scanFrames(frameIds),
         uploader: screenshotUploader,
         lock: workLock,
+        // Its pulls show at once on Layers and Push, and their keys are read again.
+        pulled: (change) => {
+          const keyIds = workspace.applyChanges(change)
+          if (keyIds.length > 0) {
+            void workspace.refreshKeys({ keyIds })
+          }
+        },
       }),
     [],
   )
@@ -363,18 +382,61 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
       void refreshRequests.fetch()
     }
   }, [auth, project?.id, freshnessGate.enabled, freshnessGate.fileKey, usable?.updatedAt])
-  // While the plugin stays open, the requests are also read when its window is shown or gets the user's attention and
-  // every minute while it is visible and in use, so a request made in the dashboard shows without reopening the
-  // plugin. Not while a task runs: a push's uploads read them again when they end.
-  const requestWatch = useMemo(
+  // While the plugin stays open, the project's details, the values of the keys in view and the screenshot requests are
+  // read again when its window is shown or gets the user's attention and every minute while it is visible and in use,
+  // one after the other on one schedule (request-watch.ts), so changes made in the dashboard show without reopening
+  // the plugin. Not while a task holds the work lock: a push, a pull or Update screenshots reads what it needs itself.
+  const schedule = useMemo(() => createWatchSchedule({ busy: () => workLock.holder() !== null, window: browserWindow(document, window) }), [])
+  // Languages, variations, permissions and the rest of E9: applied everywhere at once. A main language change loads
+  // the remote state again; a project that is gone or no longer open to this account leads to the Project screen.
+  const projectWatch = useMemo(
     () =>
-      createRequestWatch({
-        fetch: () => refreshRequests.fetch(),
-        busy: () => refreshRequests.busy() || workLock.holder() !== null,
-        window: browserWindow(document, window),
+      schedule.add(
+        projectRead({
+          api,
+          current: () => (authRef.current === null ? null : projectRef.current),
+          loading: () => loadingProject.current !== null,
+          held: () => workLock.holder() !== null,
+          apply: (detail, change) => {
+            setActiveProject(detail)
+            if (change.mainLanguage) {
+              void workspace.refreshRemote()
+            }
+          },
+          gone: () => projectGone(),
+        }),
+      ),
+    [],
+  )
+  // The keys of the last scan, without scanning the canvas again (at most 500 per round, in calls of E1's
+  // max_batch_size): a change made in ReRune shows on Layers and Push. Not while a scan, the workspace's own load, a
+  // Layers action, a page sync, a reset or the Link dialog runs.
+  const keysBusyRef = useRef(false)
+  keysBusyRef.current = layersBusy || link !== null || resetting || pageSyncState.running !== null
+  const availabilityRef = useRef(availability)
+  availabilityRef.current = availability
+  const keysWatch = useMemo(
+    () =>
+      schedule.add({
+        busy: () => keysBusyRef.current || workspace.store.get().status === "scanning",
+        fetch: () => workspace.refreshKeys({ chunkSize: availabilityRef.current.meta?.max_batch_size }),
       }),
     [],
   )
+  const workspaceOpen = auth !== null && project !== null
+  useEffect(() => {
+    if (!workspaceOpen) {
+      return
+    }
+    projectWatch.start()
+    keysWatch.start()
+    return () => {
+      projectWatch.stop()
+      keysWatch.stop()
+    }
+  }, [workspaceOpen, project?.id])
+  // The requests: not while a run or another read of them is going on (a push's uploads read them when they end).
+  const requestWatch = useMemo(() => schedule.add({ fetch: () => refreshRequests.fetch(), busy: () => refreshRequests.busy() }), [])
   const watching = auth !== null && project !== null && freshnessGate.enabled
   useEffect(() => {
     if (!watching) {
@@ -384,16 +446,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     return () => requestWatch.stop()
   }, [watching, project?.id, freshnessGate.fileKey])
   // When E1 or E8 failed as the workspace opened (a brief network or server error), the refresh gate stays closed:
-  // they are read again on the watch's schedule, so the requests show without reopening the plugin.
-  const availabilityWatch = useMemo(
-    () =>
-      createRequestWatch({
-        fetch: availabilityRead(() => availabilityLoader.load(), setAvailability),
-        busy: () => false,
-        window: browserWindow(document, window),
-      }),
-    [],
-  )
+  // they are read again on the same schedule, so the requests show without reopening the plugin.
+  const availabilityWatch = useMemo(() => schedule.add({ fetch: availabilityRead(() => availabilityLoader.load(), setAvailability) }), [])
   const availabilityFailed = auth !== null && project !== null && availability.error !== null
   useEffect(() => {
     if (!availabilityFailed) {
@@ -402,15 +456,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     availabilityWatch.start()
     return () => availabilityWatch.stop()
   }, [availabilityFailed, project?.id])
-  // A selection or page change means someone uses Figma: the watches keep reading every minute.
-  useEffect(
-    () =>
-      bus.on("selection-changed", () => {
-        requestWatch.activity()
-        availabilityWatch.activity()
-      }),
-    [],
-  )
+  // A selection or page change means someone uses Figma: the schedule keeps reading every minute.
+  useEffect(() => bus.on("selection-changed", () => schedule.activity()), [])
 
   // QA picks and results belong to the project they were made in.
   useEffect(() => {
@@ -932,7 +979,11 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
             onOpenExternal={openExternal}
             resetting={resetting}
             onResetPreviews={(scope, nodeIds) => resetPreviews(scope, nodeIds)}
-            onAvailableKeys={(availableKeys) => setActiveProject({ ...project, available_keys: availableKeys })}
+            onAvailableKeys={(availableKeys) => {
+              // The project as it is now: details read while the push ran are kept.
+              const current = projectRef.current
+              if (current !== null) setActiveProject({ ...current, available_keys: availableKeys })
+            }}
             onBusy={pushBusy}
             locked={workTask !== null && workTask !== "push"}
             fileKey={pushFileKey(usable, rootName)}

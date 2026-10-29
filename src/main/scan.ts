@@ -116,8 +116,8 @@ function childrenOf(node: BaseNode): readonly SceneNode[] {
 }
 
 export interface Scanner {
-  // With `frameIds` (screenshot freshness, the frames ReRune asks new screenshots of) the roots are those frames and
-  // `scope` is ignored.
+  // With `frameIds` (screenshot freshness, the frames ReRune asks new screenshots of; or text layers by id, the layers
+  // of a Push review) the roots are those nodes and `scope` is ignored.
   start(requestId: RequestId, scope: Scope, frameIds?: readonly string[]): Promise<void>
   cancel(requestId: RequestId): void
 }

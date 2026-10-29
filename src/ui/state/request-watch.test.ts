@@ -10,6 +10,7 @@ import {
   availabilityRead,
   browserWindow,
   createRequestWatch,
+  createWatchSchedule,
   REQUEST_ATTENTION_MIN_MS,
   REQUEST_IDLE_MS,
   REQUEST_POLL_MS,
@@ -639,18 +640,300 @@ describe("availabilityRead (E1 or E8 failed as the workspace opened)", () => {
   })
 })
 
-// app.tsx is not rendered in tests: its wiring of the watches is checked in its source.
+// One schedule for every background read: shared triggers, locks, idle pause and backoff, one read at a time.
+describe("watch schedule: several reads", () => {
+  interface Pending { name: string; finish(result?: RefreshFetch): void }
+
+  // Reads that answer only when the test finishes them; `started` records their start order.
+  function reads(names: string[]) {
+    const started: string[] = []
+    const pending: Pending[] = []
+    const busy = new Set<string>()
+    const make = (name: string) => ({
+      busy: () => busy.has(name),
+      fetch: vi.fn(
+        () =>
+          new Promise<RefreshFetch>((resolve) => {
+            started.push(name)
+            pending.push({ name, finish: (result = { kind: "read" }) => resolve(result) })
+          }),
+      ),
+    })
+    return { started, pending, busy, all: Object.fromEntries(names.map((name) => [name, make(name)])) }
+  }
+
+  async function finishAll(pending: Pending[], result?: (name: string) => RefreshFetch) {
+    while (pending.length > 0) {
+      const next = pending.shift() as Pending
+      next.finish(result?.(next.name))
+      await vi.advanceTimersByTimeAsync(0)
+    }
+  }
+
+  function setup(names = ["project", "keys", "requests"]) {
+    const r = reads(names)
+    const lock = { held: false }
+    const page = fakeWindow()
+    const schedule = createWatchSchedule({ busy: () => lock.held, window: page.window })
+    const watches = Object.fromEntries(names.map((name) => [name, schedule.add(r.all[name])]))
+    return { ...r, lock, page, schedule, watches }
+  }
+
+  it("reads every read once a round, one after the other: never two at once, all on one timer", async () => {
+    const s = setup()
+    s.watches.project.start()
+    s.watches.keys.start()
+    s.watches.requests.start()
+    expect(vi.getTimerCount()).toBe(1)
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    expect(s.started).toEqual(["project"])
+    s.pending.shift()?.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.started).toEqual(["project", "keys"])
+    s.pending.shift()?.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.started).toEqual(["project", "keys", "requests"])
+    // Attention while the round goes on starts no second round.
+    s.page.attention()
+    await vi.advanceTimersByTimeAsync(20 * SECOND)
+    expect(s.started).toHaveLength(3)
+    s.pending.shift()?.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBe(1)
+    // The next round a minute after this one ended.
+    await vi.advanceTimersByTimeAsync(MINUTE - 1)
+    expect(s.started).toHaveLength(3)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(s.started).toEqual(["project", "keys", "requests", "project"])
+  })
+
+  it("shares the 15 s attention throttle, the idle pause and the hidden window", async () => {
+    const s = setup(["project", "keys"])
+    s.watches.project.start()
+    s.watches.keys.start()
+    s.page.attention()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.started).toEqual([])
+    await vi.advanceTimersByTimeAsync(REQUEST_ATTENTION_MIN_MS)
+    s.page.attention()
+    await vi.advanceTimersByTimeAsync(0)
+    await finishAll(s.pending)
+    expect(s.started).toEqual(["project", "keys"])
+    s.page.hide()
+    await vi.advanceTimersByTimeAsync(10 * MINUTE)
+    expect(s.started).toHaveLength(2)
+    s.page.show()
+    await vi.advanceTimersByTimeAsync(0)
+    await finishAll(s.pending)
+    expect(s.started).toHaveLength(4)
+    // Nobody there for 15 minutes: no round for any read.
+    await vi.advanceTimersByTimeAsync(REQUEST_IDLE_MS + 5 * MINUTE)
+    await finishAll(s.pending)
+    const before = s.started.length
+    await vi.advanceTimersByTimeAsync(10 * MINUTE)
+    expect(s.started).toHaveLength(before)
+    s.schedule.activity()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.started.length).toBeGreaterThan(before)
+  })
+
+  it("reads nothing while a task holds the work lock, and leaves out a read whose own work is going on", async () => {
+    const s = setup()
+    for (const watch of Object.values(s.watches)) watch.start()
+    s.lock.held = true
+    await vi.advanceTimersByTimeAsync(3 * MINUTE)
+    s.page.attention()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.started).toEqual([])
+    s.lock.held = false
+    s.busy.add("keys")
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending)
+    expect(s.started).toEqual(["project", "requests"])
+    // A task that starts during a round: the rest of the round waits for the next one.
+    s.busy.clear()
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    expect(s.started).toEqual(["project", "requests", "project"])
+    s.lock.held = true
+    await finishAll(s.pending)
+    expect(s.started).toHaveLength(3)
+  })
+
+  it("ends the round at a failed read: the rest waits for the next round, so a server that is down gets one failing read a round", async () => {
+    const s = setup()
+    for (const watch of Object.values(s.watches)) watch.start()
+    const down = (): RefreshFetch => failed(new ApiError(0, "network", "Can't reach ReRune."))
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending, down)
+    expect(s.started).toEqual(["project"])
+    // The project's details wait 2 minutes; the next round a minute later reads the keys, which fail too.
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending, down)
+    expect(s.started).toEqual(["project", "keys"])
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending, down)
+    expect(s.started).toEqual(["project", "keys", "project"])
+    // ReRune answers again: each read comes back when its own wait is over (the project's details: 4 minutes after
+    // their second failure), and keeps the minute once it works.
+    for (let minute = 4; minute <= 6; minute++) {
+      await vi.advanceTimersByTimeAsync(MINUTE)
+      await finishAll(s.pending)
+    }
+    expect(s.started.slice(3)).toEqual(["keys", "requests", "keys", "requests", "keys", "requests"])
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending)
+    expect(s.started.slice(-3)).toEqual(["project", "keys", "requests"])
+  })
+
+  it("keeps the minute for the other reads while one of them keeps failing (E1 down: the availability retry)", async () => {
+    const s = setup(["keys", "availability"])
+    s.watches.keys.start()
+    s.watches.availability.start()
+    const answer = (name: string): RefreshFetch => (name === "availability" ? failed(new ApiError(503, null, "Service Unavailable")) : { kind: "read" })
+    const at: Record<string, number[]> = { keys: [], availability: [] }
+    for (let minute = 1; minute <= 16; minute++) {
+      const before = s.started.length
+      await vi.advanceTimersByTimeAsync(MINUTE)
+      await finishAll(s.pending, answer)
+      for (const name of s.started.slice(before)) at[name].push(minute)
+      s.schedule.activity()
+    }
+    expect(at.keys).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+    // Its own wait doubles: 2, 4, 8, then 10 minutes.
+    expect(at.availability).toEqual([1, 3, 7, 15])
+  })
+
+  it("makes every read wait a 429's Retry-After, and attention does not shorten it", async () => {
+    const s = setup()
+    for (const watch of Object.values(s.watches)) watch.start()
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending, (name) => (name === "keys" ? failed(new ApiError(429, null, "Too Many Requests", 300)) : { kind: "read" }))
+    // Nothing after the 429 in this round.
+    expect(s.started).toEqual(["project", "keys"])
+    await vi.advanceTimersByTimeAsync(4 * MINUTE)
+    s.page.attention()
+    s.page.online()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.started).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending)
+    expect(s.started.slice(2)).toEqual(["project", "keys", "requests"])
+    // A round that works brings back the minute.
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    expect(s.started).toHaveLength(6)
+  })
+
+  it("after a failed read, attention reads it again once its last read is a minute old; the others keep the 15 s", async () => {
+    const s = setup(["project", "keys"])
+    s.watches.project.start()
+    s.watches.keys.start()
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending, (name) => (name === "keys" ? failed(new ApiError(503, null, "Service Unavailable")) : { kind: "read" }))
+    expect(s.started).toEqual(["project", "keys"])
+    await vi.advanceTimersByTimeAsync(REQUEST_ATTENTION_MIN_MS)
+    s.page.attention()
+    await vi.advanceTimersByTimeAsync(0)
+    await finishAll(s.pending)
+    expect(s.started).toEqual(["project", "keys", "project"])
+    await vi.advanceTimersByTimeAsync(MINUTE - REQUEST_ATTENTION_MIN_MS)
+    await finishAll(s.pending)
+    s.page.attention()
+    await vi.advanceTimersByTimeAsync(0)
+    await finishAll(s.pending)
+    expect(s.started.slice(3)).toEqual(["project", "keys"])
+  })
+
+  it("leaves out a read whose own work started while the round read the one before it", async () => {
+    const s = setup()
+    for (const watch of Object.values(s.watches)) watch.start()
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    expect(s.started).toEqual(["project"])
+    // A scan starts during the project's read: the keys sit this round out.
+    s.busy.add("keys")
+    await finishAll(s.pending)
+    expect(s.started).toEqual(["project", "requests"])
+    s.busy.clear()
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending)
+    expect(s.started.slice(2)).toEqual(["project", "keys", "requests"])
+  })
+
+  it("stops every read after a 401 in any of them", async () => {
+    const s = setup()
+    for (const watch of Object.values(s.watches)) watch.start()
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending, (name) => (name === "keys" ? failed(new ApiError(401, null, "Unauthorized")) : { kind: "read" }))
+    expect(s.started).toEqual(["project", "keys"])
+    expect(vi.getTimerCount()).toBe(0)
+    expect(s.page.listeners.size).toBe(0)
+    await vi.advanceTimersByTimeAsync(10 * MINUTE)
+    expect(s.started).toHaveLength(2)
+  })
+
+  it("adds a read turned on later to the next round, keeps the others when one is turned off, and stops with the last", async () => {
+    const s = setup()
+    s.watches.project.start()
+    await vi.advanceTimersByTimeAsync(30 * SECOND)
+    s.watches.requests.start()
+    await vi.advanceTimersByTimeAsync(30 * SECOND)
+    await finishAll(s.pending)
+    expect(s.started).toEqual(["project", "requests"])
+    s.watches.project.stop()
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    await finishAll(s.pending)
+    expect(s.started).toEqual(["project", "requests", "requests"])
+    s.watches.requests.stop()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(s.page.listeners.size).toBe(0)
+  })
+
+  it("does not count the answer of a read turned off while it was pending", async () => {
+    const s = setup(["project", "keys"])
+    s.watches.project.start()
+    s.watches.keys.start()
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    s.watches.project.stop()
+    s.pending.shift()?.finish(failed(new ApiError(503, null, "Service Unavailable")))
+    await vi.advanceTimersByTimeAsync(0)
+    await finishAll(s.pending)
+    expect(s.started).toEqual(["project", "keys"])
+    // No failure's wait: the next round comes a minute later.
+    await vi.advanceTimersByTimeAsync(MINUTE)
+    expect(s.started).toEqual(["project", "keys", "keys"])
+  })
+})
+
+// app.tsx is not rendered in tests: its wiring of the schedule is checked in its source.
 describe("app.tsx wiring", () => {
-  it("watches the requests while signed in on a file with the gate open, not during a task, and starts again for another project or file", () => {
-    expect(appSource).toContain("busy: () => refreshRequests.busy() || workLock.holder() !== null,")
+  it("has one schedule for every background read, which waits while a task holds the work lock", () => {
+    expect(appSource.match(/createWatchSchedule\(/g)).toHaveLength(1)
+    expect(appSource).toContain("createWatchSchedule({ busy: () => workLock.holder() !== null, window: browserWindow(document, window) })")
+    expect(appSource).not.toContain("createRequestWatch(")
+    // In this order each round: the project's details first (a new main language changes the keys' read).
+    const order = ["schedule.add(\n        projectRead(", "schedule.add({\n        busy: () => keysBusyRef.current", "schedule.add({ fetch: () => refreshRequests.fetch()", "schedule.add({ fetch: availabilityRead("]
+    const positions = order.map((part) => appSource.indexOf(part))
+    expect(positions.every((position) => position > 0)).toBe(true)
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions)
+  })
+
+  it("watches the requests while signed in on a file with the gate open, not during a run of their own, and starts again for another project or file", () => {
+    expect(appSource).toContain("schedule.add({ fetch: () => refreshRequests.fetch(), busy: () => refreshRequests.busy() })")
     expect(appSource).toContain("const watching = auth !== null && project !== null && freshnessGate.enabled\n")
     expect(appSource).toContain("    requestWatch.start()\n    return () => requestWatch.stop()\n  }, [watching, project?.id, freshnessGate.fileKey])")
   })
 
+  it("reads the project's details and the keys in view while the workspace is open, the keys not during a scan or a Layers action", () => {
+    expect(appSource).toContain("const workspaceOpen = auth !== null && project !== null\n")
+    expect(appSource).toContain("    projectWatch.start()\n    keysWatch.start()\n    return () => {\n      projectWatch.stop()\n      keysWatch.stop()\n    }\n  }, [workspaceOpen, project?.id])")
+    expect(appSource).toContain("keysBusyRef.current = layersBusy || link !== null || resetting || pageSyncState.running !== null")
+    expect(appSource).toContain('busy: () => keysBusyRef.current || workspace.store.get().status === "scanning",')
+    expect(appSource).toContain("fetch: () => workspace.refreshKeys({ chunkSize: availabilityRef.current.meta?.max_batch_size }),")
+  })
+
   it("reads the availability again while it failed, and counts selection changes in Figma as use", () => {
-    expect(appSource).toContain("fetch: availabilityRead(() => availabilityLoader.load(), setAvailability),")
+    expect(appSource).toContain("schedule.add({ fetch: availabilityRead(() => availabilityLoader.load(), setAvailability) })")
     expect(appSource).toContain("const availabilityFailed = auth !== null && project !== null && availability.error !== null\n")
     expect(appSource).toContain("    availabilityWatch.start()\n    return () => availabilityWatch.stop()\n  }, [availabilityFailed, project?.id])")
-    expect(appSource).toContain('bus.on("selection-changed", () => {\n        requestWatch.activity()\n        availabilityWatch.activity()\n      })')
+    expect(appSource).toContain('bus.on("selection-changed", () => schedule.activity())')
   })
 })
