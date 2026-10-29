@@ -7,7 +7,8 @@ import type { ParsedFigmaUrl } from "../../shared/figma-url"
 import type { CaseStyle, FileSettings, StoredAuth } from "../../shared/messages"
 import { userMessage } from "../api/client"
 import { DANGER_TEXT, FileLinkForm } from "../components/file-link"
-import { ErrorNote, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { BrandMark } from "../brand/mark"
+import { ErrorNote, FieldLabel, Note, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { fileLinkStatus } from "../state/file-link"
 import { exampleKeyName, templateIssues } from "../state/naming"
@@ -105,7 +106,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           <div style={styles.row}>
             <div style={styles.grow}>
               <Small muted>This file is connected to</Small>
-              <div style={{ fontWeight: "600" }}>{props.settings.projectName}</div>
+              <div style={{ fontWeight: "600", color: "var(--rr-ink)" }}>{props.settings.projectName}</div>
             </div>
             <TextButton disabled={props.locked} onClick={props.onChangeProject}>
               Change project
@@ -130,7 +131,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
         )}
 
         <SectionTitle>Key names</SectionTitle>
-        <Small muted>Template</Small>
+        <FieldLabel>Template</FieldLabel>
         <Textbox value={edit.keyTemplate} placeholder="{screen}_{element} (default)" disabled={props.settings === null || props.readOnly} onValueInput={(value) => setEdit({ ...edit, keyTemplate: value })} spellCheck={false} />
         {issues.map((issue) => (
           <Small key={issue} style={{ color: "var(--figma-color-text-danger)" }}>
@@ -138,7 +139,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           </Small>
         ))}
         <Small muted>Placeholders: {"{page} {frame} {screen} {layer} {element} {text} {component}"}</Small>
-        <Small muted>Case style</Small>
+        <FieldLabel>Case style</FieldLabel>
         <Dropdown
           value={edit.caseStyle}
           disabled={props.settings === null || props.readOnly}
@@ -190,7 +191,12 @@ export function SettingsScreen(props: SettingsScreenProps) {
             Sign out
           </TextButton>
         </div>
-        <Small muted>ReRune for Figma {props.version}</Small>
+        <div style={{ ...styles.row, gap: "6px", marginTop: "8px" }}>
+          <BrandMark />
+          <Small muted>
+            for Figma <span class="rr-code">{props.version}</span>
+          </Small>
+        </div>
       </ScreenBody>
     </div>
   )

@@ -1,11 +1,13 @@
 import { Button } from "@create-figma-plugin/ui"
-import { h } from "preact"
+import { Fragment, h } from "preact"
 import { useEffect, useState } from "preact/hooks"
+import { Ticket } from "../brand/ticket"
 import { Loading, Note, Small, styles } from "../components/ui"
 import { formatCountdown, secondsLeft, type PairingState } from "../state/pairing"
 
 // Pairing (§3.12, §7.8): the code, "Check that the code in your browser matches", Open browser again, Cancel,
-// the countdown and the polling status. The poll secret and token are never shown.
+// the countdown and the polling status. The poll secret and token are never shown. The code sits on the ticket of
+// the /figma/connect page ("Pairing code", the code, the hint), the countdown and status on its stub.
 
 export interface PairingScreenProps {
   state: PairingState
@@ -70,14 +72,26 @@ export function PairingScreen(props: PairingScreenProps) {
   const left = secondsLeft(state.deadline, now)
   return (
     <div style={styles.page}>
-      <div style={{ ...styles.body, ...styles.stack, justifyContent: "center", textAlign: "center" }}>
-        <div style={{ fontSize: "12px" }}>Check that the code in your browser matches</div>
-        <div style={{ fontFamily: "var(--font-family-code, ui-monospace, monospace)", fontSize: "32px", fontWeight: "700", letterSpacing: "0.12em", padding: "12px 0" }} aria-label="Pairing code">
-          {state.code}
-        </div>
-        <Small muted>Code expires in {formatCountdown(left)}</Small>
-        <Small>{STATUS_TEXT[state.status]}</Small>
-        <Small muted>After you confirm in the browser, come back to Figma.</Small>
+      <div style={{ ...styles.body, ...styles.stack, justifyContent: "center" }}>
+        <Ticket
+          stub={
+            <Fragment>
+              <Small muted>Code expires in {formatCountdown(left)}</Small>
+              <Small>{STATUS_TEXT[state.status]}</Small>
+            </Fragment>
+          }
+        >
+          <div class="rr-label" aria-hidden="true">
+            Pairing code
+          </div>
+          <div class="rr-pairing-code" aria-label="Pairing code" translate={false}>
+            {state.code}
+          </div>
+          <div style={{ fontSize: "12px", lineHeight: "16px" }}>Check that the code in your browser matches</div>
+        </Ticket>
+        <Small muted style={{ textAlign: "center" }}>
+          After you confirm in the browser, come back to Figma.
+        </Small>
         {state.urlWarning !== null && <Note tone="warning">{state.urlWarning}</Note>}
       </div>
       <div style={{ ...styles.footer, justifyContent: "flex-end" }}>

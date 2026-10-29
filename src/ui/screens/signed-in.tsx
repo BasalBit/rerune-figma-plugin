@@ -1,6 +1,7 @@
 import { Button, Text } from "@create-figma-plugin/ui"
 import { h } from "preact"
 import type { StoredAuth } from "../../shared/messages"
+import { Stamp } from "../brand/stamp"
 import { Small, styles } from "../components/ui"
 import { fullName } from "../state/session"
 
@@ -19,8 +20,11 @@ export function SignedInScreen(props: SignedInScreenProps) {
   return (
     <div style={styles.page}>
       <div style={{ ...styles.body, ...styles.stack, justifyContent: "center" }}>
-        <Text>Signed in as</Text>
-        <div style={{ fontSize: "16px", fontWeight: "600", overflowWrap: "anywhere" }}>{props.auth.user.email}</div>
+        <div style={{ ...styles.row, gap: "10px" }}>
+          <Stamp size="sm" />
+          <Text>Signed in as</Text>
+        </div>
+        <div style={{ fontSize: "16px", lineHeight: "22px", fontWeight: "600", overflowWrap: "anywhere", color: "var(--rr-ink)" }}>{props.auth.user.email}</div>
         {name !== "" && <Small muted>{name}</Small>}
         <Small muted>If this isn't your ReRune account, choose Not me. The plugin then signs out and forgets this sign-in.</Small>
       </div>

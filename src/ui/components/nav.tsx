@@ -1,10 +1,13 @@
 import { h } from "preact"
+import { BrandMark } from "../brand/mark"
 import type { WorkspaceScreen } from "../state/navigation"
 import { previewStatusText, type PreviewStatus } from "../state/preview"
 import { waitText, type WorkTask } from "../state/work-lock"
 import { styles, TextButton } from "./ui"
 
-// Header of the workspace screens: project, selection count, tabs, and the preview status bar (§7.14).
+// Header of the workspace screens: the ReRune mark and wordmark, project, Change, selection count, tabs (the active
+// one on ReRune's amber rule), and the preview status bar on the ReRune wash (§7.14). Below 340 px the wordmark and
+// the selection count make room for the project name.
 
 const TABS: { screen: WorkspaceScreen; label: string }[] = [
   { screen: "layers", label: "Layers" },
@@ -33,16 +36,20 @@ export function Nav(props: NavProps) {
   const locked = lockedBy !== null
   return (
     <div style={{ borderBottom: "1px solid var(--figma-color-border)" }}>
-      <div style={{ ...styles.row, padding: "8px 12px 4px" }}>
-        <div style={{ ...styles.grow, fontWeight: "600", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={props.projectName}>
+      <div class="rr-header">
+        <BrandMark />
+        <span class="rr-divider" aria-hidden="true" />
+        <div class="rr-project" title={props.projectName}>
           {props.projectName}
         </div>
-        <span style={{ ...styles.small, ...styles.muted }}>{props.selectionCount === 1 ? "1 selected" : props.selectionCount + " selected"}</span>
         <TextButton disabled={locked} onClick={props.onChangeProject}>
           Change
         </TextButton>
+        <span class="rr-narrow-hide" style={{ ...styles.small, ...styles.muted, whiteSpace: "nowrap" }}>
+          {props.selectionCount === 1 ? "1 selected" : props.selectionCount + " selected"}
+        </span>
       </div>
-      <div role="tablist" style={{ display: "flex", padding: "0 8px" }}>
+      <div role="tablist" class="rr-tabs">
         {TABS.map((tab) => {
           const active = tab.screen === props.active
           return (
@@ -50,21 +57,11 @@ export function Nav(props: NavProps) {
               key={tab.screen}
               type="button"
               role="tab"
+              class="rr-tab rr-focus"
               aria-selected={active}
               disabled={locked && !active}
               title={lockedBy !== null && !active ? waitText(lockedBy) : undefined}
               onClick={() => props.onOpen(tab.screen)}
-              style={{
-                background: "none",
-                border: "none",
-                borderBottom: "2px solid " + (active ? "var(--figma-color-border-brand-strong)" : "transparent"),
-                color: active ? "var(--figma-color-text)" : "var(--figma-color-text-secondary)",
-                fontWeight: active ? "600" : "400",
-                padding: "6px 8px",
-                cursor: locked && !active ? "default" : "pointer",
-                opacity: locked && !active ? "0.5" : "1",
-                font: "inherit",
-              }}
             >
               {tab.label}
             </button>
@@ -72,7 +69,7 @@ export function Nav(props: NavProps) {
         })}
       </div>
       {props.previewStatus !== null && (
-        <div style={{ ...styles.row, padding: "4px 12px", background: "var(--figma-color-bg-brand-tertiary)", fontSize: "11px" }}>
+        <div class="rr-band">
           <span style={styles.grow}>{previewStatusText(props.previewStatus)}</span>
           <TextButton disabled={props.resetDisabled === true} onClick={props.onResetPreview}>
             Reset
