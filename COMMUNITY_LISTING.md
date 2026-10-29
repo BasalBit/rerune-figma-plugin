@@ -1,6 +1,6 @@
 # Figma Community listing
 
-Everything needed to publish the plugin in Figma Community: the listing text, the assets, the answers to Figma's data security disclosure and the notes for Figma's reviewers. Status: **not published yet**. Publishing happens by hand in the Figma desktop app (2FA on, BasalBit/ReRune publisher profile); see README → [Build and release](README.md#build-and-release).
+Everything needed to publish the plugin in Figma Community: the listing text, the assets, the answers to Figma's data security disclosure and the notes for Figma's reviewers. Status: **submitted for review on 2026-10-29** (design-only build). Until Figma approves it, the Community page (https://www.figma.com/community/plugin/1697181748239106841) is private: only the publisher can open it. Publishing happens by hand in the Figma desktop app (2FA on, BasalBit/ReRune publisher profile); see README → [Build and release](README.md#build-and-release).
 
 | | |
 |---|---|
@@ -114,4 +114,4 @@ Answers for Figma's data security disclosure (optional, reviewed by Figma, shown
 - [ ] https://rerune.io/privacy and https://rerune.io/docs/figma are live, and the data security answers above still match.
 - [ ] Ops confirmed that the production bunny.net Storage zone is in Germany with no replication regions (answers 4 and 8 and the dashboard's legal pages say so; only the dev zone has been checked). Name the city in answers 4 and 8 only after that.
 - [ ] Decide how reviewers sign in (a free account as above, or a test account BasalBit creates; never commit its password).
-- [ ] After approval: run the post-publish smoke test (`TESTING.md` §10: the published build in browser Figma, and in Figma for VS Code for the full build), set `figmaCommunityPluginUrl` in the dashboard, add the Community link to README → Install, and replace "not yet published" in the `CHANGELOG.md` heading of the released version with the publish date.
+- [ ] After approval: run the post-publish smoke test (`TESTING.md` §10: the published build in browser Figma, and in Figma for VS Code for the full build), merge the dashboard's draft PR [BasalBit/rerune-dashboard#57](https://github.com/BasalBit/rerune-dashboard/pull/57) (it sets `figmaCommunityPluginUrl`) and deploy it, add the Community link to README → Install, and replace "not yet published" in the `CHANGELOG.md` heading of the released version with the publish date.
