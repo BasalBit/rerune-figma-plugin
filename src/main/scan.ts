@@ -128,8 +128,9 @@ interface FrameRoots { roots: SceneNode[]; ids: string[]; missing: Set<string>; 
 // frames can be on any page). A frame that resolves to null, was removed or cannot be exported is missing. A hidden
 // frame (or one in a hidden section) is not scanned: its texts are all hidden, and its upload would replace the
 // frame's boxes with none. A page that fails to load leaves its frame in: reading it then counts as unavailable, and
-// its export reports the problem. null: the scan went stale meanwhile.
-async function frameRoots(frameIds: readonly string[], stale: () => boolean, caches: NodeCaches): Promise<FrameRoots | null> {
+// its export reports the problem. null: the scan went stale meanwhile. `touch` runs after each lookup and page load,
+// so the UI's idle watchdog (30 s) sees progress while many pages load.
+async function frameRoots(frameIds: readonly string[], stale: () => boolean, caches: NodeCaches, touch: () => void): Promise<FrameRoots | null> {
   const roots: SceneNode[] = []
   const ids: string[] = []
   const missing = new Set<string>()
@@ -145,6 +146,7 @@ async function frameRoots(frameIds: readonly string[], stale: () => boolean, cac
     if (stale()) {
       return null
     }
+    touch()
     if (node === null || node.removed || !isExportable(node)) {
       missing.add(frameId)
       continue
@@ -160,6 +162,7 @@ async function frameRoots(frameIds: readonly string[], stale: () => boolean, cac
       if (stale()) {
         return null
       }
+      touch()
     }
     if (isHidden(node, caches)) {
       hidden.add(frameId)
@@ -215,7 +218,7 @@ export function createScanner(send: (message: MainToUi) => void): Scanner {
       let missing: Set<string> | null = null
       let hidden = new Set<string>()
       if (frameIds !== undefined) {
-        const found = await frameRoots(frameIds, stale, caches)
+        const found = await frameRoots(frameIds, stale, caches, () => send({ type: "scan-progress", requestId, scanned: 0 }))
         if (found === null) {
           return
         }

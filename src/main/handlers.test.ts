@@ -325,8 +325,9 @@ describe("document handlers through the bus", () => {
     const bus = setup()
     onPage(figmaMock, [fakeFrame("1:0", "Checkout", [fakeText("1:1", "Pay now")], { exportAsync: vi.fn(), absoluteBoundingBox: { x: 0, y: 0, width: 10, height: 10 } })])
     await bus.dispatch({ type: "scan-request", requestId: "f1", scope: "selection", frameIds: ["1:0", "99:1"] })
-    expect(sent.map((message) => message.type)).toEqual(["scan-batch", "scan-done"])
-    expect(sent[1]).toMatchObject({ type: "scan-done", requestId: "f1", total: 1, missingFrameIds: ["99:1"] })
+    // Progress after each frame lookup and the page load.
+    expect(sent.map((message) => message.type)).toEqual(["scan-progress", "scan-progress", "scan-progress", "scan-batch", "scan-done"])
+    expect(sent[4]).toMatchObject({ type: "scan-done", requestId: "f1", total: 1, missingFrameIds: ["99:1"] })
     sent = []
     await bus.dispatch({ type: "scan-request", requestId: "f2", scope: "page", frameIds: "1:0" })
     expect(sent).toEqual([{ type: "handler-error", forType: "scan-request", requestId: "f2", message: "frameIds must be a list of frame ids" }])

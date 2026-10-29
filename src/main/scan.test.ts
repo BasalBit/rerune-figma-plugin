@@ -414,6 +414,30 @@ describe("createScanner", () => {
       })
     })
 
+    it("sends progress after each frame lookup and page load, so the UI's idle watchdog keeps waiting", async () => {
+      onPage(figmaMock, [exportable("10:1", "Checkout", [fakeText("10:2", "Pay now")])])
+      const other = fakePage("0:2", "Web", [exportable("20:1", "Home", [fakeText("20:2", "Welcome")]), exportable("21:1", "About", [])])
+      figmaMock.root.appendChild(other)
+      const steps: string[] = []
+      const lookup = figmaMock.getNodeByIdAsync.getMockImplementation() as (id: string) => Promise<unknown>
+      figmaMock.getNodeByIdAsync.mockImplementation(async (id: string) => {
+        steps.push("lookup " + id)
+        return lookup(id)
+      })
+      other.loadAsync = vi.fn(async () => {
+        steps.push("load 0:2")
+      })
+      await createScanner((message) => {
+        messages.push(message)
+        if (message.type === "scan-progress") {
+          steps.push("progress " + message.scanned)
+        }
+      }).start("r1", "page", ["20:1", "21:1", "10:1"])
+      // The last progress follows the load of 10:1's page (the current one).
+      expect(steps).toEqual(["lookup 20:1", "progress 0", "load 0:2", "progress 0", "lookup 21:1", "progress 0", "lookup 10:1", "progress 0", "progress 0"])
+      expect(done()?.total).toBe(2)
+    })
+
     it("lists a frame deleted while the scan ran as missing", async () => {
       const checkout = exportable("10:1", "Checkout", [fakeText("10:2", "Pay now")])
       onPage(figmaMock, [checkout])
