@@ -113,7 +113,7 @@ const AUTH: StoredAuth = {
   savedAt: 1,
 }
 
-const READ_DIAGNOSTICS: ReadDiagnostic[] = ["T1-check", "T2-instances", "T3-export", "T4-export-page", "T7-settings", "T10-environment"]
+const READ_DIAGNOSTICS: ReadDiagnostic[] = ["T1-check", "T2-instances", "T3-export", "T4-export-page", "T7-settings", "T10-environment", "T11-style-overrides"]
 
 // Every message Dev Mode accepts (impact ui or read), with real payloads for the fixture file. The list must cover
 // every such type: a ui or read message added to the impact map without an entry here fails the coverage test.

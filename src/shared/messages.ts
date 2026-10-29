@@ -59,7 +59,7 @@ export interface LinkCheck {
 export type FrameSkipReason = "no_bounds" | "too_large" | "not_found" | "export_failed" | "preview_active" | "hidden"
 export interface FrameSkip { frameId: string; reason: FrameSkipReason }
 export interface CodegenCacheEntry { keyId: string; k: string; placeholders: string[]; sourceText: string }
-export type ReadDiagnostic = "T1-check" | "T2-instances" | "T3-export" | "T4-export-page" | "T7-settings" | "T10-environment"
+export type ReadDiagnostic = "T1-check" | "T2-instances" | "T3-export" | "T4-export-page" | "T7-settings" | "T10-environment" | "T11-style-overrides"
 export type WriteDiagnostic = "T1-mark" | "T2-clear" | "T5-fonts" | "T8-relaunch"
 export type DiagnosticTest = ReadDiagnostic | WriteDiagnostic | "T9-devmode-write"
 

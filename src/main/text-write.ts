@@ -101,8 +101,10 @@ function rangeStyleIds(node: TextNode, start: number, end: number): { text: bool
   }
 }
 
-// Re-applies one stored segment's style to [start, end), in the order of §7.14 reset step 3. Each setter runs
-// on its own so one unsupported field does not drop the rest; returns how many setters failed.
+// Re-applies one stored segment's style to [start, end), in the order of §7.14 reset step 3, except that a text style
+// goes on last: setting a property it governs afterwards (paragraph spacing, a variable binding) would detach it
+// again, even with the style's own value. Each setter runs on its own so one unsupported field does not drop the
+// rest; returns how many setters failed.
 export async function applySegmentStyle(node: TextNode, segment: StyleSegment, start: number, end: number): Promise<number> {
   let failures = 0
   const run = async (action: () => void | Promise<void>) => {
@@ -113,9 +115,8 @@ export async function applySegmentStyle(node: TextNode, segment: StyleSegment, s
     }
   }
   const current = rangeStyleIds(node, start, end)
-  if (nonEmpty(segment.textStyleId)) {
-    await run(() => node.setRangeTextStyleIdAsync(start, end, segment.textStyleId))
-  } else {
+  const textStyleId = nonEmpty(segment.textStyleId) ? segment.textStyleId : null
+  if (textStyleId === null) {
     // Writing characters spreads the first character's style; detach a text style this range did not have.
     if (current.text) await run(() => node.setRangeTextStyleIdAsync(start, end, ""))
     if (segment.fontName !== undefined) await run(() => node.setRangeFontName(start, end, segment.fontName))
@@ -131,7 +132,8 @@ export async function applySegmentStyle(node: TextNode, segment: StyleSegment, s
     if (current.fill) await run(() => node.setRangeFillStyleIdAsync(start, end, ""))
     if (Array.isArray(segment.fills)) await run(() => node.setRangeFills(start, end, segment.fills))
   }
-  const bound = segment.boundVariables ?? {}
+  // Every variable-bindable text field is governed by a text style, which brings its own bindings back.
+  const bound = textStyleId === null ? (segment.boundVariables ?? {}) : {}
   for (const field of Object.keys(bound) as VariableBindableTextField[]) {
     const alias = bound[field]
     if (alias === undefined) {
@@ -148,7 +150,11 @@ export async function applySegmentStyle(node: TextNode, segment: StyleSegment, s
   if (segment.hyperlink !== undefined) await run(() => node.setRangeHyperlink(start, end, segment.hyperlink))
   if (segment.listOptions !== undefined) await run(() => node.setRangeListOptions(start, end, segment.listOptions))
   if (segment.indentation !== undefined) await run(() => node.setRangeIndentation(start, end, segment.indentation))
-  if (segment.paragraphSpacing !== undefined) await run(() => node.setRangeParagraphSpacing(start, end, segment.paragraphSpacing))
+  if (textStyleId === null) {
+    if (segment.paragraphSpacing !== undefined) await run(() => node.setRangeParagraphSpacing(start, end, segment.paragraphSpacing))
+  } else {
+    await run(() => node.setRangeTextStyleIdAsync(start, end, textStyleId))
+  }
   return failures
 }
 

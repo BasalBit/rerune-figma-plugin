@@ -369,7 +369,7 @@ Figma runs an imported development build only in the desktop app; browser Figma 
 |---|---|---|
 | T1 Mark / T1 Check markers | Select a few text layers (one inside an instance) → **T1 Mark**. Then, in turn: duplicate a marked layer; copy/paste it within the file; paste it into another file; detach the instance; create a branch, mark text there and merge it (Needs a Figma Organization or Enterprise plan (branching)). After each step run **T1 Check markers** on that page (in the other file too). | per node `sameId`, `instancePattern`, `matchedByCriteria`; `found` vs the layers you expect |
 | T2 Instances | Link the component's text (§3), then select a direct instance, the nested instance and the library instance (needs a paid Figma plan) → **T2 Instances** | per sublayer `hasLinkData`, `matchedByCriteria`, `classification`, `ownPluginDataOverride`, `idPatternInherited`; `textCount` vs `criteriaCount`; the `overrides` dump |
-| T2 Clear inherited | Select an instance whose main text is linked → **T2 Clear inherited**, then undo twice | `clearWithEmptyString.cleared`, `ownLinkWrite.listedAsPluginDataOverride`, `ownLinkWrite.stateAfter` |
+| T2 Clear inherited | Select an instance whose main text is linked and that has no link of its own (a fresh instance: Assets → drag the component in) → **T2 Clear inherited**, then click the canvas and undo twice (undo does nothing while the plugin window has focus; after the first undo the sublayer briefly reads as Copied) | `clearWithEmptyString.cleared`, `ownLinkWrite.listedAsPluginDataOverride`, `ownLinkWrite.stateAfter` |
 | T3 Export frame | Select an opaque frame, then a frame without fill, then a frame with a drop shadow → **T3 Export frame** | `matches` per export, `absoluteBoundingBox` vs `absoluteRenderBounds`, `opaqueBackground`, `jpgCornerPixel` of the transparent frame |
 | T4 Export page | On a page with up to 100 top-level frames → **T4 Export page** | `totalMs`, `averageBytes`, `maxBytes`, `p95Bytes`, `reexported` |
 | T5 Fonts and restore | Select a style-bound, a colour-style, a hyperlinked, a variable-bound and a component-property-bound text → **T5 Fonts and restore**, then check the canvas | per node `exact` (every field true?), `restoreFailures`, `boundToVariable`, `textOverriddenBefore` vs `textOverriddenAfter` |
@@ -378,6 +378,7 @@ Figma runs an imported development build only in the desktop app; browser Figma 
 | T8 Relaunch button | Select layers → **T8 Relaunch button**, then look at the right sidebar in Design and in Dev Mode (needs a paid Figma plan) | is **Open ReRune** shown in each? |
 | T9 Dev Mode write | **Needs a paid Figma plan.** Dev Mode, development build: select a layer → inspect **Diagnostics** → **T9 Dev Mode write** | `allowed`, `error`, `cleanupError` |
 | T10 Environment | In Design and in the Dev Mode inspect panel (desktop, browser, VS Code; Dev Mode needs a paid Figma plan) | `editorType`, `mode`, `command`, `vscode`, `apiVersion`, `skipInvisibleInstanceChildrenDefault`, `userAgent` |
+| T11 Text style overrides | Select text layers that use a text style → **T11 Text style overrides** (before a preview, after **Apply**, after **Reset**) | per segment `styleName`, `textStyleOverrides` (Figma shows their count after the style name, e.g. "28/34(1)") |
 | Network check | Any Diagnostics screen | `status`, `cors`, `latencyMs` |
 
 ### 8.2 Answers
@@ -386,18 +387,18 @@ Record the answer and the branch chosen; link the report under [Spike reports](#
 
 | # | Question | Diagnostics | If yes | If no | Answer | Branch chosen |
 |---|---|---|---|---|---|---|
-| S1 | Does `link` survive duplicate within a file? | T1 | `copied` flow handles it | copies arrive unlinked; nothing to do | | |
-| S2 | Survives copy/paste within file / into another file? | T1 | same | same | | |
-| S3 | Do instance sublayers (direct, nested, library; library needs a paid Figma plan) inherit main-component data; does the criteria filter match them; is a sublayer `setSharedPluginData` listed as a `pluginData` override? | T2 Instances, T2 Clear inherited | `inherited` state stands; overrides rule is primary | instances need their own links; document. If writes are not listed, rely on the id-pattern fallback for duplicated instances (record the choice) | | |
-| S4 | Does writing `""` clear inherited data? | T2 Clear inherited | no tombstone needed | tombstone path (already implemented) | | |
+| S1 | Does `link` survive duplicate within a file? | T1 | `copied` flow handles it | copies arrive unlinked; nothing to do | Yes. A duplicate (Edit → Duplicate) keeps the original's marker: `nid` 5:102 on node 28:1340, `sameId: false`. | `copied` flow (implemented) |
+| S2 | Survives copy/paste within file / into another file? | T1 | same | same | Yes, within the file (copy/paste: `nid` 5:104 on 28:1341) and into another file (`nid` 5:108 on 1:2 in ReRune test file 2, listed by the plugin as **Copied**). | `copied` flow (implemented) |
+| S3 | Do instance sublayers (direct, nested, library; library needs a paid Figma plan) inherit main-component data; does the criteria filter match them; is a sublayer `setSharedPluginData` listed as a `pluginData` override? | T2 Instances, T2 Clear inherited | `inherited` state stands; overrides rule is primary | instances need their own links; document. If writes are not listed, rely on the id-pattern fallback for duplicated instances (record the choice) | Yes. A fresh instance's text inherits the main's link (`hasLinkData`, `nid` of the main, `idPatternInherited: true`, no override). The criteria filter matches instance sublayers. A sublayer's own `setSharedPluginData` is listed as a `pluginData` override. Library instances not tested (paid plan). | inherited and own-override handling (implemented) |
+| S4 | Does writing `""` clear inherited data? | T2 Clear inherited | no tombstone needed | tombstone path (already implemented) | Yes. Writing `""` reads back `""` on the sublayer and is listed as a `pluginData` override. | no tombstone needed; the tombstone path stays as a fallback |
 | S5 | **Needs a Figma Organization or Enterprise plan (branching).** Does root `file` survive branch merge? Page mirror? | T7 | — | rely on page mirror (implemented) | | |
-| S6 | Does `useAbsoluteBounds: true` image size equal `absoluteBoundingBox × scale`? | T3 | boxes exact | UI rescale path (implemented); file an issue if origins shift | | |
-| S7 | JPG of a transparent frame: background colour? | T3 | — | PNG path (implemented) | | |
-| S8 | 100-frame export time and sizes | T4 | — | lower default scale if p95 > 2 MB | | |
+| S6 | Does `useAbsoluteBounds: true` image size equal `absoluteBoundingBox × scale`? | T3 | boxes exact | UI rescale path (implemented); file an issue if origins shift | Yes, for JPG and PNG with SCALE and WIDTH constraints (`useAbsoluteBounds: true`). A drop shadow is not included (390×300 image for a 414×324 render box). | boxes exact |
+| S7 | JPG of a transparent frame: background colour? | T3 | — | PNG path (implemented) | White (`jpgCornerPixel` 255,255,255; `opaqueBackground: false`). | PNG path (implemented) |
+| S8 | 100-frame export time and sizes | T4 | — | lower default scale if p95 > 2 MB | Stress page: 61 frames in 1.0 s, average 113 KB, p95 171 KB, max 209 KB, no re-exports. Screens page: 16 frames in 271 ms, max 600 KB. | keep scale 1 |
 | S9 | **Needs a paid Figma plan.** Codegen timeout 3 s or 15 s; `figma.command`/`mode` in inspect and codegen | T6, T10 (inspect) | — | — | | |
 | S10 | **Needs a paid Figma plan.** `setSharedPluginData` in Dev Mode | T9 | stays unused | stays unused | | |
-| S11 | **Needs a paid Figma plan.** Relaunch buttons in Dev Mode | T8 | — | — | | |
-| S12 | Component-property-bound text: direct write OK? Style/variable bindings restored exactly? Override flag cleared after restore? | T5 | — | use `instance.setProperties` (follow-up); keep `override_kept` reporting | | |
+| S11 | **Needs a paid Figma plan.** Relaunch buttons in Dev Mode | T8 | — | — | Design: yes, **Open ReRune** shows under **Tools** in the right sidebar for marked layers. Dev Mode not tested (paid plan). | — |
+| S12 | Component-property-bound text: direct write OK? Style/variable bindings restored exactly? Override flag cleared after restore? | T5 | — | use `instance.setProperties` (follow-up); keep `override_kept` reporting | Component-property text: direct write works, restored exactly, `textOverriddenAfter: false`. Hyperlink and colour style restored exactly; variable-bound text skipped. **Text styles were dropped on restore** (T5 and Preview → Reset, 2026-10-29: `exact.textStyleId: false`; this is why the fixture's screen titles had lost Chapter/Title). Fixed in 31741b2 (the text style is applied last) and confirmed in Figma the same day: T5 and Preview → Reset keep Chapter/Title (`exact.textStyleId: true`). Open: after a Preview apply Figma shows one override on the style ("28/34(1)"), which Reset does not clear; check it with T11. | direct write; `setProperties` follow-up not needed |
 | S13 | Figma agent with ReRune MCP as a custom connector (header auth) can link a frame's text to keys | manual | document in `/docs/figma` "AI agents" | omit | | |
 | S14 | **Needs a paid Figma plan.** Only (a) can be checked on the free plan. Does the imported plugin (`editorType ["figma","dev"]`, `inspect` + `codegen`) appear in (a) the Design plugins menu, (b) the Dev Mode inspect panel plugin list, (c) the Dev Mode Code section language dropdown — on desktop, browser and VS Code? | manual | keep the manifest | if (c) fails: drop `codegen` and `codegenLanguages` (snippets stay in the inspect panel). **Do not submit the full build to Community until S14 is answered.** On the free plan S14 stays open and the release is the design-only build, which has no Dev Mode parts. | | |
 
@@ -405,7 +406,7 @@ S14 checklist (columns (b) and (c) need a paid Figma plan; (a) can be checked on
 
 | Surface | (a) Design plugins menu | (b) Dev Mode inspect plugins | (c) Dev Mode Code language dropdown |
 |---|---|---|---|
-| Desktop (macOS) | | | |
+| Desktop (macOS) | yes | not tested (paid plan) | not tested (paid plan) |
 | Desktop (Windows) | | | |
 | Browser | | | |
 | VS Code | — | | |
@@ -458,3 +459,2856 @@ Right after Figma approves the plugin, with the build that was published (instal
 ## Spike reports
 
 Paste each report as a fenced JSON block under a heading with the test, date and surface, e.g. `### T2 Instances, 2026-11-03, desktop macOS`.
+
+## Diagnostics test results
+
+Figma desktop 126.10 on macOS (Apple silicon), development build 0.1.0, free Starter plan, 2026-10-29. Test file: the generated fixture ("Untitled" in Drafts) and "ReRune test file 2". The answers are in [§8.2](#82-answers).
+
+### T10 Environment
+```json
+{
+  "test": "T10-environment",
+  "editorType": "figma",
+  "mode": "default",
+  "command": "",
+  "startupCommand": "",
+  "vscode": false,
+  "apiVersion": "1.0.0",
+  "skipInvisibleInstanceChildrenDefault": false,
+  "skipInvisibleInstanceChildrenNow": true,
+  "fileName": "Untitled",
+  "currentPage": {
+    "id": "0:1",
+    "name": "Screens"
+  },
+  "pluginVersion": "0.1.0",
+  "env": "development",
+  "apiBase": "http://localhost:8080",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Figma/126.10.13 Chrome/150.0.7871.250 Electron/43.8.3 Safari/537.36 FigmaARM"
+}
+```
+
+### T1 Mark (4 texts, one inside a Button instance)
+```json
+{
+  "test": "T1-mark",
+  "markedAt": 1793262969508,
+  "marked": 4,
+  "nodes": [
+    {
+      "nodeId": "5:102",
+      "name": "saved_subtitle"
+    },
+    {
+      "nodeId": "5:104",
+      "name": "saved_empty_body"
+    },
+    {
+      "nodeId": "I5:105;5:11",
+      "name": "explore_stories"
+    },
+    {
+      "nodeId": "5:108",
+      "name": "remove_saved"
+    }
+  ],
+  "failed": [],
+  "truncated": false
+}
+```
+
+### T1 Check markers, test file, after Edit → Duplicate and copy/paste
+```json
+{
+  "test": "T1-check",
+  "fileName": "Untitled",
+  "pageId": "0:1",
+  "pageName": "Screens",
+  "textNodes": 187,
+  "found": 8,
+  "criteriaMatches": 8,
+  "nodes": [
+    {
+      "nodeId": "5:102",
+      "nid": "5:102",
+      "sameId": true,
+      "instancePattern": false,
+      "name": "saved_subtitle",
+      "markedAt": 1793262969508,
+      "matchedByCriteria": true
+    },
+    {
+      "nodeId": "28:1340",
+      "nid": "5:102",
+      "sameId": false,
+      "instancePattern": false,
+      "name": "saved_subtitle",
+      "markedAt": 1793262969508,
+      "matchedByCriteria": true
+    },
+    {
+      "nodeId": "5:104",
+      "nid": "5:104",
+      "sameId": true,
+      "instancePattern": false,
+      "name": "saved_empty_body",
+      "markedAt": 1793262969508,
+      "matchedByCriteria": true
+    },
+    {
+      "nodeId": "I5:105;5:11",
+      "nid": "I5:105;5:11",
+      "sameId": true,
+      "instancePattern": false,
+      "name": "explore_stories",
+      "markedAt": 1793262969508,
+      "matchedByCriteria": true
+    },
+    {
+      "nodeId": "5:108",
+      "nid": "5:108",
+      "sameId": true,
+      "instancePattern": false,
+      "name": "remove_saved",
+      "markedAt": 1793262969508,
+      "matchedByCriteria": true
+    },
+    {
+      "nodeId": "26:1339",
+      "nid": "26:1339",
+      "sameId": true,
+      "instancePattern": false,
+      "name": "saved_subtitle",
+      "markedAt": 1793265406684,
+      "matchedByCriteria": true
+    },
+    {
+      "nodeId": "5:301",
+      "nid": "5:301",
+      "sameId": true,
+      "instancePattern": false,
+      "name": "saved_subtitle",
+      "markedAt": 1793265406684,
+      "matchedByCriteria": true
+    },
+    {
+      "nodeId": "28:1341",
+      "nid": "5:104",
+      "sameId": false,
+      "instancePattern": false,
+      "name": "saved_empty_body",
+      "markedAt": 1793262969508,
+      "matchedByCriteria": true
+    }
+  ],
+  "truncated": false
+}
+```
+
+### T1 Check markers, ReRune test file 2, after a cross-file paste
+```json
+{
+  "test": "T1-check",
+  "fileName": "ReRune test file 2",
+  "pageId": "0:1",
+  "pageName": "Page 1",
+  "textNodes": 1,
+  "found": 1,
+  "criteriaMatches": 1,
+  "nodes": [
+    {
+      "nodeId": "1:2",
+      "nid": "5:108",
+      "sameId": false,
+      "instancePattern": false,
+      "name": "remove_saved",
+      "markedAt": 1793262969508,
+      "matchedByCriteria": true
+    }
+  ],
+  "truncated": false
+}
+```
+
+### T2 Instances, screen instances linked one by one with Link exact matches
+```json
+{
+  "test": "T2-instances",
+  "instances": [
+    {
+      "instanceId": "5:40",
+      "name": "Button",
+      "mainComponent": {
+        "id": "5:10",
+        "name": "Button",
+        "remote": false,
+        "parentType": "FRAME"
+      },
+      "textCount": 1,
+      "criteriaCount": 1,
+      "sublayers": [
+        {
+          "nodeId": "I5:40;5:11",
+          "name": "welcome_open_story_cta",
+          "hasLinkData": true,
+          "nid": "I5:40;5:11",
+          "key": "welcome_open_story_cta",
+          "ownPluginDataOverride": true,
+          "textOverridden": false,
+          "classification": "ok",
+          "idPatternInherited": false,
+          "matchedByCriteria": true
+        }
+      ],
+      "truncated": false,
+      "overrides": [
+        {
+          "instanceId": "5:40",
+          "name": "Button",
+          "overrides": [
+            {
+              "id": "5:40",
+              "overriddenFields": [
+                "height",
+                "width"
+              ]
+            },
+            {
+              "id": "I5:40;5:11",
+              "overriddenFields": [
+                "hyperlink",
+                "pluginData"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "instanceId": "5:54",
+      "name": "Card",
+      "mainComponent": {
+        "id": "5:12",
+        "name": "Card",
+        "remote": false,
+        "parentType": "FRAME"
+      },
+      "textCount": 5,
+      "criteriaCount": 5,
+      "sublayers": [
+        {
+          "nodeId": "I5:54;5:13",
+          "name": "currently_reading",
+          "hasLinkData": true,
+          "nid": "I5:54;5:13",
+          "key": "currently_reading",
+          "ownPluginDataOverride": true,
+          "textOverridden": true,
+          "classification": "ok",
+          "idPatternInherited": false,
+          "matchedByCriteria": true
+        },
+        {
+          "nodeId": "I5:54;5:14",
+          "name": "story_title",
+          "hasLinkData": true,
+          "nid": "I5:54;5:14",
+          "key": "story_title",
+          "ownPluginDataOverride": true,
+          "textOverridden": true,
+          "classification": "ok",
+          "idPatternInherited": false,
+          "matchedByCriteria": true
+        },
+        {
+          "nodeId": "I5:54;5:15",
+          "name": "story_by",
+          "hasLinkData": true,
+          "nid": "I5:54;5:15",
+          "key": "story_by",
+          "ownPluginDataOverride": true,
+          "textOverridden": true,
+          "classification": "ok",
+          "idPatternInherited": false,
+          "matchedByCriteria": true
+        },
+        {
+          "nodeId": "I5:54;5:16",
+          "name": "chapter_progress",
+          "hasLinkData": true,
+          "nid": "I5:54;5:16",
+          "key": "chapter_progress",
+          "ownPluginDataOverride": true,
+          "textOverridden": true,
+          "classification": "ok",
+          "idPatternInherited": false,
+          "matchedByCriteria": true
+        },
+        {
+          "nodeId": "I5:54;5:17;5:11",
+          "name": "welcome_open_story_cta",
+          "hasLinkData": true,
+          "nid": "I5:54;5:17;5:11",
+          "key": "welcome_open_story_cta",
+          "ownPluginDataOverride": true,
+          "textOverridden": false,
+          "classification": "ok",
+          "idPatternInherited": false,
+          "matchedByCriteria": true
+        }
+      ],
+      "truncated": false,
+      "overrides": [
+        {
+          "instanceId": "5:54",
+          "name": "Card",
+          "overrides": [
+            {
+              "id": "I5:54;5:13",
+              "overriddenFields": [
+                "characters",
+                "hyperlink",
+                "pluginData",
+                "styledTextSegments"
+              ]
+            },
+            {
+              "id": "I5:54;5:14",
+              "overriddenFields": [
+                "characters",
+                "hyperlink",
+                "pluginData",
+                "styledTextSegments"
+              ]
+            },
+            {
+              "id": "I5:54;5:15",
+              "overriddenFields": [
+                "characters",
+                "hyperlink",
+                "pluginData",
+                "styledTextSegments"
+              ]
+            },
+            {
+              "id": "I5:54;5:16",
+              "overriddenFields": [
+                "characters",
+                "hyperlink",
+                "pluginData",
+                "styledTextSegments"
+              ]
+            },
+            {
+              "id": "I5:54;5:17",
+              "overriddenFields": [
+                "componentProperties"
+              ]
+            },
+            {
+              "id": "I5:54;5:17;5:11",
+              "overriddenFields": [
+                "hyperlink",
+                "pluginData"
+              ]
+            }
+          ]
+        },
+        {
+          "instanceId": "I5:54;5:17",
+          "name": "Button",
+          "overrides": [
+            {
+              "id": "I5:54;5:17",
+              "overriddenFields": [
+                "componentProperties"
+              ]
+            },
+            {
+              "id": "I5:54;5:17;5:11",
+              "overriddenFields": [
+                "hyperlink",
+                "pluginData"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### T2 Instances, fresh Button instance after linking the main component
+```json
+{
+  "test": "T2-instances",
+  "instances": [
+    {
+      "instanceId": "29:1343",
+      "name": "Button",
+      "mainComponent": {
+        "id": "5:10",
+        "name": "Button",
+        "remote": false,
+        "parentType": "FRAME"
+      },
+      "textCount": 1,
+      "criteriaCount": 1,
+      "sublayers": [
+        {
+          "nodeId": "I29:1343;5:11",
+          "name": "welcome_open_story_cta",
+          "hasLinkData": true,
+          "nid": "5:11",
+          "key": "welcome_open_story_cta",
+          "ownPluginDataOverride": false,
+          "textOverridden": false,
+          "classification": "inherited",
+          "idPatternInherited": true,
+          "matchedByCriteria": true
+        }
+      ],
+      "truncated": false,
+      "overrides": [
+        {
+          "instanceId": "29:1343",
+          "name": "Button",
+          "overrides": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+### T2 Clear inherited, fresh Button instance
+```json
+{
+  "test": "T2-clear",
+  "nodeId": "I29:1343;5:11",
+  "name": "welcome_open_story_cta",
+  "inheritedNid": "5:11",
+  "clearWithEmptyString": {
+    "readBack": "",
+    "cleared": true,
+    "overrides": [
+      {
+        "instanceId": "29:1343",
+        "entry": {
+          "id": "I29:1343;5:11",
+          "overriddenFields": [
+            "pluginData"
+          ]
+        }
+      }
+    ]
+  },
+  "ownLinkWrite": {
+    "error": null,
+    "overrides": [
+      {
+        "instanceId": "29:1343",
+        "entry": {
+          "id": "I29:1343;5:11",
+          "overriddenFields": [
+            "pluginData"
+          ]
+        }
+      }
+    ],
+    "listedAsPluginDataOverride": true,
+    "stateAfter": "ok"
+  },
+  "note": "The sublayer now carries its own link. Undo in Figma to revert."
+}
+```
+
+### T2 Instances, fresh instance after one undo (canvas focused)
+```json
+{
+  "test": "T2-instances",
+  "instances": [
+    {
+      "instanceId": "29:1343",
+      "name": "Button",
+      "mainComponent": {
+        "id": "5:10",
+        "name": "Button",
+        "remote": false,
+        "parentType": "FRAME"
+      },
+      "textCount": 1,
+      "criteriaCount": 1,
+      "sublayers": [
+        {
+          "nodeId": "I29:1343;5:11",
+          "name": "welcome_open_story_cta",
+          "hasLinkData": true,
+          "nid": "5:11",
+          "key": "welcome_open_story_cta",
+          "ownPluginDataOverride": true,
+          "textOverridden": false,
+          "classification": "copied",
+          "idPatternInherited": true,
+          "matchedByCriteria": true
+        }
+      ],
+      "truncated": false,
+      "overrides": [
+        {
+          "instanceId": "29:1343",
+          "name": "Button",
+          "overrides": [
+            {
+              "id": "I29:1343;5:11",
+              "overriddenFields": [
+                "pluginData"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### T2 Instances, fresh instance after two undos
+```json
+{
+  "test": "T2-instances",
+  "instances": [
+    {
+      "instanceId": "29:1343",
+      "name": "Button",
+      "mainComponent": {
+        "id": "5:10",
+        "name": "Button",
+        "remote": false,
+        "parentType": "FRAME"
+      },
+      "textCount": 1,
+      "criteriaCount": 1,
+      "sublayers": [
+        {
+          "nodeId": "I29:1343;5:11",
+          "name": "welcome_open_story_cta",
+          "hasLinkData": true,
+          "nid": "5:11",
+          "key": "welcome_open_story_cta",
+          "ownPluginDataOverride": false,
+          "textOverridden": false,
+          "classification": "inherited",
+          "idPatternInherited": true,
+          "matchedByCriteria": true
+        }
+      ],
+      "truncated": false,
+      "overrides": [
+        {
+          "instanceId": "29:1343",
+          "name": "Button",
+          "overrides": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+### T3 Export frame, text layer next_chapter_shelf
+```json
+{
+  "test": "T3-export",
+  "frameId": "5:203",
+  "frameName": "next_chapter_shelf",
+  "absoluteBoundingBox": {
+    "x": 24,
+    "y": 1308,
+    "width": 342,
+    "height": 26
+  },
+  "absoluteRenderBounds": {
+    "x": 24.41193199157715,
+    "y": 1313.45458984375,
+    "width": 167.76634216308594,
+    "height": 18.6363525390625
+  },
+  "opaqueBackground": true,
+  "plan": {
+    "scale": 1,
+    "constraint": {
+      "type": "SCALE",
+      "value": 1
+    }
+  },
+  "exports": [
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 6390,
+      "ms": 14,
+      "decoded": {
+        "format": "JPG",
+        "height": 26,
+        "width": 342
+      },
+      "expected": {
+        "width": 342,
+        "height": 26
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 171
+      },
+      "bytes": 3311,
+      "ms": 2,
+      "decoded": {
+        "format": "JPG",
+        "height": 13,
+        "width": 171
+      },
+      "expected": {
+        "width": 171,
+        "height": 13
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 5738,
+      "ms": 1,
+      "decoded": {
+        "format": "JPG",
+        "height": 19,
+        "width": 168
+      },
+      "expected": {
+        "width": 168,
+        "height": 19
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 171
+      },
+      "bytes": 5977,
+      "ms": 2,
+      "decoded": {
+        "format": "JPG",
+        "height": 19,
+        "width": 171
+      },
+      "expected": {
+        "width": 171,
+        "height": 19
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 2757,
+      "ms": 2,
+      "decoded": {
+        "format": "PNG",
+        "width": 342,
+        "height": 26
+      },
+      "expected": {
+        "width": 342,
+        "height": 26
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 171
+      },
+      "bytes": 1348,
+      "ms": 4,
+      "decoded": {
+        "format": "PNG",
+        "width": 171,
+        "height": 13
+      },
+      "expected": {
+        "width": 171,
+        "height": 13
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 2477,
+      "ms": 2,
+      "decoded": {
+        "format": "PNG",
+        "width": 168,
+        "height": 19
+      },
+      "expected": {
+        "width": 168,
+        "height": 19
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 171
+      },
+      "bytes": 2462,
+      "ms": 5,
+      "decoded": {
+        "format": "PNG",
+        "width": 171,
+        "height": 19
+      },
+      "expected": {
+        "width": 171,
+        "height": 19
+      },
+      "matches": true
+    }
+  ],
+  "jpgSample": {
+    "bytes": 6390
+  },
+  "jpgCornerPixel": {
+    "r": 255,
+    "g": 255,
+    "b": 255,
+    "a": 255
+  }
+}
+```
+
+### T3 Export frame, Screenshot / No fill (PNG)
+```json
+{
+  "test": "T3-export",
+  "frameId": "5:296",
+  "frameName": "Screenshot / No fill (PNG)",
+  "absoluteBoundingBox": {
+    "x": 510,
+    "y": 1284,
+    "width": 390,
+    "height": 300
+  },
+  "absoluteRenderBounds": {
+    "x": 510,
+    "y": 1284,
+    "width": 390,
+    "height": 300
+  },
+  "opaqueBackground": false,
+  "plan": {
+    "scale": 1,
+    "constraint": {
+      "type": "SCALE",
+      "value": 1
+    }
+  },
+  "exports": [
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 15927,
+      "ms": 22,
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 195
+      },
+      "bytes": 6016,
+      "ms": 5,
+      "decoded": {
+        "format": "JPG",
+        "height": 150,
+        "width": 195
+      },
+      "expected": {
+        "width": 195,
+        "height": 150
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 15927,
+      "ms": 3,
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 195
+      },
+      "bytes": 6016,
+      "ms": 2,
+      "decoded": {
+        "format": "JPG",
+        "height": 150,
+        "width": 195
+      },
+      "expected": {
+        "width": 195,
+        "height": 150
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 6249,
+      "ms": 7,
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 195
+      },
+      "bytes": 2740,
+      "ms": 5,
+      "decoded": {
+        "format": "PNG",
+        "width": 195,
+        "height": 150
+      },
+      "expected": {
+        "width": 195,
+        "height": 150
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 6249,
+      "ms": 7,
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 195
+      },
+      "bytes": 2740,
+      "ms": 3,
+      "decoded": {
+        "format": "PNG",
+        "width": 195,
+        "height": 150
+      },
+      "expected": {
+        "width": 195,
+        "height": 150
+      },
+      "matches": true
+    }
+  ],
+  "jpgSample": {
+    "bytes": 15927
+  },
+  "jpgCornerPixel": {
+    "r": 255,
+    "g": 255,
+    "b": 255,
+    "a": 255
+  }
+}
+```
+
+### T3 Export frame, Screenshot / Drop shadow (T3)
+```json
+{
+  "test": "T3-export",
+  "frameId": "5:302",
+  "frameName": "Screenshot / Drop shadow (T3)",
+  "absoluteBoundingBox": {
+    "x": 1530,
+    "y": 1284,
+    "width": 390,
+    "height": 300
+  },
+  "absoluteRenderBounds": {
+    "x": 1518,
+    "y": 1276,
+    "width": 414,
+    "height": 324
+  },
+  "opaqueBackground": true,
+  "plan": {
+    "scale": 1,
+    "constraint": {
+      "type": "SCALE",
+      "value": 1
+    }
+  },
+  "exports": [
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 17621,
+      "ms": 56,
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 195
+      },
+      "bytes": 6550,
+      "ms": 6,
+      "decoded": {
+        "format": "JPG",
+        "height": 150,
+        "width": 195
+      },
+      "expected": {
+        "width": 195,
+        "height": 150
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 25470,
+      "ms": 6,
+      "decoded": {
+        "format": "JPG",
+        "height": 324,
+        "width": 414
+      },
+      "expected": {
+        "width": 414,
+        "height": 324
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 195
+      },
+      "bytes": 7984,
+      "ms": 2,
+      "decoded": {
+        "format": "JPG",
+        "height": 153,
+        "width": 195
+      },
+      "expected": {
+        "width": 195,
+        "height": 153
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 6387,
+      "ms": 11,
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 195
+      },
+      "bytes": 2838,
+      "ms": 3,
+      "decoded": {
+        "format": "PNG",
+        "width": 195,
+        "height": 150
+      },
+      "expected": {
+        "width": 195,
+        "height": 150
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 24191,
+      "ms": 12,
+      "decoded": {
+        "format": "PNG",
+        "width": 414,
+        "height": 324
+      },
+      "expected": {
+        "width": 414,
+        "height": 324
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 195
+      },
+      "bytes": 7034,
+      "ms": 4,
+      "decoded": {
+        "format": "PNG",
+        "width": 195,
+        "height": 153
+      },
+      "expected": {
+        "width": 195,
+        "height": 153
+      },
+      "matches": true
+    }
+  ],
+  "jpgSample": {
+    "bytes": 17621
+  },
+  "jpgCornerPixel": {
+    "r": 255,
+    "g": 255,
+    "b": 255,
+    "a": 255
+  }
+}
+```
+
+### T4 Export page, Screens
+```json
+{
+  "test": "T4-export-page",
+  "pageId": "0:1",
+  "pageName": "Screens",
+  "frames": 16,
+  "exported": 16,
+  "totalMs": 271,
+  "averageBytes": 112878,
+  "maxBytes": 600047,
+  "p95Bytes": 600047,
+  "reexported": 0,
+  "rows": [
+    {
+      "frameId": "5:31",
+      "name": "Welcome",
+      "format": "JPG",
+      "bytes": 115852,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 22
+    },
+    {
+      "frameId": "5:52",
+      "name": "Library",
+      "format": "JPG",
+      "bytes": 93371,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:83",
+      "name": "Discover",
+      "format": "JPG",
+      "bytes": 81435,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:100",
+      "name": "Saved",
+      "format": "JPG",
+      "bytes": 73922,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 14
+    },
+    {
+      "frameId": "5:115",
+      "name": "Story",
+      "format": "JPG",
+      "bytes": 132094,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 17
+    },
+    {
+      "frameId": "5:129",
+      "name": "Atlas chapters",
+      "format": "JPG",
+      "bytes": 115495,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 15
+    },
+    {
+      "frameId": "5:137",
+      "name": "Lantern chapters",
+      "format": "JPG",
+      "bytes": 170700,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 18
+    },
+    {
+      "frameId": "5:147",
+      "name": "Garden chapters",
+      "format": "JPG",
+      "bytes": 170398,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:166",
+      "name": "The end",
+      "format": "JPG",
+      "bytes": 58700,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:174",
+      "name": "Settings",
+      "format": "JPG",
+      "bytes": 110053,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 18
+    },
+    {
+      "frameId": "5:202",
+      "name": "Long list (more than 50 linked layers)",
+      "format": "JPG",
+      "bytes": 600047,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 3254
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 3254,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 43
+    },
+    {
+      "frameId": "5:296",
+      "name": "Screenshot / No fill (PNG)",
+      "format": "PNG",
+      "bytes": 6249,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "matches": true,
+      "ms": 10
+    },
+    {
+      "frameId": "5:299",
+      "name": "Screenshot / Fill at 50 % (PNG)",
+      "format": "PNG",
+      "bytes": 8024,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "matches": true,
+      "ms": 12
+    },
+    {
+      "frameId": "5:302",
+      "name": "Screenshot / Drop shadow (T3)",
+      "format": "JPG",
+      "bytes": 17621,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 11
+    },
+    {
+      "frameId": "5:305",
+      "name": "Screenshot / Text clipped away (no box)",
+      "format": "JPG",
+      "bytes": 11210,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 8
+    },
+    {
+      "frameId": "5:308",
+      "name": "Screenshot / Wide 5000 × 300 (exports 4096 px wide)",
+      "format": "JPG",
+      "bytes": 40876,
+      "scale": 0.8192,
+      "attempts": 1,
+      "expected": {
+        "width": 4096,
+        "height": 246
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 246,
+        "width": 4096
+      },
+      "matches": true,
+      "ms": 19
+    }
+  ]
+}
+```
+
+### T4 Export page, Stress (500+ texts)
+```json
+{
+  "test": "T4-export-page",
+  "pageId": "5:3",
+  "pageName": "Stress (500+ texts)",
+  "frames": 61,
+  "exported": 61,
+  "totalMs": 1000,
+  "averageBytes": 113352,
+  "maxBytes": 208694,
+  "p95Bytes": 170700,
+  "reexported": 0,
+  "rows": "61 rows omitted here: every frame JPG at scale 1, attempts 1, matches true; 60 frames 390x844 and Push load (60 new texts) 390x1840, 208,694 bytes"
+}
+```
+
+### T5 Fonts and restore, Welcome, Library and Saved texts
+```json
+{
+  "test": "T5-fonts",
+  "nodes": [
+    {
+      "nodeId": "5:33",
+      "name": "welcome_title",
+      "hasMissingFont": false,
+      "boundToVariable": false,
+      "boundToComponentProperty": false,
+      "textOverriddenBefore": false,
+      "fonts": [
+        {
+          "family": "Inter",
+          "style": "Bold",
+          "variationSettings": {
+            "slnt": 0,
+            "wght": 700
+          }
+        }
+      ],
+      "loadMs": 2,
+      "writeOk": true,
+      "restoreFailures": 0,
+      "textRestored": true,
+      "exact": {
+        "fontName": true,
+        "fontSize": true,
+        "fills": true,
+        "textDecoration": true,
+        "textCase": true,
+        "letterSpacing": true,
+        "lineHeight": true,
+        "textStyleId": true,
+        "fillStyleId": true,
+        "boundVariables": true,
+        "hyperlink": true,
+        "listOptions": true,
+        "indentation": true,
+        "paragraphSpacing": true
+      },
+      "segmentsBefore": [
+        {
+          "characters": "Make time for a story?",
+          "start": 0,
+          "end": 22,
+          "fontSize": 28,
+          "fontName": {
+            "family": "Inter",
+            "style": "Bold",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 700
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 34
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "segmentsAfter": [
+        {
+          "characters": "Make time for a story?",
+          "start": 0,
+          "end": 22,
+          "fontSize": 28,
+          "fontName": {
+            "family": "Inter",
+            "style": "Bold",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 700
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 34
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "textOverriddenAfter": false
+    },
+    {
+      "nodeId": "5:36",
+      "name": "welcome_locale_value",
+      "hasMissingFont": false,
+      "boundToVariable": true,
+      "boundToComponentProperty": false,
+      "textOverriddenBefore": false,
+      "fonts": [
+        {
+          "family": "Inter",
+          "style": "Medium",
+          "variationSettings": {
+            "slnt": 0,
+            "wght": 500
+          }
+        }
+      ],
+      "loadMs": 18,
+      "skipped": "bound_to_variable"
+    },
+    {
+      "nodeId": "5:75",
+      "name": "reading_moment",
+      "hasMissingFont": false,
+      "boundToVariable": false,
+      "boundToComponentProperty": false,
+      "textOverriddenBefore": false,
+      "fonts": [
+        {
+          "family": "Inter",
+          "style": "Medium",
+          "variationSettings": {
+            "slnt": 0,
+            "wght": 500
+          }
+        }
+      ],
+      "loadMs": 0,
+      "writeOk": true,
+      "restoreFailures": 0,
+      "textRestored": true,
+      "exact": {
+        "fontName": true,
+        "fontSize": true,
+        "fills": true,
+        "textDecoration": true,
+        "textCase": true,
+        "letterSpacing": true,
+        "lineHeight": true,
+        "textStyleId": true,
+        "fillStyleId": true,
+        "boundVariables": true,
+        "hyperlink": true,
+        "listOptions": true,
+        "indentation": true,
+        "paragraphSpacing": true
+      },
+      "segmentsBefore": [
+        {
+          "characters": "A MOMENT BETWEEN PAGES",
+          "start": 0,
+          "end": 22,
+          "fontSize": 13,
+          "fontName": {
+            "family": "Inter",
+            "style": "Medium",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 500
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 18
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.7607843279838562,
+                "g": 0.2549019753932953,
+                "b": 0.0470588244497776
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "S:848f4cf43ae86d6ed18bfe7616fe365de8bc7e20,",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "segmentsAfter": [
+        {
+          "characters": "A MOMENT BETWEEN PAGES",
+          "start": 0,
+          "end": 22,
+          "fontSize": 13,
+          "fontName": {
+            "family": "Inter",
+            "style": "Medium",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 500
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 18
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.7607843279838562,
+                "g": 0.2549019753932953,
+                "b": 0.0470588244497776
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "S:848f4cf43ae86d6ed18bfe7616fe365de8bc7e20,",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "textOverriddenAfter": false
+    },
+    {
+      "nodeId": "5:104",
+      "name": "saved_empty_body",
+      "hasMissingFont": false,
+      "boundToVariable": false,
+      "boundToComponentProperty": false,
+      "textOverriddenBefore": false,
+      "fonts": [
+        {
+          "family": "Inter",
+          "style": "Regular",
+          "variationSettings": {
+            "slnt": 0,
+            "wght": 400
+          }
+        }
+      ],
+      "loadMs": 0,
+      "writeOk": true,
+      "restoreFailures": 0,
+      "textRestored": true,
+      "exact": {
+        "fontName": true,
+        "fontSize": true,
+        "fills": true,
+        "textDecoration": true,
+        "textCase": true,
+        "letterSpacing": true,
+        "lineHeight": true,
+        "textStyleId": true,
+        "fillStyleId": true,
+        "boundVariables": true,
+        "hyperlink": true,
+        "listOptions": true,
+        "indentation": true,
+        "paragraphSpacing": true
+      },
+      "segmentsBefore": [
+        {
+          "characters": "Tap the bookmark on ",
+          "start": 0,
+          "end": 20,
+          "fontSize": 15,
+          "fontName": {
+            "family": "Inter",
+            "style": "Regular",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 400
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 22
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        },
+        {
+          "characters": "any story",
+          "start": 20,
+          "end": 29,
+          "fontSize": 15,
+          "fontName": {
+            "family": "Inter",
+            "style": "Regular",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 400
+            }
+          },
+          "textDecoration": "UNDERLINE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 22
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.7607843279838562,
+                "g": 0.2549019753932953,
+                "b": 0.0470588244497776
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": {
+            "type": "URL",
+            "value": "https://rerune.io"
+          },
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        },
+        {
+          "characters": " to keep it here.",
+          "start": 29,
+          "end": 46,
+          "fontSize": 15,
+          "fontName": {
+            "family": "Inter",
+            "style": "Regular",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 400
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 22
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "segmentsAfter": [
+        {
+          "characters": "Tap the bookmark on ",
+          "start": 0,
+          "end": 20,
+          "fontSize": 15,
+          "fontName": {
+            "family": "Inter",
+            "style": "Regular",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 400
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 22
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        },
+        {
+          "characters": "any story",
+          "start": 20,
+          "end": 29,
+          "fontSize": 15,
+          "fontName": {
+            "family": "Inter",
+            "style": "Regular",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 400
+            }
+          },
+          "textDecoration": "UNDERLINE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 22
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.7607843279838562,
+                "g": 0.2549019753932953,
+                "b": 0.0470588244497776
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": {
+            "type": "URL",
+            "value": "https://rerune.io"
+          },
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        },
+        {
+          "characters": " to keep it here.",
+          "start": 29,
+          "end": 46,
+          "fontSize": 15,
+          "fontName": {
+            "family": "Inter",
+            "style": "Regular",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 400
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 22
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "textOverriddenAfter": false
+    },
+    {
+      "nodeId": "I5:105;5:11",
+      "name": "explore_stories",
+      "hasMissingFont": false,
+      "boundToVariable": false,
+      "boundToComponentProperty": true,
+      "textOverriddenBefore": false,
+      "fonts": [
+        {
+          "family": "Inter",
+          "style": "Medium",
+          "variationSettings": {
+            "slnt": 0,
+            "wght": 500
+          }
+        }
+      ],
+      "loadMs": 0,
+      "writeOk": true,
+      "restoreFailures": 0,
+      "textRestored": true,
+      "exact": {
+        "fontName": true,
+        "fontSize": true,
+        "fills": true,
+        "textDecoration": true,
+        "textCase": true,
+        "letterSpacing": true,
+        "lineHeight": true,
+        "textStyleId": true,
+        "fillStyleId": true,
+        "boundVariables": true,
+        "hyperlink": true,
+        "listOptions": true,
+        "indentation": true,
+        "paragraphSpacing": true
+      },
+      "segmentsBefore": [
+        {
+          "characters": "Explore stories",
+          "start": 0,
+          "end": 15,
+          "fontSize": 16,
+          "fontName": {
+            "family": "Inter",
+            "style": "Medium",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 500
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 20
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 1,
+                "g": 1,
+                "b": 1
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "segmentsAfter": [
+        {
+          "characters": "Explore stories",
+          "start": 0,
+          "end": 15,
+          "fontSize": 16,
+          "fontName": {
+            "family": "Inter",
+            "style": "Medium",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 500
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 20
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 1,
+                "g": 1,
+                "b": 1
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "textOverriddenAfter": false
+    }
+  ],
+  "truncated": false
+}
+```
+
+### T5 Fonts and restore, screen titles
+```json
+{
+  "test": "T5-fonts",
+  "nodes": [
+    {
+      "nodeId": "5:84",
+      "name": "discover_title",
+      "hasMissingFont": false,
+      "boundToVariable": false,
+      "boundToComponentProperty": false,
+      "textOverriddenBefore": false,
+      "fonts": [
+        {
+          "family": "Inter",
+          "style": "Bold",
+          "variationSettings": {
+            "slnt": 0,
+            "wght": 700
+          }
+        }
+      ],
+      "loadMs": 1,
+      "writeOk": true,
+      "restoreFailures": 0,
+      "textRestored": true,
+      "exact": {
+        "fontName": true,
+        "fontSize": true,
+        "fills": true,
+        "textDecoration": true,
+        "textCase": true,
+        "letterSpacing": true,
+        "lineHeight": true,
+        "textStyleId": true,
+        "fillStyleId": true,
+        "boundVariables": true,
+        "hyperlink": true,
+        "listOptions": true,
+        "indentation": true,
+        "paragraphSpacing": true
+      },
+      "segmentsBefore": [
+        {
+          "characters": "Find your next world.",
+          "start": 0,
+          "end": 21,
+          "fontSize": 28,
+          "fontName": {
+            "family": "Inter",
+            "style": "Bold",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 700
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 34
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "segmentsAfter": [
+        {
+          "characters": "Find your next world.",
+          "start": 0,
+          "end": 21,
+          "fontSize": 28,
+          "fontName": {
+            "family": "Inter",
+            "style": "Bold",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 700
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 34
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "textOverriddenAfter": false
+    },
+    {
+      "nodeId": "5:101",
+      "name": "saved_title",
+      "hasMissingFont": false,
+      "boundToVariable": false,
+      "boundToComponentProperty": false,
+      "textOverriddenBefore": false,
+      "fonts": [
+        {
+          "family": "Inter",
+          "style": "Bold",
+          "variationSettings": {
+            "slnt": 0,
+            "wght": 700
+          }
+        }
+      ],
+      "loadMs": 0,
+      "writeOk": true,
+      "restoreFailures": 0,
+      "textRestored": true,
+      "exact": {
+        "fontName": true,
+        "fontSize": true,
+        "fills": true,
+        "textDecoration": true,
+        "textCase": true,
+        "letterSpacing": true,
+        "lineHeight": true,
+        "textStyleId": true,
+        "fillStyleId": true,
+        "boundVariables": true,
+        "hyperlink": true,
+        "listOptions": true,
+        "indentation": true,
+        "paragraphSpacing": true
+      },
+      "segmentsBefore": [
+        {
+          "characters": "Keep a little wonder.",
+          "start": 0,
+          "end": 21,
+          "fontSize": 28,
+          "fontName": {
+            "family": "Inter",
+            "style": "Bold",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 700
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 34
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "segmentsAfter": [
+        {
+          "characters": "Keep a little wonder.",
+          "start": 0,
+          "end": 21,
+          "fontSize": 28,
+          "fontName": {
+            "family": "Inter",
+            "style": "Bold",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 700
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 34
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.12156862765550613,
+                "g": 0.10588235408067703,
+                "b": 0.08627451211214066
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "textOverriddenAfter": false
+    },
+    {
+      "nodeId": "5:200",
+      "name": "reading_settings",
+      "hasMissingFont": false,
+      "boundToVariable": false,
+      "boundToComponentProperty": false,
+      "textOverriddenBefore": false,
+      "fonts": [
+        {
+          "family": "Inter",
+          "style": "Medium",
+          "variationSettings": {
+            "slnt": 0,
+            "wght": 500
+          }
+        }
+      ],
+      "loadMs": 0,
+      "writeOk": true,
+      "restoreFailures": 0,
+      "textRestored": true,
+      "exact": {
+        "fontName": true,
+        "fontSize": true,
+        "fills": true,
+        "textDecoration": true,
+        "textCase": true,
+        "letterSpacing": true,
+        "lineHeight": true,
+        "textStyleId": true,
+        "fillStyleId": true,
+        "boundVariables": true,
+        "hyperlink": true,
+        "listOptions": true,
+        "indentation": true,
+        "paragraphSpacing": true
+      },
+      "segmentsBefore": [
+        {
+          "characters": "Reading settings",
+          "start": 0,
+          "end": 16,
+          "fontSize": 13,
+          "fontName": {
+            "family": "Inter",
+            "style": "Medium",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 500
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 18
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.41960784792900085,
+                "g": 0.3843137323856354,
+                "b": 0.3490196168422699
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "segmentsAfter": [
+        {
+          "characters": "Reading settings",
+          "start": 0,
+          "end": 16,
+          "fontSize": 13,
+          "fontName": {
+            "family": "Inter",
+            "style": "Medium",
+            "variationSettings": {
+              "slnt": 0,
+              "wght": 500
+            }
+          },
+          "textDecoration": "NONE",
+          "textCase": "ORIGINAL",
+          "lineHeight": {
+            "unit": "PIXELS",
+            "value": 18
+          },
+          "letterSpacing": {
+            "unit": "PERCENT",
+            "value": 0
+          },
+          "fills": [
+            {
+              "type": "SOLID",
+              "visible": true,
+              "opacity": 1,
+              "blendMode": "NORMAL",
+              "color": {
+                "r": 0.41960784792900085,
+                "g": 0.3843137323856354,
+                "b": 0.3490196168422699
+              },
+              "boundVariables": {}
+            }
+          ],
+          "textStyleId": "",
+          "fillStyleId": "",
+          "listOptions": {
+            "type": "NONE"
+          },
+          "indentation": 0,
+          "hyperlink": null,
+          "boundVariables": {},
+          "paragraphSpacing": 0
+        }
+      ],
+      "textOverriddenAfter": false
+    }
+  ],
+  "truncated": false
+}
+```
+
+### T7 File settings
+```json
+{
+  "test": "T7-settings",
+  "fileName": "Untitled",
+  "root": {
+    "present": true,
+    "valid": true,
+    "updatedAt": 1793261139300,
+    "projectId": "6ae1c28877da3ff44b03d79f",
+    "error": null
+  },
+  "pages": [
+    {
+      "pageId": "0:1",
+      "name": "Screens",
+      "current": true,
+      "present": true,
+      "valid": true,
+      "updatedAt": 1793261139300,
+      "projectId": "6ae1c28877da3ff44b03d79f",
+      "equalToRoot": true,
+      "error": null
+    },
+    {
+      "pageId": "5:2",
+      "name": "Components",
+      "current": false,
+      "present": false,
+      "valid": false,
+      "updatedAt": null,
+      "projectId": null,
+      "equalToRoot": false,
+      "error": null
+    },
+    {
+      "pageId": "5:3",
+      "name": "Stress (500+ texts)",
+      "current": false,
+      "present": false,
+      "valid": false,
+      "updatedAt": null,
+      "projectId": null,
+      "equalToRoot": false,
+      "error": null
+    },
+    {
+      "pageId": "5:4",
+      "name": "About this file",
+      "current": false,
+      "present": false,
+      "valid": false,
+      "updatedAt": null,
+      "projectId": null,
+      "equalToRoot": false,
+      "error": null
+    }
+  ],
+  "current": {
+    "pageId": "0:1",
+    "source": "root",
+    "differ": false,
+    "offerMirror": false,
+    "settings": {
+      "v": 1,
+      "apiBase": "http://localhost:8080",
+      "projectId": "6ae1c28877da3ff44b03d79f",
+      "projectName": "Figma Test (Chapter)",
+      "fileKey": "I6likaD5ERMo9IvR7DJagG",
+      "fileUrl": "https://www.figma.com/design/I6likaD5ERMo9IvR7DJagG/Untitled",
+      "fileName": "Untitled",
+      "branchKey": null,
+      "keyTemplate": null,
+      "caseStyle": "auto",
+      "ignoreUnderscoreLayers": true,
+      "includeLocked": false,
+      "updatedAt": 1793261139300
+    },
+    "syncPause": {
+      "paused": false,
+      "reason": null
+    },
+    "previews": 0
+  }
+}
+```
+
+### T8 Relaunch button
+```json
+{
+  "test": "T8-relaunch",
+  "set": 9,
+  "nodes": [
+    {
+      "nodeId": "5:203",
+      "name": "next_chapter_shelf",
+      "ok": true
+    },
+    {
+      "nodeId": "5:204",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:207",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:210",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:213",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:216",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:219",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:222",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:225",
+      "name": "List row",
+      "ok": true
+    }
+  ],
+  "hint": "Look for the Open ReRune button in the right sidebar in Figma Design and in Dev Mode."
+}
+```
+
+### Network check
+```json
+{
+  "test": "network-check",
+  "apiBase": "http://localhost:8080",
+  "ok": true,
+  "status": 200,
+  "cors": "ok",
+  "latencyMs": 13,
+  "meta": {
+    "api_version": 1,
+    "screenshots_enabled": true,
+    "max_image_bytes": 2097152,
+    "max_image_side": 4096,
+    "max_batch_size": 100,
+    "server_time": "2026-10-29T08:24:13.949005Z"
+  },
+  "error": null
+}
+```
