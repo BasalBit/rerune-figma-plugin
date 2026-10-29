@@ -474,7 +474,15 @@ describe("after-push choices and pulls", () => {
     expect(ready.plan.pulls.map((pull) => pull.keyId)).toEqual([keyId(1), keyId(2)])
     const main = fakeMain((message) => (message.type === "text-apply" ? [{ nodeId: "1:2", code: "preview_active", message: "Reset the preview on this layer first." }] : []))
     const outcome = await executePulls({ bus: main.bus }, ready.plan, ready.context)
-    expect(main.writes[0]).toMatchObject({ type: "text-apply", items: [{ nodeId: "1:1", text: "New" }, { nodeId: "1:2", text: "New" }, { nodeId: "1:3", text: "Newer" }] })
+    // Each with the src of its scanned text: main leaves a layer edited in Figma since the review alone.
+    expect(main.writes[0]).toMatchObject({
+      type: "text-apply",
+      items: [
+        { nodeId: "1:1", text: "New", expectedSrc: src("Old") },
+        { nodeId: "1:2", text: "New", expectedSrc: src("Old") },
+        { nodeId: "1:3", text: "Newer", expectedSrc: src("Same") },
+      ],
+    })
     expect(main.writes[1]).toEqual({ type: "link-apply", requestId: expect.any(String), items: [{ nodeId: "1:1", keyId: keyId(1), keyName: "new_name", projectId: PROJECT_ID, src: src("New") }] })
     expect(outcome.errors.map((error) => error.code)).toEqual(["preview_active"])
     expect(outcome.affectedNodeIds).toEqual(["1:1", "1:3"])

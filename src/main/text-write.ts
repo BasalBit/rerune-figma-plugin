@@ -511,8 +511,9 @@ async function resetNode(node: TextNode, caches: NodeCaches, explicit: boolean, 
 }
 
 // text-apply (§7.14 pull, §7.13 rules 4–5): same font and style rules as preview, no preview record; refuses
-// nodes with an active preview or a variable binding; inherited nodes write the local main component instead.
-// The node's own link gets the new src (k is refreshed by a link-apply with the key name).
+// nodes with an active preview or a variable binding, and (an item with `expectedSrc`, a pull) a layer whose text
+// changed since the scan; inherited nodes write the local main component instead. The node's own link gets the new
+// src (k is refreshed by a link-apply with the key name).
 export async function applyTexts(items: readonly TextApplyItem[], now: number): Promise<OpOutcome> {
   const caches = createNodeCaches()
   const errors: NodeError[] = []
@@ -536,6 +537,15 @@ export async function applyTexts(items: readonly TextApplyItem[], now: number): 
       if ((await shownPreview(node, caches)) !== null) {
         errors.push(nodeError(item.nodeId, "preview_active"))
         continue
+      }
+      // A pull never overwrites an edit made in Figma since the scan (SF6). A layer that already shows the new text
+      // (an instance that follows a main component written earlier in this run) is written as usual.
+      if (item.expectedSrc !== undefined) {
+        const current = src(node.characters)
+        if (current !== item.expectedSrc && current !== item.src) {
+          errors.push(nodeError(item.nodeId, "changed_meanwhile"))
+          continue
+        }
       }
       const target = await writeTargetFor(node, readLinkInfo(node, caches), null)
       if ("error" in target) {

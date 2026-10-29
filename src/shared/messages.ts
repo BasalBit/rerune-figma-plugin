@@ -38,7 +38,7 @@ export interface Box { nodeId: string; keyId: string; x: number; y: number; w: n
 export interface NodeError {
   nodeId: string
   code: "missing_font" | "node_not_found" | "write_failed" | "preview_active" | "not_previewing" | "readonly_mode" | "mixed_styles_flattened" | "too_large"
-    | "bound_to_variable" | "edited_during_preview" | "override_kept" | "subtree_mismatch" | "remote_component"
+    | "bound_to_variable" | "edited_during_preview" | "override_kept" | "subtree_mismatch" | "remote_component" | "changed_meanwhile"
   message: string
 }
 // Phase 2 addition to §7.5 (link sync, §7.11 and §7.15, D43): the current link of nodes the server has links for,
@@ -81,7 +81,8 @@ export type UiToMain =
   | { type: "link-remove"; requestId: RequestId; nodeIds: string[] }
   | { type: "link-check"; requestId: RequestId; nodeIds: string[]                         // Phase 2 addition (link sync)
       inheritors?: boolean }                                                              // also the page's instance sublayers inheriting from them
-  | { type: "text-apply"; requestId: RequestId; items: { nodeId: string; text: string; src: string }[] }
+  | { type: "text-apply"; requestId: RequestId; items: { nodeId: string; text: string; src: string
+      expectedSrc?: string }[] }                                                          // a pull: the src the layer was scanned with
   | { type: "preview-apply"; requestId: RequestId; info: Omit<PreviewInfo, "appliedAt">; items: { nodeId: string; text: string }[]
       commit?: false }                                                                    // Phase 3 addition: no undo step yet (more of the run follows)
   | { type: "preview-reset"; requestId: RequestId; scope: Scope; nodeIds?: string[]; edited?: "restore" | "keep" }

@@ -277,10 +277,11 @@ describe("rule 4: conflicts", () => {
 
 describe("rule 5: pulls", () => {
   it("collects changed_in_rerune layers outside the push request", () => {
-    const { plan } = setup([linked("1:1", "Pay now", K1, "Pay now")], { remote: [[K1, remoteState("k", "Pay securely")]] })
+    const { plan, context } = setup([linked("1:1", "Pay now", K1, "Pay now")], { remote: [[K1, remoteState("k", "Pay securely")]] })
     expect(plan.pulls).toEqual([{ keyId: K1, keyName: "k", nodeIds: ["1:1"], groupNodeIds: ["1:1"], remoteText: "Pay securely" }])
     expect(planToRequests(plan)).toEqual([])
-    expect(planPullApplies(plan)).toEqual([{ nodeId: "1:1", text: "Pay securely", src: src("Pay securely") }])
+    // With the src of the text the layer was scanned with: main refuses the write when the layer changed since.
+    expect(planPullApplies(plan, context.nodes)).toEqual([{ nodeId: "1:1", text: "Pay securely", src: src("Pay securely"), expectedSrc: src("Pay now") }])
   })
 
   it("targets each main component once instead of every inherited instance", () => {

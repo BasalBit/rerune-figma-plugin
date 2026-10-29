@@ -656,11 +656,18 @@ export function planTextApplies(plan: PushPlan, context: Pick<PlanContext, "node
   return items
 }
 
-export function planPullApplies(plan: PushPlan): TextApplyItem[] {
+// Each pulled layer carries the src of the text it was scanned with: main writes it only while it still shows that
+// text, so an edit made in Figma since the scan is never overwritten.
+export function planPullApplies(plan: PushPlan, nodes: ReadonlyMap<string, Pick<ScannedNode, "characters" | "originalCharacters">>): TextApplyItem[] {
   const items: TextApplyItem[] = []
   for (const pull of plan.pulls) {
     for (const nodeId of pull.nodeIds) {
-      items.push({ nodeId, text: pull.remoteText, src: src(pull.remoteText) })
+      const node = nodes.get(nodeId)
+      const item: TextApplyItem = { nodeId, text: pull.remoteText, src: src(pull.remoteText) }
+      if (node !== undefined) {
+        item.expectedSrc = src(nodeText(node))
+      }
+      items.push(item)
     }
   }
   return items

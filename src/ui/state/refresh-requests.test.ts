@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { keyId, linkedNode, PROJECT_ID, scannedNode } from "../../../test/fixtures"
 import type { FigmaMetaResponse, FigmaResolveRequest, FigmaResolveResponse, FigmaScreenshot, FigmaScreenshotsQuery, FigmaScreenshotsResponse, FigmaUser } from "../../shared/api-types"
 import { src } from "../../shared/hash"
-import type { FileSettings, ScannedNode } from "../../shared/messages"
+import type { FileSettings, NodeError, ScannedNode } from "../../shared/messages"
 import { newFileSettings } from "../../shared/plugin-data"
 import { ApiError, RATE_LIMIT_MESSAGE } from "../api/client"
 import { SCAN_UNFINISHED } from "./link-sync"
@@ -285,12 +285,13 @@ function harness(options: {
   missing?: string[]
   hidden?: string[]
   resolveFails?: boolean
+  writeErrors?: NodeError[]
   gate?: ScreenshotGate
   uploadRun?: (frames: readonly ScreenshotFrame[]) => ScreenshotRun
   context?: Partial<RefreshContext>
 } = {}): Harness {
   const list = snapshots(...(options.reads ?? [[screenshot(1, "10:1"), screenshot(2, "11:1"), screenshot(3, "12:1")]]))
-  const main = fakeMain()
+  const main = fakeMain((message) => (message.type === "text-apply" ? (options.writeErrors ?? []) : []))
   const uploads: Harness["uploads"] = []
   const nodes = options.nodes === undefined ? frameNodes() : options.nodes
   const scanFrames = vi.fn(async (frameIds: readonly string[]): Promise<ScanResult | null> =>
@@ -407,7 +408,7 @@ describe("createRefreshRequests: Update screenshots (§6.4)", () => {
     expect(h.api.resolveKeys).toHaveBeenCalledWith(PROJECT_ID, { key_ids: [K1, K2, K3, K4, K5], languages: ["en"], source: "draft", variation_option_id: null })
     // Only the layer Changed in ReRune is written (with its renamed key name refreshed).
     expect(h.main.writes).toEqual([
-      { type: "text-apply", requestId: expect.any(String), items: [{ nodeId: "10:2", text: "Pay now", src: src("Pay now") }] },
+      { type: "text-apply", requestId: expect.any(String), items: [{ nodeId: "10:2", text: "Pay now", src: src("Pay now"), expectedSrc: src("Pay") }] },
       { type: "link-apply", requestId: expect.any(String), items: [{ nodeId: "10:2", keyId: K1, keyName: "key_1", projectId: PROJECT_ID, src: src("Pay now") }] },
     ])
     expect(h.prepare).toHaveBeenCalledWith({ ignorePref: true })
@@ -468,6 +469,15 @@ describe("createRefreshRequests: Update screenshots (§6.4)", () => {
       [PROJECT_ID, screenshot(2, "").id],
       [PROJECT_ID, screenshot(3, "").id],
     ])
+  })
+
+  it("counts a layer edited in Figma while ReRune's texts loaded with the Figma-side changes, not as a write error", async () => {
+    const h = harness({ writeErrors: [{ nodeId: "10:2", code: "changed_meanwhile", message: "This layer changed in Figma meanwhile, so ReRune's text wasn't written." }] })
+    await h.refresh.run()
+    expect(outcomeOf(h)).toMatchObject({ kind: "done", pulled: 0, errors: [], figmaSide: 3 })
+    expect(refreshLines(outcomeOf(h) as Extract<RefreshOutcome, { kind: "done" }>).figmaSide).toBe("3 layers changed in Figma or in both weren't changed. Review them on Push.")
+    // Nothing was written, so no key name is refreshed.
+    expect(h.main.writes.map((write) => write.type)).toEqual(["text-apply"])
   })
 
   it("keeps the requests of step 6 when a read that started before the run answers after it", async () => {

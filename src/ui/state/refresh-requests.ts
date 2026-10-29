@@ -310,7 +310,10 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
       suggestName: () => "",
     })
     const pulled = await executePulls(deps, plan, { projectId, nodes: new Map(scanned.nodes.map((node) => [node.nodeId, node])) })
-    let figmaSide = 0
+    // A layer edited in Figma since the scan was left alone (changed_meanwhile): it counts with the Figma-side changes.
+    const changedMeanwhile = new Set(pulled.errors.filter((error) => error.code === "changed_meanwhile").map((error) => error.nodeId))
+    const errors = pulled.errors.filter((error) => error.code !== "changed_meanwhile")
+    let figmaSide = changedMeanwhile.size
     for (const node of scanned.nodes) {
       const state = computeSyncState(projectId, node, node.link === null ? undefined : load.remote.get(node.link.id))
       if (state === "changed_in_figma" || state === "conflict") {
@@ -331,7 +334,7 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
       }
     }
     const shots = await upload(mine, [...frames.values()])
-    return { kind: "done", pulled: pulled.done, errors: pulled.errors, figmaSide, readonly: plan.readonly, shots, missing }
+    return { kind: "done", pulled: pulled.done, errors, figmaSide, readonly: plan.readonly, shots, missing }
   }
 
   async function run(): Promise<void> {

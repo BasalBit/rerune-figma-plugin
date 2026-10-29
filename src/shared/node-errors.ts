@@ -17,6 +17,7 @@ export const NODE_ERROR_MESSAGES: Record<NodeErrorCode, string> = {
   override_kept: "This instance keeps a text override after reset.",
   subtree_mismatch: "This frame changed since the copy was made.",
   remote_component: "Update this text in the library file.",
+  changed_meanwhile: "This layer changed in Figma meanwhile, so ReRune's text wasn't written.",
 }
 
 // language-copies (§7.18.4, D32): why a frame got no copies (NodeError on the frame's id) and which part of a copy

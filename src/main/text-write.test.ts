@@ -697,4 +697,22 @@ describe("text-apply (§7.14 pull)", () => {
   it("reports missing nodes", async () => {
     expect((await applyTexts([{ nodeId: "9:9", text: "x", src: src("x") }], 1)).errors[0].code).toBe("node_not_found")
   })
+
+  it("leaves a pulled layer alone when its text changed in Figma since the scan, and its link too", async () => {
+    const edited = fakeText("1:1", "Pay now!")
+    edited.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink(link("1:1", "Pay now")))
+    const kept = fakeText("1:2", "Total")
+    // Already shows the new text (an instance that follows a main component written earlier in the run).
+    const current = fakeText("1:3", "Pay securely")
+    onPage(figmaMock, [edited, kept, current])
+    const outcome = await applyTexts([
+      { nodeId: "1:1", text: "Pay securely", src: src("Pay securely"), expectedSrc: src("Pay now") },
+      { nodeId: "1:2", text: "Grand total", src: src("Grand total"), expectedSrc: src("  Total\r\n") },
+      { nodeId: "1:3", text: "Pay securely", src: src("Pay securely"), expectedSrc: src("Pay now") },
+    ], 5)
+    expect(outcome).toEqual({ done: 2, errors: [{ nodeId: "1:1", code: "changed_meanwhile", message: "This layer changed in Figma meanwhile, so ReRune's text wasn't written." }] })
+    expect(edited.characters).toBe("Pay now!")
+    expect(linkOf(edited)).toEqual(link("1:1", "Pay now"))
+    expect(kept.characters).toBe("Grand total")
+  })
 })

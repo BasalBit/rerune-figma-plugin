@@ -570,7 +570,7 @@ export async function executePulls(deps: Pick<PushDeps, "bus">, plan: PushPlan, 
   if (!canPull(plan)) {
     return { done: 0, errors: [], affectedNodeIds: [] }
   }
-  const written = await textApply(deps, planPullApplies(plan))
+  const written = await textApply(deps, planPullApplies(plan, context.nodes))
   const affectedNodeIds = writtenLayers(plan.pulls.flatMap((pull) => pull.groupNodeIds), written.errors, context.nodes)
   const failed = new Set(written.errors.filter((error) => !isWarning(error)).map((error) => error.nodeId))
   const refresh: LinkApplyItem[] = []
