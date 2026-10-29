@@ -145,11 +145,14 @@ export function refreshNotice(requests: readonly RefreshRequest[], dismissed: Re
 
 export type RefreshStep = { step: "scanning" } | { step: "updating" } | { step: "uploading"; run: ScreenshotRun }
 
+// A requested frame that was not uploaded because it is not in the file anymore, or is hidden (its screenshot would
+// show no keys); both are listed with Remove request.
 export interface MissingFrame {
   screenshotId: string
   frameId: string
   frameName: string
   pageName: string
+  hidden: boolean
   removal: "removing" | "removed" | null
   error: string | null                 // the last Remove request failed
 }
@@ -167,7 +170,7 @@ export type RefreshOutcome =
       figmaSide: number                                // layers Changed in Figma or in both, left alone
       readonly: number                                 // layers of disabled keys or plural/ICU texts, left alone
       shots: RefreshShots | null                       // null: no frame was left to upload, or screenshots are off
-      missing: MissingFrame[]                          // requested frames not in this file
+      missing: MissingFrame[]                          // requested frames not in this file, or hidden in it
     }
 
 export interface RefreshState {
@@ -314,13 +317,15 @@ export function createRefreshRequests(deps: RefreshDeps): RefreshRequests {
         figmaSide++
       }
     }
-    // Every requested frame that exists, in request order, pulled or not.
+    // Every requested frame that exists and is visible, in request order, pulled or not.
     const missingIds = new Set(scanned.missingFrameIds ?? [])
+    const hiddenIds = new Set(scanned.hiddenFrameIds ?? [])
     const frames = new Map<string, ScreenshotFrame>()
     const missing: MissingFrame[] = []
     for (const request of requests) {
-      if (missingIds.has(request.frameId)) {
-        missing.push({ screenshotId: request.screenshotId, frameId: request.frameId, frameName: request.frameName, pageName: request.pageName, removal: null, error: null })
+      if (missingIds.has(request.frameId) || hiddenIds.has(request.frameId)) {
+        const { screenshotId, frameId, frameName, pageName } = request
+        missing.push({ screenshotId, frameId, frameName, pageName, hidden: !missingIds.has(frameId), removal: null, error: null })
       } else if (!frames.has(request.frameId)) {
         frames.set(request.frameId, { frameId: request.frameId, frameName: request.frameName })
       }
@@ -469,11 +474,19 @@ export function refetchAfterUpload(uploader: ScreenshotUploader, refetch: () => 
 
 // One line each for the run's results (contract §6.4 step 7), apart from the screenshot summary and problem groups,
 // the missing frames and the write errors, which the results show with their own actions.
-export interface RefreshLines { pulled: string | null; figmaSide: string | null; readonly: string | null; outdated: string | null; missing: string | null }
+export interface RefreshLines {
+  pulled: string | null
+  figmaSide: string | null
+  readonly: string | null
+  outdated: string | null
+  missing: string | null
+  hidden: string | null
+}
 
 export function refreshLines(outcome: Extract<RefreshOutcome, { kind: "done" }>): RefreshLines {
   const outdated = outcome.shots !== null && outcome.shots.kind === "done" ? outcome.shots.run.outdated : 0
-  const missing = outcome.missing
+  const missing = outcome.missing.filter((frame) => !frame.hidden)
+  const hidden = outcome.missing.filter((frame) => frame.hidden)
   return {
     pulled: outcome.pulled > 0 ? "Updated " + plural(outcome.pulled, "layer", "layers") + " from ReRune." : null,
     figmaSide:
@@ -488,6 +501,15 @@ export function refreshLines(outcome: Extract<RefreshOutcome, { kind: "done" }>)
     missing:
       missing.length > 0
         ? plural(missing.length, "requested frame isn't", "requested frames aren't") + " in this file anymore: " + missing.map((frame) => frameLabel(frame)).join(", ") + "."
+        : null,
+    hidden:
+      hidden.length > 0
+        ? plural(hidden.length, "requested frame is", "requested frames are") +
+          " hidden in Figma, so " +
+          (hidden.length === 1 ? "its screenshot wasn't" : "their screenshots weren't") +
+          " uploaded: " +
+          hidden.map((frame) => frameLabel(frame)).join(", ") +
+          "."
         : null,
   }
 }

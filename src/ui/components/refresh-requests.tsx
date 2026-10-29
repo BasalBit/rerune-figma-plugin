@@ -119,8 +119,9 @@ function Outcome(props: { outcome: RefreshOutcome; props: RefreshRequestsNotePro
   }
 }
 
-// One line each, in the order of contract §6.4 step 7; the frames not uploaded, the missing frames (with Remove
-// request) and the write errors follow with their actions.
+// One line each, in the order of contract §6.4 step 7 (the hidden requested frames after the missing ones); the
+// frames not uploaded, the missing and hidden frames (with Remove request) and the write errors follow with their
+// actions.
 function DoneOutcome(props: { outcome: Extract<RefreshOutcome, { kind: "done" }>; props: RefreshRequestsNoteProps }) {
   const { outcome } = props
   const note = props.props
@@ -128,10 +129,17 @@ function DoneOutcome(props: { outcome: Extract<RefreshOutcome, { kind: "done" }>
   const run = outcome.shots !== null && outcome.shots.kind === "done" ? outcome.shots.run : null
   const summary = run === null ? null : screenshotSummary(run)
   const shotsLine = outcome.shots === null ? null : outcome.shots.kind === "unavailable" ? "Screenshots weren't uploaded: " + outcome.shots.message : summary?.message ?? null
-  const messages = [lines.pulled, shotsLine, lines.figmaSide, lines.readonly, lines.outdated, lines.missing].filter((line): line is string => line !== null)
+  const messages = [lines.pulled, shotsLine, lines.figmaSide, lines.readonly, lines.outdated, lines.missing, lines.hidden].filter((line): line is string => line !== null)
   const left = outcome.missing.filter((frame) => frame.removal !== "removed")
   const warning =
-    lines.figmaSide !== null || lines.readonly !== null || lines.outdated !== null || lines.missing !== null || outcome.errors.length > 0 || outcome.shots?.kind === "unavailable" || summary?.tone === "warning"
+    lines.figmaSide !== null ||
+    lines.readonly !== null ||
+    lines.outdated !== null ||
+    lines.missing !== null ||
+    lines.hidden !== null ||
+    outcome.errors.length > 0 ||
+    outcome.shots?.kind === "unavailable" ||
+    summary?.tone === "warning"
   const removeDisabled = note.state.removing
   return (
     <div style={styles.stack}>

@@ -354,6 +354,10 @@ describe("TESTING.md", () => {
       expect(testing).toContain(match?.[1] ?? "")
     }
     expect(readme).toContain("Update screenshots")
+    // refreshLines' hidden line (its exact text is checked in refresh-requests.test.ts).
+    expect(refreshState).toContain('" hidden in Figma, so "')
+    expect(testing).toContain("1 requested frame is hidden in Figma, so its screenshot wasn't uploaded: {frame} ({page}).")
+    expect(readme).toContain("and hidden ones (also in a hidden section")
   })
 
   it("names the Dev Mode inspect controls, notes and codegen lines the plugin shows (P2.4, P2.5)", () => {

@@ -126,11 +126,12 @@ describe("RefreshRequestsNote", () => {
     expect(buttons(view(props({ running: { step: "uploading", run: emptyScreenshotRun(3) }, stopping: true })))[0]).toMatchObject({ label: "Stopping…", disabled: true })
   })
 
-  it("lists the results in order with the missing frames' Remove request and Remove all", () => {
+  it("lists the results in order with the missing and hidden frames' Remove request and Remove all", () => {
     const missing = [
-      { screenshotId: "s2", frameId: "11:1", frameName: "Cart", pageName: "Mobile", removal: null, error: null },
-      { screenshotId: "s3", frameId: "12:1", frameName: "Done", pageName: "", removal: "removed" as const, error: null },
-      { screenshotId: "s4", frameId: "13:1", frameName: "Home", pageName: "Web", removal: null, error: "ReRune is busy. Wait a moment and try again." },
+      { screenshotId: "s2", frameId: "11:1", frameName: "Cart", pageName: "Mobile", hidden: false, removal: null, error: null },
+      { screenshotId: "s3", frameId: "12:1", frameName: "Done", pageName: "", hidden: false, removal: "removed" as const, error: null },
+      { screenshotId: "s4", frameId: "13:1", frameName: "Home", pageName: "Web", hidden: false, removal: null, error: "ReRune is busy. Wait a moment and try again." },
+      { screenshotId: "s5", frameId: "15:1", frameName: "Legacy", pageName: "Web", hidden: true, removal: null, error: null },
     ]
     const run = { ...emptyScreenshotRun(2), done: 2, uploaded: 1, outdated: 1, problems: [{ frameId: "14:1", frameName: "Profile", message: "Figma couldn't export the frame." }] }
     const input = props({
@@ -151,6 +152,7 @@ describe("RefreshRequestsNote", () => {
       "1 layer changed in Figma or in both wasn't changed. Review it on Push.",
       "1 uploaded screenshot still shows text that differs from ReRune.",
       "3 requested frames aren't in this file anymore: Cart (Mobile), Done, Home (Web).",
+      "1 requested frame is hidden in Figma, so its screenshot wasn't uploaded: Legacy (Web).",
       "Remove allDismiss",
       "Screenshots not uploaded (1)",
       "Figma couldn't export the frame.",
@@ -163,6 +165,8 @@ describe("RefreshRequestsNote", () => {
       "Home (Web)",
       "Remove request",
       "ReRune is busy. Wait a moment and try again.",
+      "Legacy (Web)",
+      "Remove request",
       "1 layer: A font in this layer is missing.",
       "Select on canvas",
     ])

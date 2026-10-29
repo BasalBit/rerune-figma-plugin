@@ -403,7 +403,15 @@ describe("createScanner", () => {
         ["10:2", "Page 1", "10:1"],
       ])
       // A page is not a frame: it cannot be exported.
-      expect(done()).toEqual({ type: "scan-done", requestId: "r1", total: 2, truncated: false, skipped: { ...emptySkipCounts(), locked: 1, underscore: 1 }, missingFrameIds: ["99:1", "0:1"] })
+      expect(done()).toEqual({
+        type: "scan-done",
+        requestId: "r1",
+        total: 2,
+        truncated: false,
+        skipped: { ...emptySkipCounts(), locked: 1, underscore: 1 },
+        missingFrameIds: ["99:1", "0:1"],
+        hiddenFrameIds: [],
+      })
     })
 
     it("lists a frame deleted while the scan ran as missing", async () => {
@@ -419,12 +427,25 @@ describe("createScanner", () => {
       expect(done()?.missingFrameIds).toEqual(["10:1"])
     })
 
-    it("sends an empty list when every frame was found, and none for a scope scan", async () => {
+    it("lists hidden frames (also in a hidden section) apart and does not scan them, since they would upload no boxes", async () => {
+      const hidden = exportable("10:1", "Checkout", [fakeText("10:2", "Pay now")])
+      hidden.visible = false
+      const inSection = exportable("11:1", "Cart", [fakeText("11:2", "Cart")])
+      const section = fakeSection("9:1", "Old flows", [inSection])
+      section.visible = false
+      onPage(figmaMock, [hidden, section, exportable("12:1", "Home", [fakeText("12:2", "Welcome")])])
+      await createScanner((message) => messages.push(message)).start("r1", "page", ["11:1", "12:1", "10:1", "99:1"])
+      expect(batches().map((node) => node.nodeId)).toEqual(["12:2"])
+      expect(done()).toMatchObject({ total: 1, skipped: emptySkipCounts(), missingFrameIds: ["99:1"], hiddenFrameIds: ["11:1", "10:1"] })
+    })
+
+    it("sends empty lists when every frame was found, and none for a scope scan", async () => {
       onPage(figmaMock, [exportable("10:1", "Checkout", [fakeText("10:2", "Pay now")])])
       await createScanner((message) => messages.push(message)).start("r1", "page", ["10:1"])
-      expect(done("r1")?.missingFrameIds).toEqual([])
+      expect(done("r1")).toMatchObject({ missingFrameIds: [], hiddenFrameIds: [] })
       await createScanner((message) => messages.push(message)).start("r2", "page")
       expect(done("r2")).not.toHaveProperty("missingFrameIds")
+      expect(done("r2")).not.toHaveProperty("hiddenFrameIds")
     })
   })
 

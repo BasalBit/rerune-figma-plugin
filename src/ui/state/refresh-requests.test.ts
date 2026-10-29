@@ -204,10 +204,10 @@ describe("result lines (§6.4 step 7)", () => {
     missing: [],
     ...overrides,
   })
-  const missing = (frameId: string, frameName: string) => ({ screenshotId: "s" + frameId, frameId, frameName, pageName: "Mobile", removal: null, error: null })
+  const missing = (frameId: string, frameName: string) => ({ screenshotId: "s" + frameId, frameId, frameName, pageName: "Mobile", hidden: false, removal: null, error: null })
 
   it("says nothing for zero counts", () => {
-    expect(refreshLines(done())).toEqual({ pulled: null, figmaSide: null, readonly: null, outdated: null, missing: null })
+    expect(refreshLines(done())).toEqual({ pulled: null, figmaSide: null, readonly: null, outdated: null, missing: null, hidden: null })
   })
 
   it("uses one and many forms", () => {
@@ -218,6 +218,7 @@ describe("result lines (§6.4 step 7)", () => {
       readonly: "1 layer is read-only in ReRune (disabled keys, or plural and ICU texts) and wasn't changed.",
       outdated: "1 uploaded screenshot still shows text that differs from ReRune.",
       missing: "1 requested frame isn't in this file anymore: Checkout (Mobile).",
+      hidden: null,
     })
     expect(refreshLines(done({ pulled: 3, figmaSide: 2, readonly: 4, shots: { kind: "done", run: run(2) }, missing: [missing("10:1", "Checkout"), missing("11:1", "")] }))).toEqual({
       pulled: "Updated 3 layers from ReRune.",
@@ -225,6 +226,7 @@ describe("result lines (§6.4 step 7)", () => {
       readonly: "4 layers are read-only in ReRune (disabled keys, or plural and ICU texts) and weren't changed.",
       outdated: "2 uploaded screenshots still show text that differs from ReRune.",
       missing: "2 requested frames aren't in this file anymore: Checkout (Mobile), 11:1 (Mobile).",
+      hidden: null,
     })
     expect(previewsLine(1)).toBe("Reset previews in these frames first. 1 layer shows a preview.")
     expect(previewsLine(3)).toBe("Reset previews in these frames first. 3 layers show a preview.")
@@ -281,6 +283,7 @@ function harness(options: {
   reads?: FigmaScreenshot[][]
   nodes?: ScannedNode[] | null
   missing?: string[]
+  hidden?: string[]
   resolveFails?: boolean
   gate?: ScreenshotGate
   uploadRun?: (frames: readonly ScreenshotFrame[]) => ScreenshotRun
@@ -291,7 +294,17 @@ function harness(options: {
   const uploads: Harness["uploads"] = []
   const nodes = options.nodes === undefined ? frameNodes() : options.nodes
   const scanFrames = vi.fn(async (frameIds: readonly string[]): Promise<ScanResult | null> =>
-    nodes === null ? null : { scope: "page", nodes, total: nodes.length, truncated: false, skipped: SKIPPED, missingFrameIds: options.missing ?? frameIds.filter((id) => id === "11:1") },
+    nodes === null
+      ? null
+      : {
+          scope: "page",
+          nodes,
+          total: nodes.length,
+          truncated: false,
+          skipped: SKIPPED,
+          missingFrameIds: options.missing ?? frameIds.filter((id) => id === "11:1"),
+          hiddenFrameIds: options.hidden ?? [],
+        },
   )
   const prepare = vi.fn(async () => ({ gate: options.gate ?? OPEN_GATE, availability: READY }))
   const uploader: ScreenshotUploader = {
@@ -416,7 +429,7 @@ describe("createRefreshRequests: Update screenshots (§6.4)", () => {
       figmaSide: 2,
       readonly: 1,
       shots: { kind: "done", run: { ...emptyScreenshotRun(2), done: 2, uploaded: 2, outdated: 1 } },
-      missing: [{ screenshotId: screenshot(2, "").id, frameId: "11:1", frameName: "Frame 11:1", pageName: "Mobile", removal: null, error: null }],
+      missing: [{ screenshotId: screenshot(2, "").id, frameId: "11:1", frameName: "Frame 11:1", pageName: "Mobile", hidden: false, removal: null, error: null }],
     })
     // Every request of the run is put aside (the missing frame too); the one made during the run still shows.
     expect(refreshNotice(state.requests, state.dismissed)).toEqual({
@@ -431,6 +444,30 @@ describe("createRefreshRequests: Update screenshots (§6.4)", () => {
       outdated: "1 uploaded screenshot still shows text that differs from ReRune.",
       missing: "1 requested frame isn't in this file anymore: Frame 11:1 (Mobile).",
     })
+  })
+
+  it("never uploads a hidden requested frame (its screenshot would show no keys) and lists it with Remove request", async () => {
+    const h = harness({ hidden: ["12:1"] })
+    await h.refresh.run()
+    expect(h.uploads.map((entry) => entry.frames.map((frame) => frame.frameId))).toEqual([["10:1"]])
+    const outcome = outcomeOf(h) as Extract<RefreshOutcome, { kind: "done" }>
+    expect(outcome.missing.map((frame) => [frame.frameId, frame.hidden])).toEqual([
+      ["11:1", false],
+      ["12:1", true],
+    ])
+    expect(refreshLines(outcome)).toMatchObject({
+      missing: "1 requested frame isn't in this file anymore: Frame 11:1 (Mobile).",
+      hidden: "1 requested frame is hidden in Figma, so its screenshot wasn't uploaded: Frame 12:1 (Mobile).",
+    })
+    expect(refreshLines({ ...outcome, missing: outcome.missing.map((frame) => ({ ...frame, hidden: true })) })).toMatchObject({
+      missing: null,
+      hidden: "2 requested frames are hidden in Figma, so their screenshots weren't uploaded: Frame 11:1 (Mobile), Frame 12:1 (Mobile).",
+    })
+    await h.refresh.removeAll()
+    expect(h.api.cancelRefreshRequest.mock.calls).toEqual([
+      [PROJECT_ID, screenshot(2, "").id],
+      [PROJECT_ID, screenshot(3, "").id],
+    ])
   })
 
   it("puts every request of a stopped run aside, also the frames it did not reach", async () => {

@@ -381,6 +381,38 @@ describe("screenshots-export (§7.16)", () => {
     expect(frame.exportAsync).not.toHaveBeenCalled()
   })
 
+  it("refuses a hidden frame, one in a hidden section and one hidden while its texts are read: it would upload no boxes", async () => {
+    connectFile()
+    const hidden = exportingFrame("10:1", [linkedText("12:1", rect(120, 250, 100, 20))])
+    hidden.visible = false
+    const inSection = exportingFrame("20:1", [linkedText("22:1", rect(120, 250, 100, 20))])
+    const section = fakeSection("9:1", "Old flows", [inSection])
+    section.visible = false
+    // The walk yields after 200 texts; the designer hides the frame meanwhile.
+    const texts = Array.from({ length: 201 }, (_, index) => linkedText("32:" + index, rect(120, 250, 100, 20)))
+    const hiddenLater = exportingFrame("30:1", texts)
+    onPage(figmaMock, [hidden, section, hiddenLater])
+    setTimeout(() => {
+      hiddenLater.visible = false
+    }, 0)
+    const sent = await run(["10:1", "20:1", "30:1"])
+    expect(sent).toEqual([
+      {
+        type: "frame-images-done",
+        requestId: "r1",
+        exported: 0,
+        skipped: [
+          { frameId: "10:1", reason: "hidden" },
+          { frameId: "20:1", reason: "hidden" },
+          { frameId: "30:1", reason: "hidden" },
+        ],
+      },
+    ])
+    for (const frame of [hidden, inSection, hiddenLater]) {
+      expect(frame.exportAsync).not.toHaveBeenCalled()
+    }
+  })
+
   it("exports without boxes when the file is not connected to a project", async () => {
     const frame = exportingFrame("10:1", [linkedText("12:1", rect(120, 250, 100, 20))])
     onPage(figmaMock, [frame])

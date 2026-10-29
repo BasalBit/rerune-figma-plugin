@@ -12,8 +12,17 @@ export type SkipCounts = MainToUiOf<"scan-done">["skipped"]
 export const WRITE_BATCH_SIZE = 200
 export const LONG_OP_IDLE_MS = 300000
 
-// `missingFrameIds`: only for a scan of requested frames (screenshot freshness), the frames not in the file.
-export interface ScanResult { scope: Scope; nodes: ScannedNode[]; total: number; truncated: boolean; skipped: SkipCounts; missingFrameIds?: string[] }
+// `missingFrameIds` / `hiddenFrameIds`: only for a scan of requested frames (screenshot freshness), the frames not in
+// the file and the hidden ones (not scanned).
+export interface ScanResult {
+  scope: Scope
+  nodes: ScannedNode[]
+  total: number
+  truncated: boolean
+  skipped: SkipCounts
+  missingFrameIds?: string[]
+  hiddenFrameIds?: string[]
+}
 
 export class ScanCancelledError extends Error {
   constructor() {
@@ -89,6 +98,7 @@ export function createScanRunner(bus: Pick<UiBus, "send" | "on" | "nextRequestId
               const result: ScanResult = { scope, nodes, total: message.total, truncated: message.truncated, skipped: message.skipped }
               if (frameIds !== undefined) {
                 result.missingFrameIds = message.missingFrameIds?.slice() ?? []
+                result.hiddenFrameIds = message.hiddenFrameIds?.slice() ?? []
               }
               resolve(result)
             }

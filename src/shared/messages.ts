@@ -54,7 +54,9 @@ export interface LinkCheck {
 }
 // Frames screenshots-export did not export (§7.16). "preview_active" is a Phase 2 addition: a frame whose text shows
 // a language preview would upload preview text as the design (D23), so it is skipped until the preview is reset.
-export type FrameSkipReason = "no_bounds" | "too_large" | "not_found" | "export_failed" | "preview_active"
+// "hidden" (screenshot freshness review): a hidden frame (or one in a hidden section) has no visible text, so its
+// upload would replace the frame's boxes with none.
+export type FrameSkipReason = "no_bounds" | "too_large" | "not_found" | "export_failed" | "preview_active" | "hidden"
 export interface FrameSkip { frameId: string; reason: FrameSkipReason }
 export interface CodegenCacheEntry { keyId: string; k: string; placeholders: string[]; sourceText: string }
 export type ReadDiagnostic = "T1-check" | "T2-instances" | "T3-export" | "T4-export-page" | "T7-settings" | "T10-environment"
@@ -102,7 +104,8 @@ export type MainToUi =
   | { type: "scan-batch"; requestId: RequestId; nodes: ScannedNode[] }
   | { type: "scan-done"; requestId: RequestId; total: number; truncated: boolean
       skipped: { hidden: number; locked: number; empty: number; numeric: number; underscore: number; languageCopy: number; unavailable: number }
-      missingFrameIds?: string[] }                                                        // screenshot freshness: set only for a frameIds scan
+      missingFrameIds?: string[]                                                          // screenshot freshness: set only for a frameIds scan
+      hiddenFrameIds?: string[] }                                                         // the same: requested frames that are hidden
   | { type: "op-result"; requestId: RequestId; ok: boolean; done: number; errors: NodeError[] }
   | { type: "link-check-result"; requestId: RequestId; nodes: LinkCheck[] }               // Phase 2 addition (link sync)
   | { type: "frame-image"; requestId: RequestId; frameId: string; frameName: string; pageId: string; pageName: string

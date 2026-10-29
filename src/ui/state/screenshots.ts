@@ -313,6 +313,7 @@ export const SKIP_MESSAGES: Record<FrameSkipReason, string> = {
   too_large: "The frame image stays above 2 MB, even at a quarter of its size.",
   export_failed: "Figma couldn't export the frame.",
   preview_active: "The frame shows a language preview. Reset previews and push again to upload it.",
+  hidden: "The frame is hidden in Figma. Show it to upload its screenshot.",
 }
 
 export const TOO_LARGE_MESSAGE = "The frame image is larger than 2 MB."

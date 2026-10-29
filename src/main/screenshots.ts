@@ -221,9 +221,15 @@ export async function exportScreenshot(frameId: string, projectId: string | null
   if (bounds === null || bounds.width <= 0 || bounds.height <= 0) {
     return { ok: false, reason: "no_bounds" }
   }
+  // A hidden frame (or one in a hidden section) has no visible text: its upload would replace the frame's screenshot
+  // with one that shows no keys.
+  const caches = createNodeCaches()
+  if (isHidden(frame, caches)) {
+    return { ok: false, reason: "hidden" }
+  }
   let collected: FrameBoxSources
   try {
-    collected = await frameBoxSources(frame, projectId, createNodeCaches())
+    collected = await frameBoxSources(frame, projectId, caches)
   } catch {
     // Without its boxes the upload would replace the frame's screenshot with one that shows no keys.
     return { ok: false, reason: "export_failed" }
@@ -231,9 +237,13 @@ export async function exportScreenshot(frameId: string, projectId: string | null
   if (collected.previewing) {
     return { ok: false, reason: "preview_active" }
   }
-  // The box walk yields to the canvas: the designer may have deleted the frame (or undone its creation) meanwhile.
+  // The box walk yields to the canvas: the designer may have deleted or hidden the frame (or undone its creation)
+  // meanwhile.
   if (frame.removed) {
     return { ok: false, reason: "not_found" }
+  }
+  if (isHidden(frame, createNodeCaches())) {
+    return { ok: false, reason: "hidden" }
   }
   let exported: FrameExport
   try {

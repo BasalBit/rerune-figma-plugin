@@ -34,7 +34,7 @@ describe("createScanRunner", () => {
     expect(progress).toEqual([50, 1, 2])
   })
 
-  it("scans requested frames and returns the missing ones (screenshot freshness)", async () => {
+  it("scans requested frames and returns the missing and hidden ones (screenshot freshness)", async () => {
     const fake = fakeBusEnvironment()
     const runner = createScanRunner(createUiBus(fake.environment))
     const frameIds = ["10:1", "99:1"]
@@ -43,18 +43,19 @@ describe("createScanRunner", () => {
     const request = fake.posted[0] as { requestId: string }
     expect(request).toEqual({ type: "scan-request", requestId: request.requestId, scope: "page", frameIds: ["10:1", "99:1"] })
     fake.deliver({ type: "scan-batch", requestId: request.requestId, nodes: [scannedNode("10:2", "A")] })
-    fake.deliver({ type: "scan-done", requestId: request.requestId, total: 1, truncated: false, skipped: SKIPPED, missingFrameIds: ["99:1"] })
-    expect(await pending).toMatchObject({ total: 1, missingFrameIds: ["99:1"] })
+    fake.deliver({ type: "scan-done", requestId: request.requestId, total: 1, truncated: false, skipped: SKIPPED, missingFrameIds: ["99:1"], hiddenFrameIds: ["11:1"] })
+    expect(await pending).toMatchObject({ total: 1, missingFrameIds: ["99:1"], hiddenFrameIds: ["11:1"] })
 
     // A main thread that answers without the list (an older build) reports none missing; a scope scan has no list.
     const second = runner.run("page", undefined, ["10:1"])
     const secondId = (fake.posted[1] as { requestId: string }).requestId
     fake.deliver({ type: "scan-done", requestId: secondId, total: 0, truncated: false, skipped: SKIPPED })
-    expect((await second).missingFrameIds).toEqual([])
+    expect(await second).toMatchObject({ missingFrameIds: [], hiddenFrameIds: [] })
     const third = runner.run("page")
     expect(fake.posted[2]).not.toHaveProperty("frameIds")
     fake.deliver({ type: "scan-done", requestId: (fake.posted[2] as { requestId: string }).requestId, total: 0, truncated: false, skipped: SKIPPED })
     expect(await third).not.toHaveProperty("missingFrameIds")
+    expect(await third).not.toHaveProperty("hiddenFrameIds")
   })
 
   it("cancels the running scan when a new one starts", async () => {

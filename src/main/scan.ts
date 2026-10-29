@@ -122,16 +122,18 @@ export interface Scanner {
   cancel(requestId: RequestId): void
 }
 
-interface FrameRoots { roots: SceneNode[]; ids: string[]; missing: Set<string> }
+interface FrameRoots { roots: SceneNode[]; ids: string[]; missing: Set<string>; hidden: Set<string> }
 
 // The roots of a scan of requested frames (contract §6.4 step 2): each frame by id, its page loaded first (the
-// frames can be on any page). A frame that resolves to null, was removed or cannot be exported is missing. A page
-// that fails to load leaves its frame in: reading it then counts as unavailable, and its export reports the problem.
-// null: the scan went stale meanwhile.
-async function frameRoots(frameIds: readonly string[], stale: () => boolean): Promise<FrameRoots | null> {
+// frames can be on any page). A frame that resolves to null, was removed or cannot be exported is missing. A hidden
+// frame (or one in a hidden section) is not scanned: its texts are all hidden, and its upload would replace the
+// frame's boxes with none. A page that fails to load leaves its frame in: reading it then counts as unavailable, and
+// its export reports the problem. null: the scan went stale meanwhile.
+async function frameRoots(frameIds: readonly string[], stale: () => boolean, caches: NodeCaches): Promise<FrameRoots | null> {
   const roots: SceneNode[] = []
   const ids: string[] = []
   const missing = new Set<string>()
+  const hidden = new Set<string>()
   const loaded = new Set<string>()
   for (const frameId of frameIds) {
     let node: BaseNode | null
@@ -159,10 +161,14 @@ async function frameRoots(frameIds: readonly string[], stale: () => boolean): Pr
         return null
       }
     }
+    if (isHidden(node, caches)) {
+      hidden.add(frameId)
+      continue
+    }
     roots.push(node)
     ids.push(frameId)
   }
-  return { roots, ids, missing }
+  return { roots, ids, missing, hidden }
 }
 
 // Chunked scanning (§7.9): per-child findAllWithCriteria, setTimeout(0) yields, batches of 100, a generation
@@ -207,14 +213,16 @@ export function createScanner(send: (message: MainToUi) => void): Scanner {
       let roots: readonly SceneNode[]
       let rootIds: readonly string[] = []
       let missing: Set<string> | null = null
+      let hidden = new Set<string>()
       if (frameIds !== undefined) {
-        const found = await frameRoots(frameIds, stale)
+        const found = await frameRoots(frameIds, stale, caches)
         if (found === null) {
           return
         }
         roots = found.roots
         rootIds = found.ids
         missing = found.missing
+        hidden = found.hidden
       } else if (scope === "selection") {
         roots = page.selection.slice()
       } else {
@@ -314,7 +322,16 @@ export function createScanner(send: (message: MainToUi) => void): Scanner {
       } else {
         const gone = missing
         // In request order, each frame once.
-        send({ type: "scan-done", requestId, total, truncated, skipped, missingFrameIds: [...new Set(frameIds)].filter((frameId) => gone.has(frameId)) })
+        const requested = [...new Set(frameIds)]
+        send({
+          type: "scan-done",
+          requestId,
+          total,
+          truncated,
+          skipped,
+          missingFrameIds: requested.filter((frameId) => gone.has(frameId)),
+          hiddenFrameIds: requested.filter((frameId) => hidden.has(frameId)),
+        })
       }
     },
   }
