@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { keyId, PROJECT_ID, scannedNode } from "../../../test/fixtures"
-import type { FigmaMetaResponse, FigmaScreenshotUploadResponse, FigmaTextStyle, FigmaUser } from "../../shared/api-types"
+import type { FigmaMetaResponse, FigmaScreenshotUploadResponse, FigmaUser } from "../../shared/api-types"
 import type { Box, FileSettings, MainToUi, UiToMain } from "../../shared/messages"
 import { newFileSettings } from "../../shared/plugin-data"
 import { ApiError, RATE_LIMIT_MESSAGE, REASON_MESSAGES } from "../api/client"
@@ -161,7 +161,7 @@ describe("createAvailability (E1 + E8)", () => {
     expect(fake.projects).not.toHaveBeenCalled()
   })
 
-  it("says whether the server takes captured texts and styles (E1 screenshot_freshness)", () => {
+  it("says whether the server takes captured texts (E1 screenshot_freshness)", () => {
     expect(screenshotFreshness(READY)).toBe(false)
     expect(screenshotFreshness({ ...READY, meta: { ...META, screenshot_freshness: true } })).toBe(true)
     // An older server sends no flag at all.
@@ -214,30 +214,11 @@ describe("affectedFrames (§7.13 rule 11)", () => {
 })
 
 function box(x: number, y: number, w: number, h: number, nodeId = "12:1"): Box {
-  return { nodeId, keyId: K1, x, y, w, h, text: null, style: null }
+  return { nodeId, keyId: K1, x, y, w, h, text: null }
 }
 
-const STYLE: FigmaTextStyle = {
-  font_family: "Inter",
-  font_style: "Semi Bold",
-  font_weight: 600,
-  font_size: 17,
-  line_height_px: 22,
-  letter_spacing_px: -0.41,
-  text_align_horizontal: "center",
-  text_align_vertical: "center",
-  text_case: "original",
-  text_decoration: "none",
-  color: "#FFFFFFFF",
-  background: "#0A84FFFF",
-  auto_resize: "none",
-  max_lines: null,
-  truncation: "disabled",
-  mixed: false,
-}
-
-function styled(x: number, y: number, w: number, h: number, nodeId = "12:1", text: string | null = "Pay now", style: FigmaTextStyle | null = STYLE): Box {
-  return { ...box(x, y, w, h, nodeId), text, style }
+function withText(x: number, y: number, w: number, h: number, nodeId = "12:1", text: string | null = "Pay now"): Box {
+  return { ...box(x, y, w, h, nodeId), text }
 }
 
 describe("fitBoxes (§7.16 decoded size)", () => {
@@ -254,15 +235,9 @@ describe("fitBoxes (§7.16 decoded size)", () => {
     expect(fitBoxes([box(400, 10, 10, 10), box(-5, -5, 3, 3), box(-5, 0, 10, 10)], { width: 400, height: 800 }, { width: 400, height: 800 })).toEqual([box(0, 0, 5, 10)])
   })
 
-  it("scales the text style by actual/expected height only when it rescales the boxes (contract §3.3)", () => {
-    expect(fitBoxes([styled(10, 10, 20, 20)], { width: 400, height: 800 }, { width: 398, height: 799 })).toEqual([styled(10, 10, 20, 20)])
-    expect(fitBoxes([styled(100, 200, 50, 20)], { width: 400, height: 800 }, { width: 300, height: 600 })).toEqual([
-      styled(75, 150, 38, 15, "12:1", "Pay now", { ...STYLE, font_size: 12.75, line_height_px: 16.5, letter_spacing_px: -0.31 }),
-    ])
-    // A font size that rounds to 0 at the new size leaves the box without a style.
-    expect(fitBoxes([styled(0, 0, 400, 800, "12:1", "Pay", { ...STYLE, font_size: 0.01 })], { width: 400, height: 800 }, { width: 100, height: 200 })).toEqual([
-      styled(0, 0, 100, 200, "12:1", "Pay", null),
-    ])
+  it("keeps each box's text when it rescales the boxes (contract §3.3)", () => {
+    expect(fitBoxes([withText(10, 10, 20, 20)], { width: 400, height: 800 }, { width: 398, height: 799 })).toEqual([withText(10, 10, 20, 20)])
+    expect(fitBoxes([withText(100, 200, 50, 20)], { width: 400, height: 800 }, { width: 300, height: 600 })).toEqual([withText(75, 150, 38, 15)])
   })
 })
 
@@ -306,8 +281,8 @@ describe("E19 parts", () => {
     expect(meta.frame_name).toBe("😀".repeat(200))
   })
 
-  it("adds each box's text and style only for a server with screenshot_freshness (SF5b)", () => {
-    const boxes = [styled(20, 50, 100, 20), styled(380, 50, 20, 20, "12:2", null, null), styled(10, 10, 5, 5, "12:3", "", STYLE)]
+  it("adds each box's text only for a server with screenshot_freshness (SF5b)", () => {
+    const boxes = [withText(20, 50, 100, 20), withText(380, 50, 20, 20, "12:2", null), withText(10, 10, 5, 5, "12:3", "")]
     const base = { x: 20, y: 50, w: 100, h: 20 }
     expect(screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, boxes, false).boxes).toEqual([
       { key_id: K1, node_id: "12:1", ...base },
@@ -316,32 +291,26 @@ describe("E19 parts", () => {
     ])
     const fresh = screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, boxes, true)
     expect(fresh.boxes).toEqual([
-      { key_id: K1, node_id: "12:1", ...base, text: "Pay now", style: STYLE },
+      { key_id: K1, node_id: "12:1", ...base, text: "Pay now" },
       { key_id: K1, node_id: "12:2", x: 380, y: 50, w: 20, h: 20 },
-      { key_id: K1, node_id: "12:3", x: 10, y: 10, w: 5, h: 5, text: "", style: STYLE },
+      { key_id: K1, node_id: "12:3", x: 10, y: 10, w: 5, h: 5, text: "" },
     ])
     // Absent, not null, for what was not captured; the box keys come first.
     expect(JSON.stringify(fresh.boxes[1])).toBe('{"key_id":"' + K1 + '","node_id":"12:2","x":380,"y":50,"w":20,"h":20}')
-    expect(Object.keys(fresh.boxes[0])).toEqual(["key_id", "node_id", "x", "y", "w", "h", "text", "style"])
+    expect(Object.keys(fresh.boxes[0])).toEqual(["key_id", "node_id", "x", "y", "w", "h", "text"])
   })
 
-  it("never sends a style the server would reject, and keeps the meta under 900,000 bytes", () => {
-    const invalid = screenshotMeta(
-      IMAGE,
-      FILE_KEY,
-      { width: 400, height: 800 },
-      [styled(0, 0, 1, 1, "12:1", "Pay", { ...STYLE, color: "#fff" }), styled(0, 0, 1, 1, "12:2", "x".repeat(5001))],
-      true,
-    )
+  it("never sends a text the server would reject, and keeps the meta under 900,000 bytes", () => {
+    const invalid = screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, [withText(0, 0, 1, 1, "12:1", "Pay"), withText(0, 0, 1, 1, "12:2", "x".repeat(5001))], true)
     expect(invalid.boxes).toEqual([
       { key_id: K1, node_id: "12:1", x: 0, y: 0, w: 1, h: 1, text: "Pay" },
-      { key_id: K1, node_id: "12:2", x: 0, y: 0, w: 1, h: 1, style: STYLE },
+      { key_id: K1, node_id: "12:2", x: 0, y: 0, w: 1, h: 1 },
     ])
-    const many = Array.from({ length: 500 }, (_, index) => styled(0, 0, 1, 1, "12:" + index, "x".repeat(5000)))
+    const many = Array.from({ length: 500 }, (_, index) => withText(0, 0, 1, 1, "12:" + index, "x".repeat(5000)))
     const meta = screenshotMeta(IMAGE, FILE_KEY, { width: 400, height: 800 }, many, true)
     expect(new TextEncoder().encode(JSON.stringify(meta)).length).toBeLessThanOrEqual(900000)
+    expect(meta.boxes).toHaveLength(500)
     expect(meta.boxes.filter((entry) => entry.text === undefined).length).toBeGreaterThan(300)
-    expect(meta.boxes.every((entry) => entry.style !== undefined)).toBe(true)
   })
 
   it("trims names as the server's strings.TrimSpace does: U+0085 yes, U+FEFF no", () => {
@@ -486,9 +455,9 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
     expect(fake.deps.measure).toHaveBeenCalledWith(IMAGE.bytes, "image/jpeg")
   })
 
-  it("sends text and style with freshness and counts the screenshots that still show other text than ReRune's", async () => {
+  it("sends text with freshness and counts the screenshots that still show other text than ReRune's", async () => {
     const fake = deps({
-      exportFrame: vi.fn(async (frameId: string): Promise<FrameExportResult> => ({ kind: "image", image: imageOf(frameId, { boxes: [styled(20, 50, 100, 20)] }) })),
+      exportFrame: vi.fn(async (frameId: string): Promise<FrameExportResult> => ({ kind: "image", image: imageOf(frameId, { boxes: [withText(20, 50, 100, 20)] }) })),
       upload: vi.fn(async (upload: ScreenshotUpload) => {
         fake.uploads.push(upload)
         const outdated = upload.meta.frame_id === "11:1" ? 1 : 0
@@ -497,7 +466,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
     })
     const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: true })
     expect(run).toMatchObject({ uploaded: 3, outdated: 1 })
-    expect(fake.uploads[0].meta.boxes).toEqual([{ key_id: K1, node_id: "12:1", x: 20, y: 50, w: 100, h: 20, text: "Pay now", style: STYLE }])
+    expect(fake.uploads[0].meta.boxes).toEqual([{ key_id: K1, node_id: "12:1", x: 20, y: 50, w: 100, h: 20, text: "Pay now" }])
 
     const old = deps({ exportFrame: fake.deps.exportFrame })
     const plain = await uploadScreenshots(old.deps, FRAMES.slice(0, 1), { fileKey: FILE_KEY, freshness: false })

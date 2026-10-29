@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { fakeComponent, fakeFrame, fakeInstance, fakePage, fakeSection, fakeText, installFigma, loadFont, onPage, uninstallFigma, type FakeNode, type FakeText, type FigmaMock, type MockFn } from "../../test/figma-mock"
+import { fakeComponent, fakeFrame, fakeInstance, fakePage, fakeSection, fakeText, installFigma, loadFont, onPage, uninstallFigma, type FakeNode, type FigmaMock, type MockFn } from "../../test/figma-mock"
 import { keyId, OTHER_PROJECT_ID, PROJECT_ID } from "../../test/fixtures"
 import { DATA_KEYS, PLUGIN_DATA_NAMESPACE } from "../shared/constants"
 import { src } from "../shared/hash"
 import type { MainToUi, MainToUiOf, NodeLink } from "../shared/messages"
 import { newFileSettings, serializeFileSettings, serializeLink, serializePreviewRecord, type PreviewRecord } from "../shared/plugin-data"
 import { createNodeCaches } from "./node-utils"
-import type { FigmaTextStyle } from "../shared/api-types"
 import { boxesFor, boxFor, exportFrameImage, exportPlan, exportScreenshot, exportScreenshots, frameBoxSources, frameIdsOf, hasOpaqueBackground, retryScales } from "./screenshots"
 
 let figmaMock: FigmaMock
@@ -126,26 +125,6 @@ describe("exportFrameImage", () => {
 const K1 = keyId(1)
 const K2 = keyId(2)
 
-// The style the mock's text has by default (Inter Regular 12, black, AUTO line height), on a white frame.
-const MOCK_STYLE: FigmaTextStyle = {
-  font_family: "Inter",
-  font_style: "Regular",
-  font_weight: 400,
-  font_size: 12,
-  line_height_px: null,
-  letter_spacing_px: 0,
-  text_align_horizontal: "left",
-  text_align_vertical: "top",
-  text_case: "original",
-  text_decoration: "none",
-  color: "#000000FF",
-  background: "#FFFFFFFF",
-  auto_resize: "width_and_height",
-  max_lines: null,
-  truncation: "disabled",
-  mixed: false,
-}
-
 function link(nid: string, id = K1, projectId = PROJECT_ID): NodeLink {
   return { v: 1, id, k: "checkout_pay_button", p: projectId, src: src("Pay now"), nid, t: 1 }
 }
@@ -232,8 +211,8 @@ describe("screenshots-export (§7.16)", () => {
       width: 400,
       height: 800,
       boxes: [
-        { nodeId: "12:1", keyId: K1, x: 20, y: 50, w: 100, h: 20, text: "Pay now", style: MOCK_STYLE },
-        { nodeId: "12:2", keyId: K2, x: 380, y: 50, w: 20, h: 20, text: "Pay now", style: MOCK_STYLE },
+        { nodeId: "12:1", keyId: K1, x: 20, y: 50, w: 100, h: 20, text: "Pay now" },
+        { nodeId: "12:2", keyId: K2, x: 380, y: 50, w: 20, h: 20, text: "Pay now" },
       ],
     })
     expect(frame.exportAsync).toHaveBeenCalledWith({ format: "JPG", constraint: { type: "SCALE", value: 1 }, useAbsoluteBounds: true, colorProfile: "SRGB" })
@@ -255,7 +234,7 @@ describe("screenshots-export (§7.16)", () => {
     onPage(figmaMock, [frame])
 
     const sent = await run(["10:1"])
-    expect(image(sent, "10:1").boxes).toEqual([{ nodeId: "I12:34;5:67", keyId: K1, x: 10, y: 10, w: 50, h: 10, text: "Pay now", style: MOCK_STYLE }])
+    expect(image(sent, "10:1").boxes).toEqual([{ nodeId: "I12:34;5:67", keyId: K1, x: 10, y: 10, w: 50, h: 10, text: "Pay now" }])
   })
 
   it("exports big frames at WIDTH 4096 and scales the boxes (Appendix A.8)", async () => {
@@ -427,7 +406,7 @@ describe("screenshots-export (§7.16)", () => {
   })
 
   it("keeps the first 500 boxes (E19 limit)", () => {
-    const sources = Array.from({ length: 501 }, (_, index) => ({ nodeId: "12:" + index, keyId: K1, rect: rect(10, 10, 5, 5), text: null, style: null }))
+    const sources = Array.from({ length: 501 }, (_, index) => ({ nodeId: "12:" + index, keyId: K1, rect: rect(10, 10, 5, 5), text: null }))
     const boxes = boxesFor(sources, 1, 100, 100)
     expect(boxes).toHaveLength(500)
     expect(boxes[499].nodeId).toBe("12:499")
@@ -443,7 +422,7 @@ describe("screenshots-export (§7.16)", () => {
     onPage(figmaMock, [frame])
     expect(await frameBoxSources(frame as unknown as FrameNode, PROJECT_ID, createNodeCaches())).toEqual({
       previewing: false,
-      sources: [{ nodeId: "12:1", keyId: K1, rect: rect(1, 2, 3, 4), text: "Pay now", style: { ...MOCK_STYLE, background: null } }],
+      sources: [{ nodeId: "12:1", keyId: K1, rect: rect(1, 2, 3, 4), text: "Pay now" }],
     })
   })
 
@@ -472,161 +451,23 @@ describe("screenshots-export (§7.16)", () => {
   })
 })
 
-describe("text and style capture at export (screenshot freshness, contract §3.3)", () => {
-  const BLUE = { type: "SOLID", visible: true, opacity: 1, blendMode: "NORMAL", color: { r: 10 / 255, g: 132 / 255, b: 1 } }
-  const WHITE_TEXT = [{ type: "SOLID", visible: true, opacity: 1, blendMode: "NORMAL", color: { r: 1, g: 1, b: 1 } }]
-
-  function styledText(id: string, characters: string, bounds: ReturnType<typeof rect>, extra: Record<string, unknown> = {}): FakeNode {
-    const node = fakeText(id, characters, {
-      absoluteBoundingBox: bounds,
-      fontSize: 17,
-      fontWeight: 600,
-      lineHeight: { unit: "PIXELS", value: 22 },
-      letterSpacing: { unit: "PIXELS", value: -0.41 },
-      fills: WHITE_TEXT,
-      textAlignHorizontal: "CENTER",
-      textAlignVertical: "CENTER",
-      textAutoResize: "NONE",
-      ...extra,
-    }) as FakeText
-    node.styles = node.styles.map((style) => ({ ...style, fontName: { family: "Inter", style: "Semi Bold" } }))
-    node.setSharedPluginData(PLUGIN_DATA_NAMESPACE, DATA_KEYS.link, serializeLink(link(id)))
-    return node
-  }
-
-  const BUTTON_STYLE: FigmaTextStyle = {
-    ...MOCK_STYLE,
-    font_style: "Semi Bold",
-    font_weight: 600,
-    font_size: 17,
-    line_height_px: 22,
-    letter_spacing_px: -0.41,
-    text_align_horizontal: "center",
-    text_align_vertical: "center",
-    color: "#FFFFFFFF",
-    background: "#0A84FFFF",
-    auto_resize: "none",
-  }
-
-  it("records the layer's text and style, with the background of the button frame behind it", async () => {
-    connectFile()
-    const label = styledText("12:1", "Pay now", rect(124, 510, 200, 40))
-    const button = fakeFrame("11:1", "Button", [label], { fills: [BLUE], opacity: 1 })
-    const frame = exportingFrame("10:1", [button])
-    onPage(figmaMock, [frame])
-    const boxes = image(await run(["10:1"]), "10:1").boxes
-    expect(boxes).toEqual([{ nodeId: "12:1", keyId: K1, x: 24, y: 310, w: 200, h: 40, text: "Pay now", style: BUTTON_STYLE }])
-  })
-
-  it("scales the style's lengths with the export, rounded to two decimals", async () => {
-    connectFile()
-    // WIDTH 4096 for an 8192-wide frame: scale 0.5.
-    const big = exportingFrame("10:1", [styledText("12:1", "Pay now", rect(1000, 100, 200, 40))], rect(0, 0, 8192, 1000))
-    // A re-export at 0.75 above 2,000,000 bytes.
-    const heavy = exportingFrame("20:1", [styledText("22:1", "Pay now", rect(120, 250, 100, 20))], rect(100, 200, 400, 800), [3000000, 1000])
-    onPage(figmaMock, [big, heavy])
-    const sent = await run(["10:1", "20:1"])
-    expect(image(sent, "10:1").boxes[0].style).toEqual({ ...BUTTON_STYLE, background: "#FFFFFFFF", font_size: 8.5, line_height_px: 11, letter_spacing_px: -0.2 })
-    expect(image(sent, "20:1").boxes[0].style).toEqual({ ...BUTTON_STYLE, background: "#FFFFFFFF", font_size: 12.75, line_height_px: 16.5, letter_spacing_px: -0.31 })
-  })
-
-  it("sizes the style of text in an instance scaled with K like the box, not like the component", async () => {
-    connectFile()
-    // An instance at scale factor 2: its label keeps the component's 17 px font, 100 × 20 layer size, and is drawn
-    // 200 × 40 on the canvas.
-    const label = styledText("I11:1;5:2", "Pay now", rect(124, 510, 200, 40), { width: 100, height: 20 })
-    const instance = fakeInstance("11:1", "Button", [label], { overrides: [] })
-    instance.scaleFactor = 2
-    const frame = exportingFrame("10:1", [instance])
-    onPage(figmaMock, [frame])
-    const boxes = image(await run(["10:1"]), "10:1").boxes
-    expect(boxes).toEqual([
-      {
-        nodeId: "I11:1;5:2",
-        keyId: K1,
-        x: 24,
-        y: 310,
-        w: 200,
-        h: 40,
-        text: "Pay now",
-        style: { ...BUTTON_STYLE, background: "#FFFFFFFF", font_size: 34, line_height_px: 44, letter_spacing_px: -0.82 },
-      },
-    ])
-  })
-
-  it("leaves out the text of a layer longer than 5,000 UTF-16 units, and the style of rotated or mirrored text", async () => {
+describe("text capture at export (screenshot freshness, contract §3.3)", () => {
+  it("records the layer's text, an empty one too, and none for a layer longer than 5,000 UTF-16 units", async () => {
     connectFile()
     loadFont(figmaMock)
-    const long = linkedText("12:1", rect(120, 250, 100, 20))
-    long.characters = "😀".repeat(2500) + "x"
-    const rotated = linkedText("12:2", rect(120, 300, 100, 20))
-    rotated.absoluteTransform = [[0, -1, 120], [1, 0, 300]]
-    const mirrored = linkedText("12:3", rect(120, 350, 100, 20))
-    mirrored.absoluteTransform = [[-1, 0, 220], [0, 1, 350]]
-    const frame = exportingFrame("10:1", [long, rotated, mirrored])
-    onPage(figmaMock, [frame])
-    const boxes = image(await run(["10:1"]), "10:1").boxes
-    expect(boxes.map((box) => [box.nodeId, box.text === null ? null : box.text.length, box.style === null ? null : box.style.font_family])).toEqual([
-      ["12:1", null, "Inter"],
-      ["12:2", 7, null],
-      ["12:3", 7, null],
-    ])
-  })
-
-  it("describes the first run of a layer that mixes styles and marks it mixed", async () => {
-    connectFile()
-    loadFont(figmaMock)
-    loadFont(figmaMock, { family: "Inter", style: "Bold" })
-    const text = linkedText("12:1", rect(120, 250, 100, 20)) as FakeText
-    text.setRangeFontName(4, 7, { family: "Inter", style: "Bold" })
-    text.setRangeFontSize(4, 7, 20)
-    const frame = exportingFrame("10:1", [text])
-    onPage(figmaMock, [frame])
-    expect(image(await run(["10:1"]), "10:1").boxes[0].style).toEqual({ ...MOCK_STYLE, mixed: true })
-  })
-
-  it("reads an empty layer's own style, and none when one of its values is figma.mixed", async () => {
-    connectFile()
-    loadFont(figmaMock)
-    const empty = linkedText("12:1", rect(120, 250, 100, 20))
+    const full = linkedText("12:1", rect(120, 250, 100, 20))
+    full.characters = "x".repeat(5000)
+    const empty = linkedText("12:2", rect(120, 300, 100, 20))
     empty.characters = ""
-    empty.textCase = "SMALL_CAPS_FORCED"
-    const unreadable = linkedText("12:2", rect(120, 300, 100, 20))
-    unreadable.characters = ""
-    Object.defineProperty(unreadable, "fontSize", { get: () => figmaMock.mixed, configurable: true })
-    const frame = exportingFrame("10:1", [empty, unreadable])
+    const long = linkedText("12:3", rect(120, 350, 100, 20))
+    long.characters = "😀".repeat(2500) + "x"
+    const frame = exportingFrame("10:1", [full, empty, long])
     onPage(figmaMock, [frame])
     const boxes = image(await run(["10:1"]), "10:1").boxes
-    expect(boxes).toEqual([
-      { nodeId: "12:1", keyId: K1, x: 20, y: 50, w: 100, h: 20, text: "", style: { ...MOCK_STYLE, text_case: "small_caps_forced" } },
-      { nodeId: "12:2", keyId: K1, x: 20, y: 100, w: 100, h: 20, text: "", style: null },
+    expect(boxes.map((box) => [box.nodeId, box.text === null ? null : box.text.length])).toEqual([
+      ["12:1", 5000],
+      ["12:2", 0],
+      ["12:3", null],
     ])
-  })
-
-  it("keeps the box, without a style, when a style value is outside the wire's enums or fails to read", async () => {
-    connectFile()
-    const unknown = linkedText("12:1", rect(120, 250, 100, 20))
-    unknown.textAlignHorizontal = "DISTRIBUTED"
-    const failing = linkedText("12:2", rect(120, 300, 100, 20))
-    failing.getStyledTextSegments = () => {
-      throw new Error("unreadable")
-    }
-    const frame = exportingFrame("10:1", [unknown, failing])
-    onPage(figmaMock, [frame])
-    const boxes = image(await run(["10:1"]), "10:1").boxes
-    expect(boxes.map((box) => [box.nodeId, box.text, box.style])).toEqual([
-      ["12:1", "Pay now", null],
-      ["12:2", "Pay now", null],
-    ])
-  })
-
-  it("captures nothing for text without a key of this project (no box)", async () => {
-    connectFile()
-    const unlinked = linkedText("12:1", rect(120, 250, 100, 20), null)
-    const segments = vi.spyOn(unlinked as FakeText, "getStyledTextSegments")
-    const frame = exportingFrame("10:1", [unlinked])
-    onPage(figmaMock, [frame])
-    expect(image(await run(["10:1"]), "10:1").boxes).toEqual([])
-    expect(segments).not.toHaveBeenCalled()
   })
 })

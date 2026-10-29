@@ -12,7 +12,7 @@ import {
 import { EDIT_KEYS_PERMISSION, syncPauseOf, type SyncPauseReason } from "../../shared/file-link"
 import type { Box, FileSettings, FrameSkipReason, MainToUiOf, ScannedNode } from "../../shared/messages"
 import { firstRunes, trimSpace } from "../../shared/text"
-import { capturedText, fitMetaBudget, isWireTextStyle, scaleTextStyle } from "../../shared/text-style"
+import { capturedText, fitMetaBudget } from "../../shared/screenshot-text"
 import { ApiError, RATE_LIMIT_DEFAULT_SECONDS, RATE_LIMIT_MESSAGE, REASON_MESSAGES, userMessage } from "../api/client"
 import type { FigmaApi, ScreenshotUpload } from "../api/figma-api"
 import { RequestTimeoutError, type UiBus } from "../bus"
@@ -104,7 +104,7 @@ export function createAvailability(api: Pick<FigmaApi, "meta" | "projects">): Av
   }
 }
 
-// E1 screenshot_freshness (SF5b): only such a server takes the boxes' text and style (an older one answers 400).
+// E1 screenshot_freshness (SF5b): only such a server takes the boxes' text (an older one answers 400).
 export function screenshotFreshness(availability: Availability): boolean {
   return availability.meta?.screenshot_freshness === true
 }
@@ -207,8 +207,7 @@ export function affectedFrames(nodeIds: readonly string[], nodes: ReadonlyMap<st
 }
 
 // §7.16: when the decoded image differs from the expected size by more than 2 px, boxes are rescaled by
-// actual/expected; they are always clamped to the decoded size (E19 drops boxes that leave the image). A rescale
-// scales the style's lengths by actual/expected height too (contract §3.3).
+// actual/expected; they are always clamped to the decoded size (E19 drops boxes that leave the image).
 export function fitBoxes(boxes: readonly Box[], expected: PixelSize, actual: PixelSize): Box[] {
   const rescale =
     Math.abs(actual.width - expected.width) > SCREENSHOT_SIZE_TOLERANCE_PX || Math.abs(actual.height - expected.height) > SCREENSHOT_SIZE_TOLERANCE_PX
@@ -221,8 +220,7 @@ export function fitBoxes(boxes: readonly Box[], expected: PixelSize, actual: Pix
     const x2 = Math.min(actual.width, Math.round((box.x + box.w) * sx))
     const y2 = Math.min(actual.height, Math.round((box.y + box.h) * sy))
     if (x2 > x && y2 > y) {
-      const style = rescale && box.style !== null ? scaleTextStyle(box.style, sy) : box.style
-      fitted.push({ ...box, x, y, w: x2 - x, h: y2 - y, style })
+      fitted.push({ ...box, x, y, w: x2 - x, h: y2 - y })
     }
   }
   return fitted
@@ -242,22 +240,19 @@ function cleanName(name: string): string {
   return firstRunes(trimSpace(name), SCREENSHOT_NAME_MAX_RUNES)
 }
 
-// Main only captures valid text and styles; anything else is left out here too, since one invalid box fails the
+// Main only captures texts the server takes; a longer one is left out here too, since one invalid box fails the
 // whole upload (400 "invalid meta").
 function wireBox(box: Box, freshness: boolean): FigmaScreenshotBox {
   const wire: FigmaScreenshotBox = { key_id: box.keyId, node_id: box.nodeId, x: box.x, y: box.y, w: box.w, h: box.h }
   if (freshness && typeof box.text === "string" && capturedText(box.text) !== null) {
     wire.text = box.text
   }
-  if (freshness && box.style !== null && isWireTextStyle(box.style)) {
-    wire.style = box.style
-  }
   return wire
 }
 
 // The E19 `meta` part: the decoded size and the fitted boxes (at most 500). With `freshness` (E1
-// screenshot_freshness) each box also carries its text and style, within the 900,000-byte budget (SF2c); without it
-// the boxes are sent as before, since an older server rejects unknown fields.
+// screenshot_freshness) each box also carries its text, within the 900,000-byte budget (SF2c); without it the boxes
+// are sent as before, since an older server rejects unknown fields.
 export function screenshotMeta(image: FrameImage, fileKey: string, size: PixelSize, boxes: readonly Box[], freshness: boolean): FigmaScreenshotMeta {
   const meta: FigmaScreenshotMeta = {
     file_key: fileKey,
@@ -380,7 +375,7 @@ export interface ScreenshotDeps {
 
 export interface ScreenshotRunOptions {
   fileKey: string
-  freshness: boolean                          // E1 screenshot_freshness: send each box's text and style
+  freshness: boolean                          // E1 screenshot_freshness: send each box's text
   stopped?(): boolean                         // "Stop": checked before each upload and during a 429 wait
   onProgress?(run: ScreenshotRun): void
 }
