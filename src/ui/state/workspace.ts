@@ -42,11 +42,14 @@ export interface Workspace {
   // one runner, so it returns null while a shown scan runs, and a later scan or clear() cancels it (null).
   scanDetached(scope: Scope): Promise<ScanResult | null>
   // A detached scan of the frames ReRune asks new screenshots of (screenshot freshness, contract §6.4 step 2), with
-  // the file's scan filters; the frames not in the file come back in `missingFrameIds`. Same rules as scanDetached.
+  // the file's scan filters; the frames not in the file come back in `missingFrameIds`. Same rules as scanDetached,
+  // except that a page change keeps it: it reads the frames on whichever page they are.
   scanFrames(frameIds: readonly string[]): Promise<ScanResult | null>
   refreshRemote(): Promise<void>
   setScope(scope: Scope): void
   setPending(nodeIds: readonly string[], name: string | null): void
+  // A page change (`clear()`) or another project or sign-out (`clear(true)`): the shown scan, its list and remote
+  // state are dropped and the runner's scan is cancelled, apart from a scan of requested frames on a page change.
   clear(dropPending?: boolean): void
 }
 
@@ -71,6 +74,9 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
   const store = createStore<WorkspaceState>(emptyWorkspace(initialScope))
   let scanGeneration = 0
   let remoteGeneration = 0
+  // Every scan the runner starts gets a number; `framesScan` is the number of the running scan of requested frames.
+  let scans = 0
+  let framesScan: number | null = null
 
   async function refreshRemote(): Promise<void> {
     const mine = ++remoteGeneration
@@ -106,6 +112,8 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
     if (store.get().status === "scanning") {
       return null
     }
+    const mine = ++scans
+    framesScan = frameIds === undefined ? null : mine
     try {
       return await deps.scanner.run(scope, undefined, frameIds)
     } catch (error) {
@@ -113,6 +121,10 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
         return null
       }
       throw error
+    } finally {
+      if (framesScan === mine) {
+        framesScan = null
+      }
     }
   }
 
@@ -122,6 +134,9 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
     async scan(scope) {
       const target = scope ?? store.get().scope
       const mine = ++scanGeneration
+      // The runner cancels the scan it runs, also one of requested frames.
+      scans++
+      framesScan = null
       store.set((state) => ({ ...state, scope: target, status: "scanning", progress: 0, error: null }))
       let result: ScanResult
       try {
@@ -170,11 +185,14 @@ export function createWorkspace(deps: WorkspaceDeps, initialScope: Scope = "sele
         return { ...state, pending }
       })
     },
-    // Page changes keep pending creates (node ids stay valid); a project change drops them.
+    // Page changes keep pending creates (node ids stay valid); a project change drops them. A scan of requested frames
+    // does not depend on the page, so a page change lets it finish.
     clear(dropPending = false) {
       scanGeneration++
       remoteGeneration++
-      deps.scanner.cancel()
+      if (dropPending || framesScan === null) {
+        deps.scanner.cancel()
+      }
       store.set((state) => ({ ...emptyWorkspace(state.scope), pending: dropPending ? new Map() : state.pending }))
     },
   }

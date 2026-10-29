@@ -141,6 +141,36 @@ describe("workspace", () => {
     await shownScan
   })
 
+  it("lets a scan of requested frames finish when the page changes, but not on another project or sign-out", async () => {
+    const pending: (() => void)[] = []
+    const waiting: ScanRunner & { cancel: ReturnType<typeof vi.fn<() => void>> } = {
+      cancel: vi.fn<() => void>(),
+      run: vi.fn(
+        (scope: Scope) =>
+          new Promise<ScanResult>((resolve) => {
+            pending.push(() => resolve({ scope, nodes, total: 2, truncated: false, skipped: SKIPPED, missingFrameIds: [] }))
+          }),
+      ),
+    }
+    const workspace = createWorkspace({ scanner: waiting, api: api(), project: () => ({ id: PROJECT_ID, main_language: "en" }) })
+    const frames = workspace.scanFrames(["10:1"])
+    workspace.clear()
+    expect(waiting.cancel).not.toHaveBeenCalled()
+    pending[0]()
+    expect(await frames).toMatchObject({ nodes })
+
+    // Once it ended, a page change cancels the runner's scan again (the automatic link sync's, for one).
+    const page = workspace.scanDetached("page")
+    workspace.clear()
+    expect(waiting.cancel).toHaveBeenCalledTimes(1)
+    pending[1]()
+    await page
+
+    void workspace.scanFrames(["10:1"])
+    workspace.clear(true)
+    expect(waiting.cancel).toHaveBeenCalledTimes(2)
+  })
+
   it("leaves the shown scan alone: null while it runs or when a newer scan cancels it, and throws a failure", async () => {
     let finish: () => void = () => {}
     const waiting: ScanRunner & { cancel: ReturnType<typeof vi.fn<() => void>> } = {
