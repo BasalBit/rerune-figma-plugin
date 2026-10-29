@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest"
 import overrideManifest from "../build-figma-plugin.manifest.js"
 import pkg from "../package.json"
-import { PLACEHOLDER_MARKER, PLACEHOLDERS, placeholderPng, readListingFile, readPng, scanlines } from "../scripts/listing-placeholders.mjs"
+import { decodeRgb, encodeRgbPng, LISTING_COMMENT, LISTING_IMAGES, readListingFile, readPng } from "../scripts/listing-images.mjs"
 import { CODEGEN_PLATFORMS } from "../src/codegen/snippets"
 import { CODEGEN_SOURCE_TEXT_MAX_CHARS } from "../src/shared/constants"
 import listing from "../COMMUNITY_LISTING.md?raw"
@@ -171,31 +171,41 @@ describe("COMMUNITY_LISTING.md", () => {
 })
 
 describe("listing images", () => {
-  it.each(Object.entries(PLACEHOLDERS))("%s has Figma's size and is listed in COMMUNITY_LISTING.md", (name, spec) => {
+  const assets = () => section(listing, "## Assets")
+
+  it.each(Object.entries(LISTING_IMAGES))("%s has Figma's size, is the rendered art and is listed in COMMUNITY_LISTING.md", (name, spec) => {
     const png = readPng(readListingFile(name))
     expect([png.width, png.height]).toEqual([spec.width, spec.height])
-    expect(listing).toContain("`listing/" + name + "`")
-    expect(listing).toContain(spec.width + " × " + spec.height + " PNG: `listing/" + name + "`")
+    // 8-bit RGB: opaque by construction (Figma rounds the icon's corners itself).
+    expect([png.bitDepth, png.colorType]).toEqual([8, 2])
+    expect(png.text).toMatchObject({ Title: spec.title, Comment: LISTING_COMMENT })
+    expect(JSON.stringify(png.text)).not.toMatch(/placeholder/i)
+    expect(assets()).toContain(spec.width + " × " + spec.height + " PNG: `listing/" + name + "`")
+    expect(listing).not.toMatch(/\(\*\*placeholder\*\*/)
   })
 
-  it.each(Object.keys(PLACEHOLDERS))("%s, while still a placeholder, is the generator's output and is marked as one", (name) => {
-    const png = readPng(readListingFile(name))
-    const text = png.text as Record<string, string>
-    if (text.Comment !== PLACEHOLDER_MARKER) {
-      // Real artwork replaced the placeholder: only the size check above applies.
-      expect(listing).not.toContain("`listing/" + name + "` (**placeholder**")
-      return
+  it("lists the Dev Mode image only for the full build", () => {
+    const lines = assets().split("\n")
+    for (const [name, spec] of Object.entries(LISTING_IMAGES)) {
+      const line = lines.find((entry) => entry.includes("`listing/" + name + "`")) ?? ""
+      expect(line.includes("full build only"), name).toBe((spec as { fullBuildOnly?: boolean }).fullBuildOnly === true)
     }
-    expect(listing).toContain("`listing/" + name + "` (**placeholder**, replace)")
-    const generated = placeholderPng(name)
-    expect(png.bitDepth).toBe(8)
-    expect(png.colorType).toBe(2)
-    // Compare decoded pixels, not bytes: zlib builds may compress the same pixels differently.
-    expect(png.inflate().equals(scanlines(generated.canvas))).toBe(true)
-    expect(readPng(generated.png).text).toEqual(text)
   })
 
-  it("rejects a damaged PNG", () => {
+  it("names the art's sources and how to render it again", () => {
+    expect(assets()).toContain("`node scripts/listing-art.mjs`")
+    expect(assets()).toContain("`listing/src/`")
+    expect(section(listing, "## Before you submit")).toContain("- [x] Icon and cover replaced")
+  })
+
+  it("reads back what it writes, and rejects a damaged PNG", () => {
+    const pixels = [255, 0, 0, 0, 255, 0, 0, 0, 255, 15, 23, 41, 246, 168, 35, 255, 255, 255]
+    const png = encodeRgbPng({ width: 3, height: 2, rgb: Uint8Array.from(pixels) }, { Title: "t" })
+    const decoded = decodeRgb(png)
+    expect([decoded.width, decoded.height, [...decoded.rgb]]).toEqual([3, 2, pixels])
+    expect(readPng(png).text).toEqual({ Title: "t" })
+    const icon = decodeRgb(readListingFile("icon-128.png"))
+    expect([...icon.rgb.subarray(0, 3)]).toEqual([8, 13, 25])
     const bytes = Uint8Array.from(readListingFile("icon-128.png"))
     bytes[20] ^= 0xff
     expect(() => readPng(bytes)).toThrow("Bad CRC in the IHDR chunk")

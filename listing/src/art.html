@@ -1,0 +1,164 @@
+<!doctype html>
+<!--
+  The Figma Community listing art (COMMUNITY_LISTING.md → Assets), one template per image: node scripts/listing-art.mjs
+  render opens art.html#<image name> at the image's size and saves the PNG. It follows the dashboard's /figma page and
+  its share card (app/og/polyglot-og-image.tsx): paper ground, the brand row with a mono key tag, a condensed
+  Bricolage title with its last word on an amber tile, a 2px ink rule, a Newsreader italic kicker on the amber bar, a
+  Hanken Grotesk line, and the amber field behind an airmail edge. The plugin screens are real captures
+  (listing/src/shots, scripts/listing-art.mjs capture). Fonts: the dashboard's OG instances (fonts/, SIL OFL 1.1).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ReRune for Figma listing art</title>
+<style>
+@font-face { font-family: "Bricolage Grotesque"; src: url(fonts/BricolageGrotesque-96pt-ExtraBold-wdth82.ttf); font-weight: 800; }
+@font-face { font-family: "Hanken Grotesk"; src: url(fonts/HankenGrotesk-Medium.ttf); font-weight: 500; }
+@font-face { font-family: "Newsreader"; src: url(fonts/Newsreader-24pt-Italic.ttf); font-style: italic; font-weight: 400; }
+@font-face { font-family: "IBM Plex Mono"; src: url(fonts/IBMPlexMono-Medium.woff); font-weight: 500; }
+:root {
+  --paper: #f7f8fb; --paper-hi: #ffffff; --paper-2: #eef1f6; --line: #d0d6e2;
+  --ink: #0f1729; --ink-2: #333e57; --ink-3: #556177;
+  --amber: #f6a823; --amber-lo: #c26f0a; --flame: #ef4343; --app: #080d19;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--paper); }
+body { -webkit-font-smoothing: antialiased; }
+.mark { display: block; color: currentColor; }
+
+/* ---- icon: the app icon's navy, the heavier mark in white, glyph 84 px tall (Figma rounds the corners) ---- */
+.icon { width: 128px; height: 128px; display: grid; place-items: center; background: var(--app); color: #ffffff; }
+
+/* ---- card: the OG composition at 1920 x 1080 ---- */
+.card { position: relative; display: flex; width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); color: var(--ink); }
+.copy { display: flex; flex-direction: column; width: 1302px; height: 100%; padding: 84px 84px 76px 102px; }
+.brand { display: flex; align-items: center; height: 84px; }
+.tile { display: grid; place-items: center; width: 84px; height: 84px; border-radius: 22px; border: 4px solid var(--ink); background: var(--paper-hi); color: var(--ink); flex: none; }
+.word { margin-left: 26px; font: 800 67px/1 "Bricolage Grotesque"; letter-spacing: -0.02em; }
+.hair { flex: 1; height: 3px; margin: 0 36px; background: var(--line); }
+.key { display: flex; align-items: center; padding: 15px 22px; border-radius: 14px; border: 2.4px solid var(--line); background: var(--paper-hi); font: 500 31px/1 "IBM Plex Mono"; color: var(--ink-2); white-space: nowrap; }
+.key::before { content: "\2039"; color: var(--amber-lo); margin-right: 14px; }
+.key::after { content: "\203A"; color: var(--amber-lo); margin-left: 14px; }
+.title-box { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding-top: 44px; }
+.title { font: 800 150px/0.94 "Bricolage Grotesque"; letter-spacing: -0.025em; color: var(--ink); text-wrap: balance; }
+.title .w { display: inline-block; position: relative; z-index: 0; }
+.title .t::before { content: ""; position: absolute; z-index: -1; left: -0.07em; right: -0.07em; top: 0.1em; bottom: -0.02em; border-radius: 0.07em; background: var(--amber); transform: rotate(-1.4deg); }
+.rule { height: 3px; margin-top: 48px; background: var(--ink); }
+.kicker { display: flex; align-items: center; height: 58px; margin-top: 34px; font: italic 400 48px/1.2 "Newsreader"; color: var(--ink-2); }
+.kicker::before { content: ""; width: 60px; height: 6px; margin-right: 26px; border-radius: 3px; background: var(--amber); flex: none; }
+.support { margin-top: 16px; max-width: 1060px; font: 500 36px/1.36 "Hanken Grotesk"; color: var(--ink-2); }
+.airmail { width: 18px; height: 100%; flex: none; background: repeating-linear-gradient(135deg, var(--flame) 0 26px, var(--paper-hi) 26px 38px, var(--ink) 38px 64px, var(--paper-hi) 64px 77px); }
+.field { position: relative; flex: 1; height: 100%; background: var(--amber); }
+
+/* the plugin window as a print (pg-print): a navy frame in every theme */
+.print { position: absolute; border: 9px solid var(--ink); border-radius: 18px; background: var(--ink); overflow: hidden; box-shadow: 0 28px 60px rgba(15, 23, 41, 0.34), 0 6px 14px rgba(15, 23, 41, 0.2); }
+.print img { display: block; width: 100%; height: 100%; }
+
+/* postage stamp (pg-stamp): perforated paper, art, mono caption with the small mark */
+.stamp { position: absolute; --r: 9px; padding: calc(var(--r) * 2.1) calc(var(--r) * 2.1) 0;
+  background: radial-gradient(var(--r), #0000 96%, var(--paper-hi)) round calc(-1.5 * var(--r)) calc(-1.5 * var(--r)) / calc(3 * var(--r)) calc(3 * var(--r)),
+    linear-gradient(var(--paper-hi) 0 0) no-repeat 50% / calc(100% - 3 * var(--r)) calc(100% - 3 * var(--r));
+  filter: drop-shadow(0 16px 18px rgba(15, 23, 41, 0.28)); }
+.stamp .art { width: 212px; height: 318px; border: 2.5px solid var(--ink); background: var(--ink) center / cover no-repeat; }
+.stamp .cap { display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 2px 6px; font: 500 16px/1 "IBM Plex Mono"; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
+
+/* an illustrative canvas frame (as on /figma): the checkout in German */
+.canvas { position: absolute; z-index: 1; width: 320px; padding: 22px 22px 26px; border-radius: 26px; background: var(--paper-hi); box-shadow: 0 22px 48px rgba(15, 23, 41, 0.3); font-family: "Hanken Grotesk"; color: var(--ink); }
+.canvas .label { position: absolute; top: -36px; left: 4px; font: 500 20px/1 "IBM Plex Mono"; color: var(--ink); }
+.canvas h3 { font: 800 40px/1 "Bricolage Grotesque"; letter-spacing: -0.02em; }
+.canvas .row { display: flex; justify-content: space-between; margin-top: 18px; padding-top: 16px; border-top: 2px solid var(--paper-2); font-size: 22px; color: var(--ink-2); }
+.canvas .row b { color: var(--ink); font-weight: 500; }
+.canvas .pay { margin-top: 24px; padding: 18px; border-radius: 14px; background: var(--ink); color: var(--paper); font-size: 24px; text-align: center; }
+.canvas .note { margin-top: 14px; font-size: 18px; color: var(--ink-3); }
+.selected { outline: 3px solid #0d99ff; outline-offset: 5px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div id="art"></div>
+<script>
+// The marks come from assets/brand (served next to listing/ by scripts/listing-art.mjs): the faithful path for art of
+// 48 px and more, the heavier cut for the 128 px icon. The view box crops the 500-unit frame to the glyph plus 10 units.
+const VIEWBOX = "128 101 244 298"
+async function pathOf(file) {
+  const svg = await (await fetch("../../assets/brand/" + file)).text()
+  return svg.match(/ d="([^"]+)"/)[1]
+}
+const mark = (path, glyph) => {
+  const height = (glyph * 298) / 278
+  return `<svg class="mark" viewBox="${VIEWBOX}" width="${((height * 244) / 298).toFixed(2)}" height="${height.toFixed(2)}" aria-hidden="true"><path fill="currentColor" d="${path}"/></svg>`
+}
+
+// The title's words; the last one on the amber tile (as the /figma hero tiles its accent).
+const title = (text) => {
+  const words = text.split(" ")
+  return words.map((word, index) => `<span class="w${index === words.length - 1 ? " t" : ""}">${word}</span>`).join(" ")
+}
+
+function card({ keyTag, heading, kicker, support }, field, paths) {
+  return `<div class="card">
+    <div class="copy">
+      <div class="brand"><span class="tile">${mark(paths.faithful, 58)}</span><span class="word">ReRune</span><span class="hair"></span><span class="key">${keyTag}</span></div>
+      <div class="title-box"><h1 class="title">${title(heading)}</h1></div>
+      <div class="rule"></div>
+      <p class="kicker">${kicker}</p>
+      <p class="support">${support}</p>
+    </div>
+    <div class="airmail"></div>
+    <div class="field">${field}</div>
+  </div>`
+}
+
+// A plugin screen captured at its window size (2x), shown at `scale`; the print frame adds 9 px around it.
+const print = (shot, { left, top, scale = 1.12, width = 400, height = 640 }) =>
+  `<div class="print" style="left:${left}px;top:${top}px;width:${width * scale + 18}px;height:${height * scale + 18}px"><img src="shots/${shot}.png" alt=""></div>`
+
+const stamp = (paths, { left, top, rotate }) =>
+  `<div class="stamp" style="left:${left}px;top:${top}px;transform:rotate(${rotate}deg)"><div class="art" style="background-image:url(scholar.png)"></div><div class="cap"><span>The scholar</span>${mark(paths.faithful, 26)}</div></div>`
+
+const canvas = ({ left, top }) => `<div class="canvas" style="left:${left}px;top:${top}px">
+    <span class="label">Checkout</span>
+    <h3>Kasse</h3>
+    <div class="row"><span>Zwischensumme</span><b>48,00 €</b></div>
+    <div class="row"><span>Gesamtbetrag</span><b>52,90 €</b></div>
+    <div class="pay selected">Jetzt bezahlen</div>
+    <p class="note">Lieferung in 2–3 Tagen, versandkostenfrei</p>
+  </div>`
+
+const FREE = "Free for designers on every ReRune plan. Nothing is published from Figma."
+
+const ART = {
+  "icon-128.png": (paths) => `<div class="icon">${mark(paths.small, 84)}</div>`,
+  "cover-1920x1080.png": (paths) =>
+    card({ keyTag: "figmaLanding_title", heading: "Link Figma text to real keys.", kicker: "ReRune for Figma", support: FREE },
+      stamp(paths, { left: 296, top: 70, rotate: 4 }) + print("layers-light", { left: 70, top: 168, scale: 1.12 }), paths),
+  "carousel-1-link.png": (paths) =>
+    card({ keyTag: "figmaLanding_stepLink_title", heading: "Link layers to keys", kicker: "Layers", support: "Scan a page, then link text layers to existing keys, by search or exact text, or name new keys after your project's pattern." },
+      print("layers-light", { left: 70, top: 168 }), paths),
+  "carousel-2-push.png": (paths) =>
+    card({ keyTag: "figmaLanding_stepPush_title", heading: "Push copy as drafts", kicker: "Push", support: "Review every change before it leaves Figma. Texts changed in both places wait for your decision; publishing stays in ReRune." },
+      print("push-light", { left: 70, top: 168 }), paths),
+  "carousel-3-preview.png": (paths) =>
+    card({ keyTag: "figmaLanding_stepPreview_title", heading: "Preview every language", kicker: "Preview", support: "Show any project language on the canvas, draft or published, with regional fallbacks. Reset restores the original text." },
+      print("preview-light", { left: 158, top: 104, scale: 1.0 }) + canvas({ left: 30, top: 572 }), paths),
+  "carousel-4-qa.png": (paths) =>
+    card({ keyTag: "checkout_delivery_note", heading: "Catch overflow before it ships", kicker: "QA", support: "An overflow report per language finds clipped, truncated and overflowing text, and values longer than their key allows." },
+      print("qa-dark", { left: 70, top: 168 }), paths),
+  "carousel-5-dev-mode.png": (paths) =>
+    card({ keyTag: "checkout_pay_button", heading: "Keys and snippets in Dev Mode", kicker: "Dev Mode", support: "Developers see the linked keys of a selection with their values in every language, and a snippet for their platform." },
+      print("inspect-light", { left: 74, top: 178, scale: 1.45, width: 300, height: 480 }), paths),
+}
+
+window.renderArt = async (name) => {
+  const paths = { faithful: await pathOf("rerune-mark.svg"), small: await pathOf("rerune-mark-small.svg") }
+  document.getElementById("art").innerHTML = ART[name](paths)
+  await Promise.all([...document.images].map((image) => image.decode().catch(() => {})))
+  await document.fonts.ready
+  for (const face of ['800 20px "Bricolage Grotesque"', '500 20px "Hanken Grotesk"', 'italic 400 20px Newsreader', '500 20px "IBM Plex Mono"']) {
+    if (!document.fonts.check(face)) await document.fonts.load(face)
+  }
+  return ART[name] !== undefined
+}
+window.ART_NAMES = Object.keys(ART)
+</script>
+</body>
+</html>

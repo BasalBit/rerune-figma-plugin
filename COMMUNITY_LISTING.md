@@ -59,11 +59,15 @@ The reasoning is the manifest's `networkAccess.reasoning`, word for word; `test/
 
 ## Assets
 
-The two images in `listing/` are **placeholders**: they have the sizes Figma asks for and say "PLACEHOLDER" on them (and in their PNG `Comment`). Replace them with real artwork before publishing, under the same file names and sizes. `node scripts/listing-placeholders.mjs` regenerates the placeholders (no dependencies). `test/listing.test.ts` checks the sizes and that an image still marked as a placeholder is the generator's output.
+The images in `listing/` follow the dashboard's /figma page and its share card: the ReRune mark and wordmark, the Bricolage title on an amber tile, the amber field with the airmail edge, and the plugin's real screens (Figma light, the QA one in Figma dark). Rendered by `node scripts/listing-art.mjs` from `listing/src/`; capture the screenshots again from the build you publish (README → [Listing images](README.md#listing-images)). `test/listing.test.ts` checks each image's size and format and that this list names it.
 
-- [ ] Icon, 128 × 128 PNG: `listing/icon-128.png` (**placeholder**, replace)
-- [ ] Cover (thumbnail), 1920 × 1080 PNG: `listing/cover-1920x1080.png` (**placeholder**, replace)
-- [ ] Carousel, up to 9 images or videos (none yet). Suggested: Layers with linked keys and the **Create on push** names; the Push review with a conflict; Preview in German with the original next to it; the QA overflow report; language copies of a frame. Full build only: the Dev Mode inspect panel with snippets.
+- [x] Icon, 128 × 128 PNG: `listing/icon-128.png` (the ReRune mark in white on the app icon's navy)
+- [x] Cover (thumbnail), 1920 × 1080 PNG: `listing/cover-1920x1080.png`
+- [x] Carousel 1, 1920 × 1080 PNG: `listing/carousel-1-link.png` (Layers with key tags and states)
+- [x] Carousel 2, 1920 × 1080 PNG: `listing/carousel-2-push.png` (the Push review)
+- [x] Carousel 3, 1920 × 1080 PNG: `listing/carousel-3-preview.png` (Preview in German beside a canvas frame)
+- [x] Carousel 4, 1920 × 1080 PNG: `listing/carousel-4-qa.png` (the QA overflow report, Figma dark)
+- [x] Carousel 5, 1920 × 1080 PNG: `listing/carousel-5-dev-mode.png` (full build only: the Dev Mode inspect panel)
 - [ ] Optional playground file: the Chapter example design (not made yet).
 
 ## Data security disclosure
@@ -105,7 +109,8 @@ Answers for Figma's data security disclosure (optional, reviewed by Figma, shown
 - [ ] Production acceptance passed and recorded (`TESTING.md` §9): server and dashboard deployed, Network check and pairing against production, a push, a preview and a screenshot upload, all in Figma desktop (it is the only place an unpublished build runs).
 - [ ] Build chosen (see [Which build to publish](#which-build-to-publish)). For the full build, S14 is answered in `TESTING.md` §8.2.
 - [ ] The release build is the CI artifact of the commit you publish (`rerune-figma-plugin-design-only` or `rerune-figma-plugin`) or the same command run locally, placed where Figma desktop imported the plugin from and checked with `node scripts/check-build.mjs` (README → Build and release, step 2).
-- [ ] Icon and cover replaced; carousel images taken from the build you publish.
+- [x] Icon and cover replaced.
+- [ ] Carousel images taken from the build you publish (`node scripts/listing-art.mjs capture`, then `render`); with the design-only build, leave out `carousel-5-dev-mode.png`.
 - [ ] https://rerune.io/privacy and https://rerune.io/docs/figma are live, and the data security answers above still match.
 - [ ] Ops confirmed that the production bunny.net Storage zone is in Germany with no replication regions (answers 4 and 8 and the dashboard's legal pages say so; only the dev zone has been checked). Name the city in answers 4 and 8 only after that.
 - [ ] Decide how reviewers sign in (a free account as above, or a test account BasalBit creates; never commit its password).
