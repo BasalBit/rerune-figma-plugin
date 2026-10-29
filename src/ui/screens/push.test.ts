@@ -99,6 +99,14 @@ describe("Push: Select all new texts", () => {
     expect(shown.onDecide).toHaveBeenCalledWith({ kind: "creates-selected", selected: true })
   })
 
+  it("is the ReRune section title (mono caps after the amber bar) with the plain checkbox and its focus ring", () => {
+    const shown = header(review().plan)
+    const [title] = find(shown.tree, "div").filter((node) => node.props.class === "rr-eyebrow")
+    expect(title.props).toMatchObject({ role: "heading", "aria-level": 2 })
+    expect(text(title.children)).toBe("New text (3)")
+    expect(shown.box.props.class).toBe("rr-check rr-focus")
+  })
+
   it("is partly ticked when only some are included, and ticking it includes them all", () => {
     const { plan, context } = review()
     const some = header(applyDecision(plan, { kind: "create-selected", ref: "c1", selected: true }, context))

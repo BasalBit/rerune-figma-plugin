@@ -8,7 +8,7 @@ import type { FigmaApi } from "../api/figma-api"
 import type { UiBus } from "../bus"
 import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
 import { KeyTag } from "../brand/key-tag"
-import { ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { ErrorGroups, ErrorNote, Loading, Note, plural, preview, ReRuneHint, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import {
@@ -182,8 +182,8 @@ export function PreviewScreen(props: PreviewScreenProps) {
               }}
             />
           )}
-          {pickNote !== null && <Small muted>{pickNote}</Small>}
-          {removedPreview !== null && <Note tone="info">{removedPreview}</Note>}
+          {pickNote !== null && <ReRuneHint>{pickNote}</ReRuneHint>}
+          {removedPreview !== null && <Note tone="rerune">{removedPreview}</Note>}
         </div>
         <div style={styles.tightStack}>
           <Small muted>Source</Small>

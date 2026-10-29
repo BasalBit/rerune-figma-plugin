@@ -73,6 +73,10 @@ export const BRAND_CSS = [
   ".rr-tab:disabled{opacity:0.5;cursor:default}",
   ".rr-band{display:flex;align-items:center;gap:8px;padding:4px 12px;background:var(--rr-wash);font-size:11px;line-height:16px}",
   ".rr-band::before{content:\"\";flex:none;width:6px;height:6px;border-radius:50%;background:var(--rr-accent)}",
+  // a line about a change made in ReRune under the control it changed (a picked language removed from the project): muted
+  // text after the band's amber dot, quieter than a note
+  ".rr-hint{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:16px;color:var(--rr-muted)}",
+  ".rr-hint::before{content:\"\";flex:none;width:6px;height:6px;border-radius:50%;background:var(--rr-accent)}",
 
   // chips and notes: one recipe; --hue is the tone's colour, the text stays Figma's
   ".rr-chip{--hue:var(--rr-muted);display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 6px 0 5px;border-radius:999px;border:1px solid var(--figma-color-border);",

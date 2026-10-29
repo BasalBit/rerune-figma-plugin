@@ -90,6 +90,12 @@ export function SectionTitle(props: { children: ComponentChildren; style?: JSX.C
   )
 }
 
+// A muted line about a change made in ReRune, under the control it changed (a picked language or variation removed from
+// the project), after the amber dot of the ReRune side: quieter than a note.
+export function ReRuneHint(props: { children: ComponentChildren }) {
+  return <div class="rr-hint">{props.children}</div>
+}
+
 export function Small(props: { children: ComponentChildren; muted?: boolean; style?: JSX.CSSProperties }) {
   return <div style={{ ...styles.small, ...(props.muted === true ? styles.muted : {}), ...props.style }}>{props.children}</div>
 }

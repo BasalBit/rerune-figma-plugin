@@ -11,8 +11,9 @@
 // a scroll area (unreachable), the layout shift while the screen loads, the brand fonts loaded, page errors, text under
 // 4.5:1 (3:1 large). The Design screens render at 400 × 640 and at the window's 360 × 480 minimum, the Dev Mode panel at
 // 300 × 480 and 300 × 200 (a short inspect panel). Every run sets reduced motion except 07-push-results, which plays the
-// postmark's stamp-in. CHROME_BIN is a Chromium or Chrome binary; without it, the installed Google Chrome is used. Not
-// run in CI.
+// postmark's stamp-in. A scenario with `later` changes ReRune's side once its screen is shown (h.later: the plugin's
+// background reads pick it up at the next round, at least 15 s after the last one, when the window gets focus).
+// CHROME_BIN is a Chromium or Chrome binary; without it, the installed Google Chrome is used. Not run in CI.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname } from "node:path"
@@ -183,6 +184,10 @@ const LAYERS = [
 const REMOTE_MAIN = { [K(1)]: "Pay now", [K(2)]: "Total due", [K(3)]: "Checkout", [K(4)]: "Nothing in your cart yet", [K(5)]: "Have a promo code?", [K(6)]: "Arrives in 2–3 days" }
 
 const CLEAN_LAYERS = LAYERS.filter((layer) => ["1:1", "1:3", "1:5"].includes(layer.id))
+// The project after German was removed in ReRune (Austrian German no longer inherits from it).
+const WITHOUT_DE = { ...project, languages: languages.filter((language) => language.code !== "de").map((language) => ({ ...language, inherits_from: [] })) }
+// The background reads keep 15 s between rounds when the window gets focus (REQUEST_ATTENTION_MIN_MS, request-watch.ts).
+const ATTENTION_MIN_MS = 15000
 
 const base = { auth, settings, nodes: LAYERS, meta: { screenshots_enabled: false, screenshot_freshness: false }, requests: [] }
 export const SCENARIOS = {
@@ -200,14 +205,53 @@ export const SCENARIOS = {
     ...base,
     steps: async (h) => { await h.scanPage(); await h.tab("Push"); await h.text("Changed in both", 8000); await h.scrollTo("Changed in both") },
   },
+  // One of the two new texts included: Select all is partly ticked. That is a choice, so the change made in ReRune
+  // meanwhile (Pay now) waits for Refresh.
+  "06c-push-select-all": {
+    ...base,
+    later: { remote: { [K(1)]: "Pay now securely" } },
+    steps: async (h) => {
+      await h.scanPage(); await h.tab("Push"); await h.text("Changed in both", 8000); await h.checkFirst("Include in push")
+      await h.later(); await h.text("ReRune has new changes.", 8000); await h.wait(300)
+    },
+  },
   "07-push-results": {
     ...base,
     nodes: CLEAN_LAYERS,
     motion: true,
     steps: async (h) => { await h.scanPage(); await h.tab("Push"); await h.text("Changed in Figma", 8000); await h.checkAll("Include in push"); await h.button(/^Push \d+ changes?$/); await h.text("Drafts are never published from Figma.", 8000); await h.wait(400) },
   },
+  // Checkout was edited in ReRune while the push ran: the result card's chip shows the layer's state as it is now, and
+  // after Take ReRune text it is Synced (second shot, "resolved").
+  "07b-push-results-conflict": {
+    ...base,
+    nodes: CLEAN_LAYERS,
+    later: { remote: { [K(3)]: "Checkout and pay" }, conflictOnPush: true },
+    steps: async (h) => {
+      await h.scanPage(); await h.tab("Push"); await h.text("Changed in Figma", 8000); await h.button(/^Push \d+ changes?$/); await h.text("Changed in ReRune meanwhile", 8000)
+      await h.wait(400); await h.shot(); await h.button("Take ReRune text"); await h.text("Synced", 8000); await h.wait(400); await h.shot("resolved")
+    },
+  },
   "08-preview": { ...base, steps: async (h) => { await h.scanPage(); await h.tab("Preview"); await h.text("Show key names instead of text"); await h.button("Apply to page"); await h.text("Missing translations", 8000); await h.wait(300) } },
+  // German is removed from the project in ReRune while its preview is on the canvas. The change comes while Layers is
+  // shown: with Preview open, its language list would lose the language it shows (CFP's Dropdown throws on a value it
+  // has no option for).
+  "08b-preview-language-removed": {
+    ...base,
+    later: { project: WITHOUT_DE },
+    steps: async (h) => {
+      await h.scanPage(); await h.tab("Preview"); await h.text("Show key names instead of text"); await h.button("Apply to page"); await h.text("Missing translations", 8000)
+      await h.wait(1000); await h.tab("Layers"); await h.text("Select all shown")
+      await h.later(); await h.wait(1000); await h.tab("Preview"); await h.text("was removed from this project", 8000); await h.wait(300)
+    },
+  },
   "09-qa-overflow": { ...base, steps: async (h) => { await h.scanPage(); await h.tab("QA"); await h.check("de"); await h.check("fr"); await h.button("Run overflow report"); await h.text(/issues? found/, 10000); await h.scrollTo("Overflow report") } },
+  // German, picked for the report, is removed from the project in ReRune while QA is open.
+  "09b-qa-language-removed": {
+    ...base,
+    later: { project: WITHOUT_DE },
+    steps: async (h) => { await h.scanPage(); await h.tab("QA"); await h.check("de"); await h.check("fr"); await h.later(); await h.text("was removed from this project", 8000); await h.wait(300) },
+  },
   "10-settings": { ...base, meta: { screenshots_enabled: true, screenshot_freshness: true }, steps: async (h) => { await h.tab("Settings"); await h.text("Key names"); await h.wait(300) } },
   "11-request-notice": {
     ...base,
@@ -243,9 +287,10 @@ function baseName(name, size) {
   return name + (size === "default" ? "" : "-" + width + "x" + height)
 }
 
-function remoteKey(id, languagesWanted, source) {
+// `later`: the scenario's ReRune-side changes once h.later() ran.
+function remoteKey(id, languagesWanted, source, later) {
   const [key, en, de, fr, max] = KEYS[id] ?? ["unknown_" + id.slice(-3), "?", null, null, null]
-  const content = { en: REMOTE_MAIN[id] ?? en, de, "de-AT": de, fr }
+  const content = { en: later?.remote?.[id] ?? REMOTE_MAIN[id] ?? en, de, "de-AT": de, fr }
   return {
     id, key, type: "key", enabled: true, status: id === K(3) ? "modified" : "published", published: true, description: "", tags: [], max_length: max, placeholders: [],
     values: languagesWanted.map((lang) => {
@@ -256,7 +301,7 @@ function remoteKey(id, languagesWanted, source) {
   }
 }
 
-async function mockApi(page, scenario, errors) {
+async function mockApi(page, scenario, errors, live) {
   let polls = 0
   await page.route("**/*", async (route) => {
     try {
@@ -288,17 +333,24 @@ async function mockApi(page, scenario, errors) {
     }
     if (path === "/figma/auth/logout") return route.fulfill({ status: 204, headers: cors })
     if (path === "/figma/projects") return json(200, { user, projects })
-    if (path === "/figma/projects/" + P) return json(200, { ...project, key_count: 128, available_keys: 872, key_name_sample: ["checkout_title", "checkout_pay_button", "cart_empty_hint"] })
+    const later = live.later ? scenario.later : undefined
+    if (path === "/figma/projects/" + P) return json(200, { ...(later?.project ?? project), key_count: 128, available_keys: 872, key_name_sample: ["checkout_title", "checkout_pay_button", "cart_empty_hint"] })
     if (path.endsWith("/keys/search")) return json(200, { items: [], next_cursor: null, has_more: false })
     if (path.endsWith("/keys/by-name")) return json(200, { keys: [], missing: body?.names ?? [], text_matches: [] })
     if (path.endsWith("/keys/resolve")) {
-      return json(200, { source: body.source, variation_option: null, missing_key_ids: [], keys: body.key_ids.filter((id) => KEYS[id]).map((id) => remoteKey(id, body.languages, body.source)) })
+      return json(200, { source: body.source, variation_option: null, missing_key_ids: [], keys: body.key_ids.filter((id) => KEYS[id]).map((id) => remoteKey(id, body.languages, body.source, later)) })
     }
     if (path.endsWith("/push")) {
+      // conflictOnPush: the keys of `later.remote` were edited in ReRune meanwhile, from this push on.
+      const meanwhile = scenario.later?.conflictOnPush === true ? scenario.later.remote : {}
+      if (scenario.later?.conflictOnPush === true) live.later = true
       const results = body.items.map((item) => item.op === "create"
         ? { client_ref: item.client_ref, status: "created", key_id: K(50), key: item.key, reason: null, message: null, current_text: null }
-        : { client_ref: item.client_ref, status: "updated", key_id: item.key_id, key: KEYS[item.key_id]?.[0] ?? null, reason: null, message: null, current_text: null })
-      return json(200, { results, summary: { created: results.filter((r) => r.status === "created").length, updated: results.filter((r) => r.status === "updated").length, unchanged: 0, conflicts: 0, failed: 0 }, available_keys: 871 })
+        : meanwhile[item.key_id] !== undefined
+          ? { client_ref: item.client_ref, status: "conflict", key_id: item.key_id, key: KEYS[item.key_id]?.[0] ?? null, reason: "source_changed", message: null, current_text: meanwhile[item.key_id] }
+          : { client_ref: item.client_ref, status: "updated", key_id: item.key_id, key: KEYS[item.key_id]?.[0] ?? null, reason: null, message: null, current_text: null })
+      const count = (status) => results.filter((r) => r.status === status).length
+      return json(200, { results, summary: { created: count("created"), updated: count("updated"), unchanged: 0, conflicts: count("conflict"), failed: 0 }, available_keys: 871 })
     }
     if (path.endsWith("/files") && request.method() === "PUT") return json(200, { file_key: settings.fileKey, file_name: "Chapter app", url: settings.fileUrl, link_count: 6, screenshot_count: 2, last_push_at: null, last_push_by: null, created_at: "2026-10-20T09:00:00Z", updated_at: "2026-10-20T09:00:00Z", outdated_screenshot_count: 0, refresh_requested_count: scenario.requests.length })
     if (path.endsWith("/files")) return json(200, { files: [] })
@@ -313,7 +365,7 @@ async function mockApi(page, scenario, errors) {
   }
 }
 
-function helpers(page, ui) {
+function helpers(page, ui, live) {
   const h = {
     shots: [],
     file: () => "",
@@ -324,6 +376,14 @@ function helpers(page, ui) {
     tab: async (name) => { await ui.getByRole("tab", { name }).dispatchEvent("click"); await page.waitForTimeout(150) },
     check: async (label) => { await ui.getByLabel(label, { exact: true }).check() },
     checkAll: async (label) => { for (const box of await ui.getByLabel(label, { exact: true }).all()) await box.check() },
+    checkFirst: async (label) => { await ui.getByLabel(label, { exact: true }).first().check() },
+    // ReRune's side changes (the scenario's `later`); the next round of background reads, when the window gets focus,
+    // brings it.
+    later: async () => {
+      live.later = true
+      await page.waitForTimeout(ATTENTION_MIN_MS + 500)
+      await page.frames()[1].evaluate(() => window.dispatchEvent(new Event("focus")))
+    },
     shot: async (suffix) => { await h.blur(); await page.screenshot({ path: h.file(suffix) }); h.shots.push(suffix ?? "") },
     blur: () => page.frames()[1].evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur()),
     // Keyboard only: Tab until the predicate holds for the focused element (the focus ring is :focus-visible).
@@ -405,14 +465,15 @@ async function captureOne(browser, outDir, { name, size, theme, file: fileName }
   const errors = []
   page.on("pageerror", (error) => errors.push("pageerror: " + error.message))
   page.on("console", (message) => { if (message.type() === "error") errors.push("console: " + message.text().slice(0, 200)) })
-  await mockApi(page, scenario, errors)
+  const live = { later: false }
+  await mockApi(page, scenario, errors, live)
   const { steps, ...data } = scenario
   const host = mkdtempSync(tmpdir() + "/rerune-ui-harness-") + "/host.html"
   writeFileSync(host, hostHtml(theme, width, height, data))
   await page.goto(pathToFileURL(host).href)
   const ui = page.frameLocator("#ui")
   let failed = null
-  const h = helpers(page, ui)
+  const h = helpers(page, ui, live)
   // A file name like 06-push-review-b-light: the suffix goes before the theme.
   h.file = (suffix) => outDir + "/" + (fileName !== undefined ? fileName + (suffix ? "-" + suffix : "") : baseName(name, size) + (suffix ? "-" + suffix : "") + "-" + theme) + ".png"
   try {

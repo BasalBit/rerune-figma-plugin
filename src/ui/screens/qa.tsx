@@ -10,7 +10,7 @@ import type { UiBus } from "../bus"
 import { copyText } from "../clipboard"
 import { SamplesSection, usePluralShapes, useSampleDrafts } from "../components/samples"
 import { KeyTag } from "../brand/key-tag"
-import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
+import { CheckInput, Chip, ErrorGroups, ErrorNote, Loading, Note, plural, preview, ReRuneHint, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { groupErrors, runBatched, undoStep, type ErrorGroup } from "../state/ops"
 import { buildPseudoPreview, languageLabel, type PseudoBuild, type RenderChoices } from "../state/preview"
@@ -308,7 +308,7 @@ export function QaScreen(props: QaScreenProps) {
               </label>
             ))
           )}
-          {pickNote !== null && <Small muted>{pickNote}</Small>}
+          {pickNote !== null && <ReRuneHint>{pickNote}</ReRuneHint>}
         </div>
         <div style={styles.tightStack}>
           <Small muted>Source</Small>

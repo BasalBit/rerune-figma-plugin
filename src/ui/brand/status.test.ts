@@ -27,6 +27,19 @@ describe("chip tones", () => {
   })
 })
 
+describe("changes made in ReRune on the screens", () => {
+  it("are ReRune notes (amber wash) or hints (amber dot): new changes on Push, a language removed on Preview and QA", () => {
+    const push = screens["../screens/push.tsx"]
+    const stale = push.slice(push.indexOf("{stale && ("), push.indexOf("{REMOTE_CHANGED_NOTE}"))
+    expect(stale).toContain('tone="rerune"')
+    const preview = screens["../screens/preview.tsx"]
+    expect(preview).toContain('{removedPreview !== null && <Note tone="rerune">{removedPreview}</Note>}')
+    for (const source of [preview, screens["../screens/qa.tsx"]]) {
+      expect(source).toContain("{pickNote !== null && <ReRuneHint>{pickNote}</ReRuneHint>}")
+    }
+  })
+})
+
 describe("key names on the screens", () => {
   it("are key tags, never plain mono text", () => {
     const plainMono = /styles\.mono[^>]*>\s*\{[\w?.]*\b(keyName|key)\}/

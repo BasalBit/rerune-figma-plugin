@@ -37,6 +37,11 @@ describe("BRAND_CSS", () => {
     expect(BRAND_CSS).toContain(".rr-chip.rr-tone--rerune{background:var(--rr-key-bg);border-color:var(--rr-key-line)}")
   })
 
+  it("marks a hint about a change made in ReRune with the preview band's amber dot, the text muted", () => {
+    expect(BRAND_CSS).toContain(".rr-hint{display:flex;align-items:baseline;gap:6px;font-size:11px;line-height:16px;color:var(--rr-muted)}")
+    expect(BRAND_CSS).toContain(".rr-hint::before{content:\"\";flex:none;width:6px;height:6px;border-radius:50%;background:var(--rr-accent)}")
+  })
+
   it("draws the chips' shapes in CanvasText under forced colours", () => {
     expect(BRAND_CSS).toContain(".rr-glyph{forced-color-adjust:none;background:CanvasText}.rr-glyph--ring{background:none;border-color:CanvasText}}")
   })

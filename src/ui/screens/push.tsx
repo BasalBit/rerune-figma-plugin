@@ -543,7 +543,7 @@ export function PushScreen(props: PushScreenProps) {
         {planNote !== null && <Note tone="warning">{planNote}</Note>}
         {stale && (
           <Note
-            tone="info"
+            tone="rerune"
             actions={
               <TextButton disabled={busy || props.state.status === "scanning" || props.state.remoteStatus === "loading"} onClick={() => void refresh()}>
                 Refresh
