@@ -202,6 +202,26 @@ describe("T3 / T4 (export)", () => {
   })
 })
 
+describe("T11 (text style overrides)", () => {
+  it("lists each segment's text style and the overrides Figma reports, without writing", async () => {
+    figmaMock.textStyles.set("S:title", { fontSize: 28 })
+    const styled = fakeText("1:1", "Find your next world.")
+    await styled.setRangeTextStyleIdAsync(0, 21, "S:title")
+    const plain = fakeText("1:2", "Plain")
+    onPage(figmaMock, [styled, plain], [styled, plain])
+    styled.setRangeTextStyleIdAsync.mockClear()
+    const report = (await runReadDiagnostic("T11-style-overrides", CONTEXT)) as { nodes: Report[] }
+    expect(report.nodes[0]).toMatchObject({ nodeId: "1:1", characters: 21, segments: [{ start: 0, end: 21, textStyleId: "S:title", styleName: "S:title" }] })
+    expect(report.nodes[1]).toMatchObject({ nodeId: "1:2", segments: [{ textStyleId: "", styleName: null }] })
+    expect(styled.setRangeTextStyleIdAsync).not.toHaveBeenCalled()
+    expect(styled.characters).toBe("Find your next world.")
+  })
+
+  it("asks for a text selection", async () => {
+    expect(await runReadDiagnostic("T11-style-overrides", CONTEXT)).toMatchObject({ error: expect.any(String) })
+  })
+})
+
 describe("T5 (fonts and exact restore)", () => {
   it("writes ✓, restores every field exactly and reports bindings and missing fonts", async () => {
     figmaMock.textStyles.set("S:1", { fontSize: 20 })

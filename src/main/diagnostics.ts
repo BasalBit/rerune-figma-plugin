@@ -487,6 +487,41 @@ function t8Relaunch(): Report {
   return { test: "T8-relaunch", set: nodes.filter((node) => node.ok).length, nodes, hint: "Look for the Open ReRune button in the right sidebar in Figma Design and in Dev Mode." }
 }
 
+// T11-style-overrides: per selected text, its text style and the overrides Figma counts on top of it (the "(1)"
+// after a style name in the sidebar). Read only.
+async function t11StyleOverrides(): Promise<Report> {
+  const { nodes, truncated } = await selectedTexts(MAX_FONT_NODES)
+  if (nodes.length === 0) {
+    return { test: "T11-style-overrides", error: "Select text layers that use a text style." }
+  }
+  const rows: Report[] = []
+  for (const node of nodes) {
+    const row: Report = { nodeId: node.id, name: node.name, characters: node.characters.length }
+    rows.push(row)
+    try {
+      const segments = node.getStyledTextSegments(["textStyleId", "textStyleOverrides", "hyperlink", "textDecoration", "fontName"])
+      const styles: Report[] = []
+      for (const segment of segments) {
+        const style = segment.textStyleId === "" ? null : await figma.getStyleByIdAsync(segment.textStyleId)
+        styles.push({
+          start: segment.start,
+          end: segment.end,
+          textStyleId: segment.textStyleId,
+          styleName: style?.name ?? null,
+          textStyleOverrides: segment.textStyleOverrides,
+          hyperlink: segment.hyperlink,
+          textDecoration: segment.textDecoration,
+          fontName: segment.fontName,
+        })
+      }
+      row.segments = styles
+    } catch (error) {
+      row.error = errorText(error)
+    }
+  }
+  return { test: "T11-style-overrides", nodes: rows, truncated }
+}
+
 function t10Environment(context: DiagnosticsContext): Report {
   return {
     test: "T10-environment",
@@ -520,6 +555,8 @@ export async function runReadDiagnostic(test: ReadDiagnostic, context: Diagnosti
       return t7Settings()
     case "T10-environment":
       return t10Environment(context)
+    case "T11-style-overrides":
+      return t11StyleOverrides()
   }
 }
 

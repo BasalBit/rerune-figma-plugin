@@ -13,6 +13,7 @@ const READ_TESTS: Record<ReadDiagnostic, Omit<DiagnosticEntry, "test">> = {
   "T4-export-page": { label: "T4 Export page", hint: "Exports every top-level frame on this page (up to 100)." },
   "T7-settings": { label: "T7 File settings", hint: "Reads the ReRune file settings on the file and on every page, and counts the previews on this page." },
   "T10-environment": { label: "T10 Environment", hint: "Editor, mode, command and API version." },
+  "T11-style-overrides": { label: "T11 Text style overrides", hint: "Select text with a text style: lists the overrides Figma counts on top of the style." },
 }
 
 const WRITE_TESTS: Record<WriteDiagnostic, Omit<DiagnosticEntry, "test">> = {
@@ -23,7 +24,7 @@ const WRITE_TESTS: Record<WriteDiagnostic, Omit<DiagnosticEntry, "test">> = {
 }
 
 const ORDER: DiagnosticTest[] = [
-  "T10-environment", "T1-mark", "T1-check", "T2-instances", "T2-clear", "T3-export", "T4-export-page", "T5-fonts", "T7-settings", "T8-relaunch", "T9-devmode-write",
+  "T10-environment", "T1-mark", "T1-check", "T2-instances", "T2-clear", "T3-export", "T4-export-page", "T5-fonts", "T7-settings", "T8-relaunch", "T9-devmode-write", "T11-style-overrides",
 ]
 
 function entryOf(test: DiagnosticTest): DiagnosticEntry {

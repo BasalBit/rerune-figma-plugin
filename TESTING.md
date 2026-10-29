@@ -368,6 +368,7 @@ Figma runs an imported development build only in the desktop app; browser Figma 
 | T8 Relaunch button | Select layers → **T8 Relaunch button**, then look at the right sidebar in Design and in Dev Mode (needs a paid Figma plan) | is **Open ReRune** shown in each? |
 | T9 Dev Mode write | **Needs a paid Figma plan.** Dev Mode, development build: select a layer → inspect **Diagnostics** → **T9 Dev Mode write** | `allowed`, `error`, `cleanupError` |
 | T10 Environment | In Design and in the Dev Mode inspect panel (desktop, browser, VS Code; Dev Mode needs a paid Figma plan) | `editorType`, `mode`, `command`, `vscode`, `apiVersion`, `skipInvisibleInstanceChildrenDefault`, `userAgent` |
+| T11 Text style overrides | Select text layers that use a text style → **T11 Text style overrides** (before a preview, after **Apply**, after **Reset**) | per segment `styleName`, `textStyleOverrides` (Figma shows their count after the style name, e.g. "28/34(1)") |
 | Network check | Any Diagnostics screen | `status`, `cors`, `latencyMs` |
 
 ### 8.2 Answers

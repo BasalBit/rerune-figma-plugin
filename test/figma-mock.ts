@@ -708,6 +708,7 @@ export interface FigmaMock {
   codegen: { on: MockFn }
   viewport: { scrollAndZoomIntoView: MockFn }
   variables: { getVariableByIdAsync: MockFn }
+  getStyleByIdAsync: MockFn
   currentPage: FakeNode
   root: FakeNode
   getNodeByIdAsync: MockFn
@@ -767,6 +768,7 @@ export function installFigma(overrides: Record<string, unknown> = {}): FigmaMock
     codegen: { on: vi.fn() },
     viewport: { scrollAndZoomIntoView: vi.fn() },
     variables: { getVariableByIdAsync: vi.fn(async (id: string) => figma.variablesById.get(id) ?? null) },
+    getStyleByIdAsync: vi.fn(async (id: string) => (figma.textStyles.has(id) || figma.fillStyles.has(id) ? { id, name: id } : null)),
     currentPage: page,
     root,
     getNodeByIdAsync: vi.fn(async (id: string) => {

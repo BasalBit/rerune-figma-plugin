@@ -6,14 +6,14 @@ describe("diagnosticsFor", () => {
   it("offers read and write tests in Design mode, never T9", () => {
     for (const env of ["production", "development"] as const) {
       expect(diagnosticsFor("figma", env).map((entry) => entry.test)).toEqual([
-        "T10-environment", "T1-mark", "T1-check", "T2-instances", "T2-clear", "T3-export", "T4-export-page", "T5-fonts", "T7-settings", "T8-relaunch",
+        "T10-environment", "T1-mark", "T1-check", "T2-instances", "T2-clear", "T3-export", "T4-export-page", "T5-fonts", "T7-settings", "T8-relaunch", "T11-style-overrides",
       ])
     }
   })
 
   it("offers only read tests plus T9 in Dev Mode development builds", () => {
     expect(diagnosticsFor("dev", "development").map((entry) => entry.test)).toEqual([
-      "T10-environment", "T1-check", "T2-instances", "T3-export", "T4-export-page", "T7-settings", "T9-devmode-write",
+      "T10-environment", "T1-check", "T2-instances", "T3-export", "T4-export-page", "T7-settings", "T9-devmode-write", "T11-style-overrides",
     ])
     expect(diagnosticsFor("dev", "production").map((entry) => entry.test)).not.toContain("T9-devmode-write")
   })

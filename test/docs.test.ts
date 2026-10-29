@@ -305,7 +305,7 @@ describe("TESTING.md", () => {
 
   it("names every Diagnostics button the plugin shows", () => {
     const labels = [...uiDiagnostics.matchAll(/label: "(T\d+ [^"]+)"/g)].map((match) => match[1])
-    expect(labels).toHaveLength(11)
+    expect(labels).toHaveLength(12)
     for (const label of [...labels, "Network check", "Copy report", "ReRune diagnostics"]) {
       expect(testing).toContain(label)
     }
