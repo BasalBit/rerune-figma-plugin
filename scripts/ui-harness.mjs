@@ -233,9 +233,9 @@ export const SCENARIOS = {
     },
   },
   "08-preview": { ...base, steps: async (h) => { await h.scanPage(); await h.tab("Preview"); await h.text("Show key names instead of text"); await h.button("Apply to page"); await h.text("Missing translations", 8000); await h.wait(300) } },
-  // German is removed from the project in ReRune while its preview is on the canvas. The change comes while Layers is
-  // shown: with Preview open, its language list would lose the language it shows (CFP's Dropdown throws on a value it
-  // has no option for).
+  // German is removed from the project in ReRune while its preview is on the canvas, first while Layers is shown (08b),
+  // then while Preview stays open with German picked (08c: its language list loses the language it shows; CFP's Dropdown
+  // throws on a value it has no option for, so the screen must swap it in the same render).
   "08b-preview-language-removed": {
     ...base,
     later: { project: WITHOUT_DE },
@@ -243,6 +243,14 @@ export const SCENARIOS = {
       await h.scanPage(); await h.tab("Preview"); await h.text("Show key names instead of text"); await h.button("Apply to page"); await h.text("Missing translations", 8000)
       await h.wait(1000); await h.tab("Layers"); await h.text("Select all shown")
       await h.later(); await h.wait(1000); await h.tab("Preview"); await h.text("was removed from this project", 8000); await h.wait(300)
+    },
+  },
+  "08c-preview-language-removed-open": {
+    ...base,
+    later: { project: WITHOUT_DE },
+    steps: async (h) => {
+      await h.scanPage(); await h.tab("Preview"); await h.text("Show key names instead of text"); await h.button("Apply to page"); await h.text("Missing translations", 8000)
+      await h.later(); await h.text("was removed from this project", 8000); await h.wait(300)
     },
   },
   "09-qa-overflow": { ...base, steps: async (h) => { await h.scanPage(); await h.tab("QA"); await h.check("de"); await h.check("fr"); await h.button("Run overflow report"); await h.text(/issues? found/, 10000); await h.scrollTo("Overflow report") } },

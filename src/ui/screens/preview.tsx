@@ -80,6 +80,10 @@ export function PreviewScreen(props: PreviewScreenProps) {
   const [showInherited, setShowInherited] = useState(false)
   // Why the picked language or variation changed by itself (removed from the project in ReRune).
   const [pickNote, setPickNote] = useState<string | null>(null)
+  // A language or variation removed in ReRune is replaced in this render, not only by the effect below: the
+  // dropdowns throw on a value they don't list.
+  const shownLang = keptLanguage(project, lang, prefs.lastLanguage).lang
+  const shownVariation = keptVariation(project, variation).variation
   const sampleDrafts = useSampleDrafts(project.id, prefs, props.onPrefs)
   const nodes = useMemo(() => props.state.result?.nodes ?? [], [props.state.result])
   // The plural selector lists the forms of the language previewed, with the counts they render (§7.18.5).
@@ -89,13 +93,13 @@ export function PreviewScreen(props: PreviewScreenProps) {
     nodes,
     resolved: props.state.resolved,
     mainLanguage: project.main_language,
-    request: lang === null || keysMode ? null : { lang, source, variationOptionId: variation },
+    request: shownLang === null || keysMode ? null : { lang: shownLang, source, variationOptionId: shownVariation },
   })
   const placeholders = useMemo(
     () => samplePlaceholders(nodes, project.id, props.state.resolved, project.main_language, shapes),
     [nodes, props.state.resolved, project.id, project.main_language, shapes],
   )
-  const activePlural = activePluralChoice(props.pluralChoice, project.id, lang)
+  const activePlural = activePluralChoice(props.pluralChoice, project.id, shownLang)
 
   useEffect(() => {
     const keptLang = keptLanguage(project, lang, prefs.lastLanguage)
@@ -114,7 +118,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
   }, [project.languages, project.main_language, project.variation_options])
 
   async function apply() {
-    if (lang === null || props.resetting || !props.work.acquire("preview")) return
+    if (shownLang === null || props.resetting || !props.work.acquire("preview")) return
     setBusy("apply")
     setError(null)
     setApplied(null)
@@ -125,7 +129,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
         return
       }
       const mode: PreviewMode = keysMode ? "keys" : source
-      const request = { lang, mode, variationOptionId: variation }
+      const request = { lang: shownLang, mode, variationOptionId: shownVariation }
       const resolved = await resolveForPreview(props.api, project.id, previewKeyIds(result.nodes, project.id), request)
       const names = new Map<string, string>()
       for (const [keyId, remote] of props.workspace.store.get().remote) {
@@ -136,7 +140,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
       // One undo step for the whole apply, however many batches it takes.
       const written = await runBatched(props.bus, build.items, (requestId, batch, last) => ({ type: "preview-apply", requestId, info: build.info, items: batch, ...undoStep(last) }))
       setApplied({ build, done: written.done, errors: groupErrors(written.errors) })
-      props.onPrefs({ lastLanguage: lang, lastSource: source, lastVariationOptionId: variation })
+      props.onPrefs({ lastLanguage: shownLang, lastSource: source, lastVariationOptionId: shownVariation })
       await props.workspace.scan(scope)
     } catch (caught) {
       setError(userMessage(caught))
@@ -174,7 +178,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
             <Note tone="warning">This project has no languages yet.</Note>
           ) : (
             <Dropdown
-              value={lang}
+              value={shownLang}
               options={languageOptions}
               onValueChange={(value) => {
                 setLang(value)
@@ -193,7 +197,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
           <div style={styles.tightStack}>
             <Small muted>Variation</Small>
             <Dropdown
-              value={variation ?? NO_VARIATION}
+              value={shownVariation ?? NO_VARIATION}
               options={variationOptions}
               disabled={keysMode}
               onValueChange={(value) => {
@@ -209,7 +213,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
         {!keysMode && (
           <SamplesSection
             placeholders={placeholders}
-            lang={lang}
+            lang={shownLang}
             plural={activePlural}
             samples={sampleDrafts}
             saved={projectSamples(prefs.samples, project.id)}
@@ -295,7 +299,7 @@ export function PreviewScreen(props: PreviewScreenProps) {
         <Button secondary disabled={disabled} loading={busy === "reset"} onClick={() => void reset()}>
           Reset {scope === "page" ? "page" : "selection"}
         </Button>
-        <Button disabled={disabled || lang === null} loading={busy === "apply"} onClick={() => void apply()}>
+        <Button disabled={disabled || shownLang === null} loading={busy === "apply"} onClick={() => void apply()}>
           Apply to {scope === "page" ? "page" : "selection"}
         </Button>
       </div>
