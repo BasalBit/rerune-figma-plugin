@@ -448,3 +448,1067 @@ Right after Figma approves the plugin, with the build that was published (instal
 ## Spike reports
 
 Paste each report as a fenced JSON block under a heading with the test, date and surface, e.g. `### T2 Instances, 2026-11-03, desktop macOS`.
+
+## Diagnostics test results
+
+### T10 environment
+```
+{
+  "test": "T10-environment",
+  "editorType": "figma",
+  "mode": "default",
+  "command": "",
+  "startupCommand": "",
+  "vscode": false,
+  "apiVersion": "1.0.0",
+  "skipInvisibleInstanceChildrenDefault": false,
+  "skipInvisibleInstanceChildrenNow": true,
+  "fileName": "Untitled",
+  "currentPage": {
+    "id": "0:1",
+    "name": "Screens"
+  },
+  "pluginVersion": "0.1.0",
+  "env": "development",
+  "apiBase": "http://localhost:8080",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Figma/126.10.13 Chrome/150.0.7871.250 Electron/43.8.3 Safari/537.36 FigmaARM"
+}
+```
+
+### T1 Mark
+```
+{
+  "test": "T1-mark",
+  "markedAt": 1793261621805,
+  "marked": 0,
+  "nodes": [],
+  "failed": [],
+  "truncated": false
+}
+```
+
+### T1 check markers
+```
+{
+  "test": "T1-check",
+  "fileName": "Untitled",
+  "pageId": "0:1",
+  "pageName": "Screens",
+  "textNodes": 184,
+  "found": 0,
+  "criteriaMatches": 0,
+  "nodes": [],
+  "truncated": false
+}
+```
+
+### T2 clear inherited
+```
+{
+  "test": "T2-clear",
+  "error": "Select an instance whose main component has a linked text layer."
+}
+```
+
+### T3 export frame
+```
+{
+  "test": "T3-export",
+  "frameId": "5:203",
+  "frameName": "next_chapter_shelf",
+  "absoluteBoundingBox": {
+    "x": 24,
+    "y": 1308,
+    "width": 342,
+    "height": 26
+  },
+  "absoluteRenderBounds": {
+    "x": 24.41193199157715,
+    "y": 1313.45458984375,
+    "width": 167.76634216308594,
+    "height": 18.6363525390625
+  },
+  "opaqueBackground": true,
+  "plan": {
+    "scale": 1,
+    "constraint": {
+      "type": "SCALE",
+      "value": 1
+    }
+  },
+  "exports": [
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 6390,
+      "ms": 14,
+      "decoded": {
+        "format": "JPG",
+        "height": 26,
+        "width": 342
+      },
+      "expected": {
+        "width": 342,
+        "height": 26
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 171
+      },
+      "bytes": 3311,
+      "ms": 2,
+      "decoded": {
+        "format": "JPG",
+        "height": 13,
+        "width": 171
+      },
+      "expected": {
+        "width": 171,
+        "height": 13
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 5738,
+      "ms": 1,
+      "decoded": {
+        "format": "JPG",
+        "height": 19,
+        "width": 168
+      },
+      "expected": {
+        "width": 168,
+        "height": 19
+      },
+      "matches": true
+    },
+    {
+      "format": "JPG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 171
+      },
+      "bytes": 5977,
+      "ms": 2,
+      "decoded": {
+        "format": "JPG",
+        "height": 19,
+        "width": 171
+      },
+      "expected": {
+        "width": 171,
+        "height": 19
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 2757,
+      "ms": 2,
+      "decoded": {
+        "format": "PNG",
+        "width": 342,
+        "height": 26
+      },
+      "expected": {
+        "width": 342,
+        "height": 26
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": true,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 171
+      },
+      "bytes": 1348,
+      "ms": 4,
+      "decoded": {
+        "format": "PNG",
+        "width": 171,
+        "height": 13
+      },
+      "expected": {
+        "width": 171,
+        "height": 13
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "SCALE",
+        "value": 1
+      },
+      "bytes": 2477,
+      "ms": 2,
+      "decoded": {
+        "format": "PNG",
+        "width": 168,
+        "height": 19
+      },
+      "expected": {
+        "width": 168,
+        "height": 19
+      },
+      "matches": true
+    },
+    {
+      "format": "PNG",
+      "useAbsoluteBounds": false,
+      "constraint": {
+        "type": "WIDTH",
+        "value": 171
+      },
+      "bytes": 2462,
+      "ms": 5,
+      "decoded": {
+        "format": "PNG",
+        "width": 171,
+        "height": 19
+      },
+      "expected": {
+        "width": 171,
+        "height": 19
+      },
+      "matches": true
+    }
+  ],
+  "jpgSample": {
+    "bytes": 6390
+  },
+  "jpgCornerPixel": {
+    "r": 255,
+    "g": 255,
+    "b": 255,
+    "a": 255
+  }
+}
+```
+
+### T4 export page
+```{
+  "test": "T4-export-page",
+  "pageId": "0:1",
+  "pageName": "Screens",
+  "frames": 16,
+  "exported": 16,
+  "totalMs": 271,
+  "averageBytes": 112878,
+  "maxBytes": 600047,
+  "p95Bytes": 600047,
+  "reexported": 0,
+  "rows": [
+    {
+      "frameId": "5:31",
+      "name": "Welcome",
+      "format": "JPG",
+      "bytes": 115852,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 22
+    },
+    {
+      "frameId": "5:52",
+      "name": "Library",
+      "format": "JPG",
+      "bytes": 93371,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:83",
+      "name": "Discover",
+      "format": "JPG",
+      "bytes": 81435,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:100",
+      "name": "Saved",
+      "format": "JPG",
+      "bytes": 73922,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 14
+    },
+    {
+      "frameId": "5:115",
+      "name": "Story",
+      "format": "JPG",
+      "bytes": 132094,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 17
+    },
+    {
+      "frameId": "5:129",
+      "name": "Atlas chapters",
+      "format": "JPG",
+      "bytes": 115495,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 15
+    },
+    {
+      "frameId": "5:137",
+      "name": "Lantern chapters",
+      "format": "JPG",
+      "bytes": 170700,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 18
+    },
+    {
+      "frameId": "5:147",
+      "name": "Garden chapters",
+      "format": "JPG",
+      "bytes": 170398,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:166",
+      "name": "The end",
+      "format": "JPG",
+      "bytes": 58700,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:174",
+      "name": "Settings",
+      "format": "JPG",
+      "bytes": 110053,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 18
+    },
+    {
+      "frameId": "5:202",
+      "name": "Long list (more than 50 linked layers)",
+      "format": "JPG",
+      "bytes": 600047,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 3254
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 3254,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 43
+    },
+    {
+      "frameId": "5:296",
+      "name": "Screenshot / No fill (PNG)",
+      "format": "PNG",
+      "bytes": 6249,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "matches": true,
+      "ms": 10
+    },
+    {
+      "frameId": "5:299",
+      "name": "Screenshot / Fill at 50 % (PNG)",
+      "format": "PNG",
+      "bytes": 8024,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "matches": true,
+      "ms": 12
+    },
+    {
+      "frameId": "5:302",
+      "name": "Screenshot / Drop shadow (T3)",
+      "format": "JPG",
+      "bytes": 17621,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 11
+    },
+    {
+      "frameId": "5:305",
+      "name": "Screenshot / Text clipped away (no box)",
+      "format": "JPG",
+      "bytes": 11210,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 8
+    },
+    {
+      "frameId": "5:308",
+      "name": "Screenshot / Wide 5000 × 300 (exports 4096 px wide)",
+      "format": "JPG",
+      "bytes": 40876,
+      "scale": 0.8192,
+      "attempts": 1,
+      "expected": {
+        "width": 4096,
+        "height": 246
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 246,
+        "width": 4096
+      },
+      "matches": true,
+      "ms": 19
+    }
+  ]
+}
+```
+
+### T5 fonts and restore
+```{
+  "test": "T4-export-page",
+  "pageId": "0:1",
+  "pageName": "Screens",
+  "frames": 16,
+  "exported": 16,
+  "totalMs": 271,
+  "averageBytes": 112878,
+  "maxBytes": 600047,
+  "p95Bytes": 600047,
+  "reexported": 0,
+  "rows": [
+    {
+      "frameId": "5:31",
+      "name": "Welcome",
+      "format": "JPG",
+      "bytes": 115852,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 22
+    },
+    {
+      "frameId": "5:52",
+      "name": "Library",
+      "format": "JPG",
+      "bytes": 93371,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:83",
+      "name": "Discover",
+      "format": "JPG",
+      "bytes": 81435,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:100",
+      "name": "Saved",
+      "format": "JPG",
+      "bytes": 73922,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 14
+    },
+    {
+      "frameId": "5:115",
+      "name": "Story",
+      "format": "JPG",
+      "bytes": 132094,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 17
+    },
+    {
+      "frameId": "5:129",
+      "name": "Atlas chapters",
+      "format": "JPG",
+      "bytes": 115495,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 15
+    },
+    {
+      "frameId": "5:137",
+      "name": "Lantern chapters",
+      "format": "JPG",
+      "bytes": 170700,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 18
+    },
+    {
+      "frameId": "5:147",
+      "name": "Garden chapters",
+      "format": "JPG",
+      "bytes": 170398,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:166",
+      "name": "The end",
+      "format": "JPG",
+      "bytes": 58700,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 16
+    },
+    {
+      "frameId": "5:174",
+      "name": "Settings",
+      "format": "JPG",
+      "bytes": 110053,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 844
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 844,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 18
+    },
+    {
+      "frameId": "5:202",
+      "name": "Long list (more than 50 linked layers)",
+      "format": "JPG",
+      "bytes": 600047,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 3254
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 3254,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 43
+    },
+    {
+      "frameId": "5:296",
+      "name": "Screenshot / No fill (PNG)",
+      "format": "PNG",
+      "bytes": 6249,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "matches": true,
+      "ms": 10
+    },
+    {
+      "frameId": "5:299",
+      "name": "Screenshot / Fill at 50 % (PNG)",
+      "format": "PNG",
+      "bytes": 8024,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "PNG",
+        "width": 390,
+        "height": 300
+      },
+      "matches": true,
+      "ms": 12
+    },
+    {
+      "frameId": "5:302",
+      "name": "Screenshot / Drop shadow (T3)",
+      "format": "JPG",
+      "bytes": 17621,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 11
+    },
+    {
+      "frameId": "5:305",
+      "name": "Screenshot / Text clipped away (no box)",
+      "format": "JPG",
+      "bytes": 11210,
+      "scale": 1,
+      "attempts": 1,
+      "expected": {
+        "width": 390,
+        "height": 300
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 300,
+        "width": 390
+      },
+      "matches": true,
+      "ms": 8
+    },
+    {
+      "frameId": "5:308",
+      "name": "Screenshot / Wide 5000 × 300 (exports 4096 px wide)",
+      "format": "JPG",
+      "bytes": 40876,
+      "scale": 0.8192,
+      "attempts": 1,
+      "expected": {
+        "width": 4096,
+        "height": 246
+      },
+      "decoded": {
+        "format": "JPG",
+        "height": 246,
+        "width": 4096
+      },
+      "matches": true,
+      "ms": 19
+    }
+  ]
+}
+```
+
+### T7 file settings
+```{
+  "test": "T7-settings",
+  "fileName": "Untitled",
+  "root": {
+    "present": true,
+    "valid": true,
+    "updatedAt": 1793261139300,
+    "projectId": "6ae1c28877da3ff44b03d79f",
+    "error": null
+  },
+  "pages": [
+    {
+      "pageId": "0:1",
+      "name": "Screens",
+      "current": true,
+      "present": true,
+      "valid": true,
+      "updatedAt": 1793261139300,
+      "projectId": "6ae1c28877da3ff44b03d79f",
+      "equalToRoot": true,
+      "error": null
+    },
+    {
+      "pageId": "5:2",
+      "name": "Components",
+      "current": false,
+      "present": false,
+      "valid": false,
+      "updatedAt": null,
+      "projectId": null,
+      "equalToRoot": false,
+      "error": null
+    },
+    {
+      "pageId": "5:3",
+      "name": "Stress (500+ texts)",
+      "current": false,
+      "present": false,
+      "valid": false,
+      "updatedAt": null,
+      "projectId": null,
+      "equalToRoot": false,
+      "error": null
+    },
+    {
+      "pageId": "5:4",
+      "name": "About this file",
+      "current": false,
+      "present": false,
+      "valid": false,
+      "updatedAt": null,
+      "projectId": null,
+      "equalToRoot": false,
+      "error": null
+    }
+  ],
+  "current": {
+    "pageId": "0:1",
+    "source": "root",
+    "differ": false,
+    "offerMirror": false,
+    "settings": {
+      "v": 1,
+      "apiBase": "http://localhost:8080",
+      "projectId": "6ae1c28877da3ff44b03d79f",
+      "projectName": "Figma Test (Chapter)",
+      "fileKey": "I6likaD5ERMo9IvR7DJagG",
+      "fileUrl": "https://www.figma.com/design/I6likaD5ERMo9IvR7DJagG/Untitled",
+      "fileName": "Untitled",
+      "branchKey": null,
+      "keyTemplate": null,
+      "caseStyle": "auto",
+      "ignoreUnderscoreLayers": true,
+      "includeLocked": false,
+      "updatedAt": 1793261139300
+    },
+    "syncPause": {
+      "paused": false,
+      "reason": null
+    },
+    "previews": 0
+  }
+}
+```
+
+### T8 Relaunch button
+```{
+  "test": "T8-relaunch",
+  "set": 9,
+  "nodes": [
+    {
+      "nodeId": "5:203",
+      "name": "next_chapter_shelf",
+      "ok": true
+    },
+    {
+      "nodeId": "5:204",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:207",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:210",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:213",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:216",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:219",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:222",
+      "name": "List row",
+      "ok": true
+    },
+    {
+      "nodeId": "5:225",
+      "name": "List row",
+      "ok": true
+    }
+  ],
+  "hint": "Look for the Open ReRune button in the right sidebar in Figma Design and in Dev Mode."
+}
+```
+
+### Network check
+```{
+  "test": "network-check",
+  "apiBase": "http://localhost:8080",
+  "ok": true,
+  "status": 200,
+  "cors": "ok",
+  "latencyMs": 13,
+  "meta": {
+    "api_version": 1,
+    "screenshots_enabled": true,
+    "max_image_bytes": 2097152,
+    "max_image_side": 4096,
+    "max_batch_size": 100,
+    "server_time": "2026-10-29T08:24:13.949005Z"
+  },
+  "error": null
+}
+```
