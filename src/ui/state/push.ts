@@ -274,8 +274,11 @@ export function carryDecisions(previous: PushPlan, next: PreparedPush): Prepared
       apply({ kind: "missing", keyId: entry.keyId, decision: before.decision })
     }
   }
-  // Creates last: the ones made by the choices above exist now too.
+  // Creates last: the ones made by the choices above exist now too. Inclusion is carried in one step (after Select all
+  // every create of a page review differs from its default), so a large plan is not rebuilt once per create.
   const creates = indexBy(previous.creates, createKey)
+  const include: string[] = []
+  const leaveOut: string[] = []
   for (const create of plan.creates) {
     const before = creates.get(createKey(create))
     if (before === undefined) {
@@ -293,9 +296,12 @@ export function carryDecisions(previous: PushPlan, next: PreparedPush): Prepared
       apply({ kind: "create-match", ref: create.ref, decision: "create" })
     }
     if (before.selected !== create.selected) {
-      apply({ kind: "create-selected", ref: create.ref, selected: before.selected })
+      if (before.selected) include.push(create.ref)
+      else leaveOut.push(create.ref)
     }
   }
+  if (include.length > 0) apply({ kind: "creates-selected", refs: include, selected: true })
+  if (leaveOut.length > 0) apply({ kind: "creates-selected", refs: leaveOut, selected: false })
   return { ...next, plan: withNameIssues(plan, context.isTaken) }
 }
 
@@ -582,6 +588,23 @@ export function pushCounts(plan: PushPlan): PushCounts {
       plan.copied.filter((entry) => entry.decision === null).length,
     nameIssues: creates.filter((create) => create.nameIssues.length > 0).length,
   }
+}
+
+// The New text header's Select all: ticked when every new text is in the push, partly ticked ("some") when only some
+// are. Ticking it from "none" or "some" includes them all; from "all" it leaves them all out.
+export type IncludedCreates = "all" | "some" | "none"
+
+export function includedCreates(plan: Pick<PushPlan, "creates">): IncludedCreates {
+  let included = 0
+  for (const create of plan.creates) {
+    if (create.selected) included++
+  }
+  return included === 0 ? "none" : included === plan.creates.length ? "all" : "some"
+}
+
+// More new keys in the push than the plan has left (`available` null: no limit): the review warns before Push.
+export function overQuota(counts: Pick<PushCounts, "creates">, available: number | null): boolean {
+  return available !== null && counts.creates > available
 }
 
 export function hasWork(counts: PushCounts): boolean {

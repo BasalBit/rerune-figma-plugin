@@ -19,6 +19,7 @@ import {
   matchesFilter,
   planExactMatches,
   searchRows,
+  shownTicks,
   skippedSummary,
   STATE_LABELS,
   STATE_TONES,
@@ -105,6 +106,7 @@ export function LayersScreen(props: LayersScreenProps) {
   const counts = useMemo(() => filterCounts(rows), [rows])
   const visible = useMemo(() => searchRows(rows.filter((row) => matchesFilter(row, filter)), query), [rows, filter, query])
   const checkedRows = useMemo(() => rows.filter((row) => checked.has(row.node.nodeId)), [rows, checked])
+  const ticks = useMemo(() => shownTicks(visible, checked), [visible, checked])
 
   useEffect(() => {
     // Drop checks for layers that left the list after a rescan.
@@ -325,7 +327,7 @@ export function LayersScreen(props: LayersScreenProps) {
         {visible.length > 0 && (
           <div style={{ ...styles.row, margin: "8px 0 4px" }}>
             <label style={{ ...styles.row, ...styles.small, cursor: "pointer" }}>
-              <CheckInput checked={visible.every((row) => checked.has(row.node.nodeId))} onChange={toggleAll} label="Select all shown" />
+              <CheckInput checked={ticks === "all"} mixed={ticks === "some"} onChange={toggleAll} label="Select all shown" />
               Select all shown
             </label>
             <span style={{ ...styles.grow, ...styles.small, ...styles.muted, textAlign: "right" }}>{skipped ?? ""}</span>

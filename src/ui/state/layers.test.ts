@@ -1,7 +1,9 @@
+/// <reference types="vite/client" />
 import { describe, expect, it } from "vitest"
 import { keyId, linkedNode, OTHER_PROJECT_ID, PROJECT_ID, scannedNode } from "../../../test/fixtures"
 import { src } from "../../shared/hash"
 import type { RemoteWithMaxLength } from "../../shared/push-plan"
+import layersScreen from "../screens/layers.tsx?raw"
 import {
   filterCounts,
   groupByFrame,
@@ -11,6 +13,7 @@ import {
   matchesFilter,
   planExactMatches,
   searchRows,
+  shownTicks,
   skippedSummary,
   unlinkableIds,
   unlinkedTexts,
@@ -149,5 +152,17 @@ describe("max_length in Layers (§7.18.3)", () => {
       [10, 9, true],
     ])
     expect(filterCounts(rows).too_long).toBe(2)
+  })
+})
+
+describe("Select all shown", () => {
+  it("is ticked when every shown row is ticked and partly ticked when only some are, like Select all on Push", () => {
+    const rows = layerRows([scannedNode("1:1", "Pay"), scannedNode("1:2", "Total"), scannedNode("1:3", "Back")], PROJECT_ID, new Map())
+    expect(shownTicks(rows, new Set())).toBe("none")
+    expect(shownTicks(rows, new Set(["1:2"]))).toBe("some")
+    // Rows ticked before a filter hid them don't count: only the shown ones.
+    expect(shownTicks(rows.slice(0, 2), new Set(["1:1", "1:2", "9:9"]))).toBe("all")
+    expect(shownTicks(rows, new Set(["1:1", "1:2", "1:3"]))).toBe("all")
+    expect(layersScreen).toMatch(/<CheckInput\s+checked=\{ticks === "all"\}\s+mixed=\{ticks === "some"\}\s+onChange=\{toggleAll\}\s+label="Select all shown"/)
   })
 })

@@ -28,8 +28,20 @@ export function GlobalStyle() {
   return <style>{GLOBAL_CSS}</style>
 }
 
-export function CheckInput(props: { checked: boolean; onChange(): void; label: string; style?: JSX.CSSProperties }) {
-  return <input type="checkbox" class="rr-check" checked={props.checked} onChange={props.onChange} aria-label={props.label} style={props.style} />
+// `mixed`: partly ticked (a Select all over a list where only some rows are ticked); browsers show and announce it so.
+export function CheckInput(props: { checked: boolean; onChange(): void; label: string; style?: JSX.CSSProperties; disabled?: boolean; mixed?: boolean }) {
+  return (
+    <input
+      type="checkbox"
+      class="rr-check"
+      checked={props.checked}
+      indeterminate={props.mixed}
+      disabled={props.disabled}
+      onChange={props.onChange}
+      aria-label={props.label}
+      style={props.disabled === true ? { cursor: "default", ...props.style } : props.style}
+    />
+  )
 }
 
 export { styles }
@@ -82,8 +94,8 @@ export function TextButton(props: { onClick(): void; children: ComponentChildren
   )
 }
 
-export function SectionTitle(props: { children: ComponentChildren }) {
-  return <div style={styles.sectionTitle}>{props.children}</div>
+export function SectionTitle(props: { children: ComponentChildren; style?: JSX.CSSProperties }) {
+  return <div style={{ ...styles.sectionTitle, ...props.style }}>{props.children}</div>
 }
 
 export function Small(props: { children: ComponentChildren; muted?: boolean; style?: JSX.CSSProperties }) {

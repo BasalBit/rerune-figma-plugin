@@ -4,6 +4,7 @@ import overrideMain from "../build-figma-plugin.main.js"
 import overrideManifest from "../build-figma-plugin.manifest.js"
 import pkg from "../package.json"
 import { CODEGEN_CACHE_MAX_ENTRIES, CODEGEN_CACHE_MAX_PROJECTS, CODEGEN_SOURCE_TEXT_MAX_CHARS, DATA_KEYS, STORAGE_KEYS } from "../src/shared/constants"
+import { KEY_NAME_ISSUES } from "../src/shared/key-names"
 import { isAllowed, MESSAGE_IMPACT } from "../src/shared/message-policy"
 import { MAIN_TO_UI_TYPES, type UiToMainType } from "../src/shared/messages"
 import { LANGUAGE_COPY_MESSAGES } from "../src/shared/node-errors"
@@ -397,6 +398,31 @@ describe("TESTING.md", () => {
       expect(testing).toContain("- [ ] " + check)
     }
     expect(readme).toContain("ReRune has new changes.")
+  })
+
+  it("checks Select all new texts on Push as the plugin shows it, with the 60-text Push load frame", () => {
+    expect(pushScreen).toContain('label={"Select all new texts (" + count + ")"}')
+    expect(pushScreen).toMatch(/\/>\s*Select all\s*<\/label>/)
+    const check = testing.split("\n").find((line) => line.startsWith("- [ ] **Select all new texts:**")) ?? ""
+    for (const part of [
+      "scope **Page**",
+      "except texts marked **Create on push**",
+      "partly ticked",
+      KEY_NAME_ISSUES.duplicate,
+      "Only N keys are left on your plan",
+      "ReRune has new changes.",
+      "**Push load** frame (60 new texts)",
+      "Stress (500+ texts)",
+      "Then Push with scope **Page** on that page",
+      "While **Update layers from ReRune** runs",
+      "**Select all shown**",
+    ]) {
+      expect(check, part).toContain(part)
+    }
+    expect(pushScreen).toContain("Only {plural(available, \"key is\", \"keys are\")} left on your plan.")
+    expect(readme).toContain("**Select all** in the \"New text\" header")
+    expect(readme).toContain("(except texts marked **Create on push** on Layers)")
+    expect(layersScreen).toContain('label="Select all shown"')
   })
 
   it("names the Dev Mode inspect controls, notes and codegen lines the plugin shows (P2.4, P2.5)", () => {

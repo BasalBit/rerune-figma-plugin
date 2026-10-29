@@ -25,10 +25,12 @@ import {
   executePush,
   executeTakeReRune,
   followShown,
+  includedCreates,
   KEYS_LOADING,
   LAYERS_CHANGED,
   liveState,
   lookUpNames,
+  overQuota,
   overwriteChanges,
   planBase,
   planLayerIds,
@@ -518,6 +520,9 @@ export function PushScreen(props: PushScreenProps) {
   const plan = prepared?.plan ?? null
   const counts = plan === null ? null : pushCounts(plan)
   const submittable = plan !== null && canSubmit(plan, editKeys) && !props.readOnly
+  // Update layers from ReRune shows the plan its check built from the choices made before it started, so the plan's
+  // choices wait until it has written the layers. Its screenshots and another task's lock don't replace the plan.
+  const choicesDisabled = pulling
   const available = props.project.available_keys
   return (
     <div style={styles.page}>
@@ -584,15 +589,16 @@ export function PushScreen(props: PushScreenProps) {
                 {available !== null ? " · " + plural(available, "key", "keys") + " left on your plan" : ""}
               </Small>
             )}
-            {available !== null && counts.creates > available && (
+            {available !== null && overQuota(counts, available) && (
               <Note tone="warning">Only {plural(available, "key is", "keys are")} left on your plan. Keys beyond the limit won't be created.</Note>
             )}
-            {plan.creates.length > 0 && <SectionTitle>New text ({plan.creates.length})</SectionTitle>}
+            {plan.creates.length > 0 && <NewTextHeader plan={plan} disabled={choicesDisabled} onDecide={decide} />}
             {plan.creates.map((create) => (
               <CreateCard
                 key={create.ref}
                 create={create}
                 taken={prepared?.taken.get(create.name) ?? null}
+                disabled={choicesDisabled}
                 busy={busy}
                 onSelect={() => props.onSelect(create.nodeIds)}
                 onDecide={decide}
@@ -644,6 +650,7 @@ export function PushScreen(props: PushScreenProps) {
                         { value: "leave", label: "Leave" },
                       ]}
                       onChange={(decision) => decide({ kind: "divergent", keyId: entry.keyId, variant: index, decision })}
+                      disabled={choicesDisabled}
                     />
                   </div>
                 ))}
@@ -667,6 +674,7 @@ export function PushScreen(props: PushScreenProps) {
                     { value: "take_rerune", label: "Take ReRune text" },
                   ]}
                   onChange={(decision) => decide({ kind: "conflict", keyId: conflict.keyId, figmaText: conflict.figmaText, decision })}
+                  disabled={choicesDisabled}
                 />
               </div>
             ))}
@@ -685,6 +693,7 @@ export function PushScreen(props: PushScreenProps) {
                     { value: "new_key", label: "New key" },
                   ]}
                   onChange={(decision) => decide({ kind: "copied", nodeId: entry.nodeId, decision })}
+                  disabled={choicesDisabled}
                 />
               </div>
             ))}
@@ -704,6 +713,7 @@ export function PushScreen(props: PushScreenProps) {
                     { value: "unlink", label: "Unlink" },
                   ]}
                   onChange={(decision) => decide({ kind: "missing", keyId: entry.keyId, decision })}
+                  disabled={choicesDisabled}
                 />
               </div>
             ))}
@@ -779,11 +789,36 @@ function Counts(props: { plan: PushPlan }) {
   return parts.length === 0 ? null : <Small muted style={{ marginTop: "8px" }}>{parts.join(" · ")}</Small>
 }
 
-function CreateCard(props: {
+// The New text header with Select all, ticked when every new text is in the push and partly ticked when only some are.
+// It ticks them all (from none or some) or none (from all) in one step and counts as a choice, so a background change
+// then waits for Refresh. Each card keeps its Link to / Create new key choice, its name and its name issues.
+export function NewTextHeader(props: { plan: Pick<PushPlan, "creates">; disabled: boolean; onDecide(decision: PlanDecision): void }) {
+  const count = props.plan.creates.length
+  const included = includedCreates(props.plan)
+  return (
+    <div style={{ ...styles.row, margin: "12px 0 6px" }}>
+      <SectionTitle style={{ ...styles.grow, margin: "0" }}>New text ({count})</SectionTitle>
+      <label style={{ ...styles.row, ...styles.small, gap: "6px", cursor: props.disabled ? "default" : "pointer", ...(props.disabled ? styles.muted : {}) }}>
+        <CheckInput
+          checked={included === "all"}
+          mixed={included === "some"}
+          disabled={props.disabled}
+          label={"Select all new texts (" + count + ")"}
+          onChange={() => props.onDecide({ kind: "creates-selected", selected: included !== "all" })}
+        />
+        Select all
+      </label>
+    </div>
+  )
+}
+
+export function CreateCard(props: {
   create: PlanCreate
   taken: { id: string; key: string; type: string } | null
   // A run or a locked task (Update screenshots) is going on: the Link dialog would replace the tabs and rescan.
   busy: boolean
+  // The plan's choices wait (Update layers from ReRune runs), as the header's Select all and the other sections' choices.
+  disabled: boolean
   onSelect(): void
   onDecide(decision: PlanDecision): void
   onRename(name: string): void
@@ -801,6 +836,7 @@ function CreateCard(props: {
         <CheckInput
           checked={create.selected}
           label="Include in push"
+          disabled={props.disabled}
           onChange={() => props.onDecide({ kind: "create-selected", ref: create.ref, selected: !create.selected })}
           style={{ marginTop: "2px" }}
         />
@@ -813,6 +849,7 @@ function CreateCard(props: {
           <Choice
             value={current}
             options={options}
+            disabled={props.disabled}
             onChange={(value) => {
               if (value === "create") {
                 props.onDecide({ kind: "create-match", ref: create.ref, decision: "create" })
@@ -826,7 +863,7 @@ function CreateCard(props: {
       )}
       {create.match.decision === "create" && (
         <div style={styles.tightStack}>
-          <Textbox value={create.name} onValueInput={props.onRename} spellCheck={false} />
+          <Textbox value={create.name} onValueInput={props.onRename} spellCheck={false} disabled={props.disabled} />
           {create.nameIssues.map((issue) => (
             <Small key={issue} style={{ color: "var(--figma-color-text-danger)" }}>
               {issue}

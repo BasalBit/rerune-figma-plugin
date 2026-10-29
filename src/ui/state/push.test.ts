@@ -15,7 +15,9 @@ import {
   executePulls,
   executePush,
   executeTakeReRune,
+  includedCreates,
   mergeLinkSync,
+  overQuota,
   overwriteChunk,
   preparePush,
   pushChunks,
@@ -551,6 +553,38 @@ describe("after-push choices and pulls", () => {
     expect(counts).toMatchObject({ creates: 1, nameIssues: 1, links: 0, updates: 0 })
     expect(canSubmit(ready.plan, true)).toBe(true)
     expect(canSubmit(ready.plan, false)).toBe(false)
+  })
+
+  it("Select all: the header is ticked, partly ticked or not, and the quota warning follows at once", async () => {
+    const nodes = Array.from({ length: 5 }, (_, index) => scannedNode("1:" + index, "Text " + index, { name: "Label " + index, autoRename: false }))
+    const ready = await preparePush({ keysByName: byName({}, []) }, input(nodes, { scope: "page" }))
+    const { plan, context } = ready
+    expect(includedCreates(plan)).toBe("none")
+    expect(overQuota(pushCounts(plan), 3)).toBe(false)
+    const one = applyDecision(plan, { kind: "create-selected", ref: "c2", selected: true }, context)
+    expect(includedCreates(one)).toBe("some")
+    // Ticking a partly ticked header includes every new text: 5 new keys with 3 left on the plan.
+    const all = applyDecision(one, { kind: "creates-selected", selected: true }, context)
+    expect(includedCreates(all)).toBe("all")
+    expect(pushCounts(all).creates).toBe(5)
+    expect(overQuota(pushCounts(all), 3)).toBe(true)
+    expect(overQuota(pushCounts(all), 5)).toBe(false)
+    expect(overQuota(pushCounts(all), null)).toBe(false)
+    // New keys whose name has an issue are not counted: they are held back.
+    const clash = applyDecision(applyDecision(all, { kind: "create-name", ref: "c0", name: "same" }, context), { kind: "create-name", ref: "c1", name: "same" }, context)
+    expect(pushCounts(clash)).toMatchObject({ creates: 3, nameIssues: 2 })
+    expect(overQuota(pushCounts(clash), 3)).toBe(false)
+    const none = applyDecision(all, { kind: "creates-selected", selected: false }, context)
+    expect(includedCreates(none)).toBe("none")
+    expect(overQuota(pushCounts(none), 0)).toBe(false)
+    expect(canSubmit(none, true)).toBe(false)
+  })
+
+  it("Select all on a page review starts partly ticked when a text is marked Create on push (it starts ticked)", async () => {
+    const nodes = Array.from({ length: 3 }, (_, index) => scannedNode("1:" + index, "Text " + index, { name: "Label " + index, autoRename: false }))
+    const ready = await preparePush({ keysByName: byName({}, []) }, input(nodes, { scope: "page", pending: new Map([["1:1", "checkout_cta"]]) }))
+    expect(ready.plan.creates.map((create) => create.selected)).toEqual([false, true, false])
+    expect(includedCreates(ready.plan)).toBe("some")
   })
 
   it("counts updates held back by max_length apart and pushes nothing when they are all that is left (§7.18.3)", async () => {

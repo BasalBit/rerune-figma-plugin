@@ -236,6 +236,62 @@ describe("Push plan while ReRune changes (background read, no scan)", () => {
     expect(next.plan.creates.map((create) => create.selected)).toEqual(shown.plan.creates.map((create) => create.selected))
     expect(next.plan.creates.filter((create, index) => create.selected !== reviewed.plan.creates[index].selected)).toHaveLength(1000)
   })
+
+  it("Select all is a choice: a ReRune change then waits for Refresh, which keeps every new text included", async () => {
+    const s = scene()
+    s.setNodes([...s.nodes(), scannedNode("1:6", "Back"), scannedNode("1:7", "Next")])
+    const reviewed = await s.review()
+    expect(reviewed.plan.creates.map((create) => create.selected)).toEqual([false, false, false])
+    const base = planBase(s.workspace.store.get())
+    const shown = decide(reviewed, { kind: "creates-selected", selected: true })
+    s.texts.set(K2, "Sum")
+    await s.workspace.refreshKeys()
+    expect((await followShown(s.deps, shown, base, true))?.kind).toBe("note")
+    const refreshed = await replanShown(s.deps, shown, base)
+    expect(refreshed.kind).toBe("ready")
+    if (refreshed.kind !== "ready") return
+    expect(refreshed.prepared.plan.creates.map((create) => [create.text, create.selected])).toEqual([["Free text", true], ["Back", true], ["Next", true]])
+    expect(refreshed.prepared.plan.pulls.map((pull) => pull.keyId)).toEqual([K2])
+    // Cleared again, the next read keeps them all out.
+    const cleared = decide(refreshed.prepared, { kind: "creates-selected", selected: false })
+    s.texts.set(K2, "Total sum")
+    await s.workspace.refreshKeys()
+    const again = await s.replan(cleared)
+    expect(again.plan.creates.map((create) => create.selected)).toEqual([false, false, false])
+  })
+
+  it("keeps new texts left out of a selection review (where they start ticked) when ReRune changes, after Select all is cleared or some are unticked", async () => {
+    const s = scene()
+    s.setNodes([...s.nodes(), scannedNode("1:6", "Back"), scannedNode("1:7", "Next")])
+    const reviewed = await s.review("selection")
+    expect(reviewed.plan.creates.map((create) => create.selected)).toEqual([true, true, true])
+    const base = planBase(s.workspace.store.get())
+    const cleared = decide(reviewed, { kind: "creates-selected", selected: false })
+    const some = decide(reviewed, { kind: "create-selected", ref: reviewed.plan.creates[0].ref, selected: false }, { kind: "create-selected", ref: reviewed.plan.creates[2].ref, selected: false })
+    s.texts.set(K2, "Sum")
+    await s.workspace.refreshKeys()
+    for (const [shown, selected] of [[cleared, [false, false, false]], [some, [false, true, false]]] as const) {
+      expect((await followShown(s.deps, shown, base, true))?.kind).toBe("note")
+      const refreshed = await replanShown(s.deps, shown, base)
+      if (refreshed.kind !== "ready") throw new Error("not ready: " + refreshed.kind)
+      expect(refreshed.prepared.plan.pulls.map((pull) => pull.keyId)).toEqual([K2])
+      expect(refreshed.prepared.plan.creates.map((create) => [create.text, create.selected])).toEqual([["Free text", selected[0]], ["Back", selected[1]], ["Next", selected[2]]])
+    }
+  })
+
+  it("carries Select all on a page review with many new texts in one step, without rebuilding the plan per text", async () => {
+    const s = scene()
+    const count = 3000
+    s.setNodes(Array.from({ length: count }, (_, index) => scannedNode("3:" + index, "Text " + index)))
+    const reviewed = await s.review()
+    const shown = decide(reviewed, { kind: "creates-selected", selected: true })
+    // Each rebuild of the plan checks every new name once: per text that would be count × count.
+    let checks = 0
+    const context = { ...reviewed.context, isTaken: (name: string) => (checks++, reviewed.context.isTaken(name)) }
+    const next = carryDecisions(shown.plan, { ...reviewed, context })
+    expect(checks).toBeLessThan(10 * count)
+    expect(next.plan.creates.every((create) => create.selected)).toBe(true)
+  })
 })
 
 describe("Push plan: checked again before a push or a pull (the plan's layers by id, wherever the selection is now)", () => {
