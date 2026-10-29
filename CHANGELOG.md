@@ -6,21 +6,9 @@ All notable changes to the ReRune Figma plugin are recorded here. The format fol
 
 Changes made after `0.1.0` go here.
 
-### Added
-
-- **Screenshots after Update layers from ReRune:** updating layers from ReRune on Push now uploads screenshots of the frames whose layers changed (the instances of an updated main component included), with the same progress, **Stop** and results as after a push.
-- **Requested screenshots:** when people in ReRune ask for new screenshots of frames in the file (for example because the text in a screenshot is outdated), the plugin says "ReRune asks for new screenshots of N frames in this file." with who asked and which frames. **Update screenshots** reads those frames, brings in ReRune's changed texts for them (layers changed in Figma or in both, read-only keys and previews are left alone and reported), and uploads every requested frame that is still in the file and visible, which clears the requests. **Not now** hides the notice until a new request arrives; requested frames that are gone or hidden get **Remove request**. Upload runs from Push read the requests again afterwards.
-- **Layer text and style in screenshots:** with a ReRune server that supports it, each screenshot box also records the layer's text and its text style (font, size, line height, letter spacing, alignment, case, decoration, text and background colour, resizing, line limit), in image pixels. ReRune uses them to mark screenshots whose text no longer matches the key and to preview the current text in the dashboard. Rotated or mirrored text and styles the plugin cannot describe send no style; very long layers send no text. Older servers get the boxes as before.
-
-### Changed
-
-- The setting "Upload screenshots on push" is now **Upload screenshots of changed frames**, because it covers updates from ReRune too. Its stored value is kept.
-- **Update layers from ReRune** leaves a layer alone when its text was changed in Figma after the review ("This layer changed in Figma meanwhile, so ReRune's text wasn't written."), instead of overwriting the edit.
-- Screenshots are no longer uploaded for a frame that is hidden in Figma (it would replace the frame's screenshot with one that shows no keys).
-
 ## [0.1.0] - not yet published
 
-The first release of ReRune for Figma. It brings together the three development phases: the MVP (2026-10-27), context and handoff (2026-10-28), and QA and launch preparation (2026-10-28). It is not in Figma Community yet. When it is published, this heading gets the publish date.
+The first release of ReRune for Figma. It brings together the three development phases: the MVP (2026-10-27), context and handoff (2026-10-28), and QA and launch preparation (2026-10-28), plus screenshot freshness (2026-10-29). It is not in Figma Community yet. When it is published, this heading gets the publish date.
 
 Until Dev Mode has been tested on a paid Figma plan (`TESTING.md` §5.5, §5.6 and spike S14), the release is the design-only build (`npm run zip:design-only`). It has everything below except the Dev Mode section, and it works on every Figma plan, including the free Starter plan, for anyone who can edit the file.
 
@@ -35,6 +23,7 @@ Until Dev Mode has been tested on a paid Figma plan (`TESTING.md` §5.5, §5.6 a
 
 - **Layers:** scan the selection or the page. Hidden, locked, numbers-only and `_` layers are skipped by default. Link text layers to keys (search, or **Link exact matches**), or mark layers to create keys. New key names follow your project's naming pattern.
 - **Push:** first review new texts, changes made in Figma or in ReRune, conflicts, copied layers and missing keys. Then the plugin saves them as drafts of the main language in ReRune. Nothing is published from Figma. Keys created from Figma count toward your ReRune plan's key limit.
+- **Update layers from ReRune** (Push): writes ReRune's texts into the layers that changed in ReRune. A layer whose text was changed in Figma after the review is left alone ("This layer changed in Figma meanwhile, so ReRune's text wasn't written.").
 - **Components:** links on a main component show on its instances. Instance text that was changed (overridden) counts as unlinked.
 - **Max length warnings** in Layers ("Over max length", filter **Too long**), Push (changes over the key's limit are held back) and Preview.
 - One canvas task runs at a time, and each action can be undone with one Undo.
@@ -54,7 +43,9 @@ Until Dev Mode has been tested on a paid Figma plan (`TESTING.md` §5.5, §5.6 a
 
 - **File link:** paste the file's Figma link once (Project screen, or Settings → Figma file). In a branch or a suspected copy of the file, link sync and screenshots wait until you confirm the link.
 - **Link sync:** ReRune learns which layers show which key after every link, unlink and push, and when you click **Sync links on this page**. Saving the file's link in Settings, or confirming the file, shares the open page's links at once, including layers linked before the link was saved; other pages follow with **Sync links on this page**. Translators then see where each key is used. Links whose layer is gone are listed and removed only when you ask.
-- **Screenshots on push** ("Upload screenshots on push", on by default): uploads an image of each changed top-level frame, with a box around each linked layer, and shows progress and **Stop**. Sandbox accounts never upload images.
+- **Screenshots of changed frames** ("Upload screenshots of changed frames", on by default): a push or **Update layers from ReRune** uploads an image of each top-level frame whose layers changed (the instances of an updated main component included), with a box around each linked layer, and shows progress and **Stop**. Frames hidden in Figma are not uploaded. Sandbox accounts never upload images.
+- **Layer text and style in screenshots:** with a ReRune server that supports it, each screenshot box also records the layer's text and its text style (font, size, line height, letter spacing, alignment, case, decoration, text and background colour, resizing, line limit), in image pixels. ReRune uses them to mark screenshots whose text no longer matches the key and to preview the current text in the dashboard. Rotated or mirrored text and styles the plugin cannot describe send no style; very long layers send no text. Older servers get the boxes without them.
+- **Requested screenshots:** when people in ReRune ask for new screenshots of frames in the file (for example because the text in a screenshot is outdated), the plugin says "ReRune asks for new screenshots of N frames in this file." with who asked and which frames. **Update screenshots** reads those frames, brings in ReRune's changed texts for them (layers changed in Figma or in both, read-only keys and previews are left alone and reported), and uploads every requested frame that is still in the file and visible, whatever the screenshot setting says, which clears the requests. **Not now** hides the notice until a new request arrives; requested frames that are gone or hidden get **Remove request**. Upload runs from Push read the requests again afterwards.
 
 #### Dev Mode (full build only)
 
