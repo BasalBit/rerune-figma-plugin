@@ -3,6 +3,7 @@ import type { FigmaScreenshotMeta, FigmaTextStyle } from "./api-types"
 import { utf8Length } from "./text"
 import {
   backgroundOf,
+  canvasScale,
   capturedText,
   captureTextStyle,
   fitMetaBudget,
@@ -122,6 +123,22 @@ describe("captureTextStyle (rules 2–9)", () => {
     expect(captureTextStyle(text({ absoluteTransform: [[1, 1e-7, 0], [-1e-7, 2, 0]] }), "10:1")).toEqual(PAY_NOW)
     expect(isUpright(null)).toBe(false)
     expect(isUpright([[Number.NaN, 0, 0], [0, 1, 0]])).toBe(false)
+  })
+
+  it("gives the lengths at the size the canvas draws the layer, as for text in an instance scaled with K", () => {
+    // Scale factor 2: the component's 17 px label is drawn 40 px high instead of 20.
+    const scaled = text({ absoluteBoundingBox: { x: 124, y: 510, width: 400, height: 40 }, height: 20 })
+    expect(canvasScale(scaled)).toBe(2)
+    expect(captureTextStyle(scaled, "10:1")).toEqual({ ...PAY_NOW, font_size: 34, line_height_px: 44, letter_spacing_px: -0.82 })
+    const percent = text({ absoluteBoundingBox: { x: 0, y: 0, width: 50, height: 10 }, height: 20 }, [run({ lineHeight: { unit: "PERCENT", value: 150 } })])
+    expect(captureTextStyle(percent, "10:1")).toMatchObject({ font_size: 8.5, line_height_px: 12.75, letter_spacing_px: -0.205 })
+    // Unscaled (within 0.1 %), or not measurable: the layer's own values.
+    expect(canvasScale({ absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 20.01 }, height: 20 })).toBe(1)
+    expect(canvasScale({ absoluteBoundingBox: null, height: 20 })).toBe(1)
+    expect(canvasScale({ absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 20 }, height: 0 })).toBe(1)
+    expect(canvasScale({ absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 0 }, height: 20 })).toBe(1)
+    expect(canvasScale({})).toBe(1)
+    expect(captureTextStyle(text({ absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 20 }, height: 20 }), "10:1")).toEqual(PAY_NOW)
   })
 
   it("converts line height and letter spacing to Figma units (percent of the font size)", () => {

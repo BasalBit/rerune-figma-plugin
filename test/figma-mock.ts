@@ -592,6 +592,17 @@ export function fakeText(id: string, characters: string, extra: Record<string, u
     }
     defineValue(text, key, entry)
   }
+  // In Figma an upright layer's canvas bounds have its own size unless an instance scale draws it larger or smaller: a
+  // test that gives only the bounds gets that size (a test of a scaled instance gives `height` too).
+  const bounds = extra.absoluteBoundingBox as { width?: unknown; height?: unknown } | null | undefined
+  if (bounds !== null && bounds !== undefined) {
+    if (!("width" in extra) && typeof bounds.width === "number") {
+      text.width = bounds.width
+    }
+    if (!("height" in extra) && typeof bounds.height === "number") {
+      text.height = bounds.height
+    }
+  }
   return text
 }
 

@@ -530,6 +530,30 @@ describe("text and style capture at export (screenshot freshness, contract §3.3
     expect(image(sent, "20:1").boxes[0].style).toEqual({ ...BUTTON_STYLE, background: "#FFFFFFFF", font_size: 12.75, line_height_px: 16.5, letter_spacing_px: -0.31 })
   })
 
+  it("sizes the style of text in an instance scaled with K like the box, not like the component", async () => {
+    connectFile()
+    // An instance at scale factor 2: its label keeps the component's 17 px font, 100 × 20 layer size, and is drawn
+    // 200 × 40 on the canvas.
+    const label = styledText("I11:1;5:2", "Pay now", rect(124, 510, 200, 40), { width: 100, height: 20 })
+    const instance = fakeInstance("11:1", "Button", [label], { overrides: [] })
+    instance.scaleFactor = 2
+    const frame = exportingFrame("10:1", [instance])
+    onPage(figmaMock, [frame])
+    const boxes = image(await run(["10:1"]), "10:1").boxes
+    expect(boxes).toEqual([
+      {
+        nodeId: "I11:1;5:2",
+        keyId: K1,
+        x: 24,
+        y: 310,
+        w: 200,
+        h: 40,
+        text: "Pay now",
+        style: { ...BUTTON_STYLE, background: "#FFFFFFFF", font_size: 34, line_height_px: 44, letter_spacing_px: -0.82 },
+      },
+    ])
+  })
+
   it("leaves out the text of a layer longer than 5,000 UTF-16 units, and the style of rotated or mirrored text", async () => {
     connectFile()
     loadFont(figmaMock)

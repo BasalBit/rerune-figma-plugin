@@ -39,6 +39,8 @@ export type StyleRunField = (typeof STYLE_RUN_FIELDS)[number]
 export interface StyledText extends StyleAncestor {
   readonly characters: string
   readonly absoluteTransform: unknown
+  readonly absoluteBoundingBox?: unknown
+  readonly height?: unknown
   readonly textAlignHorizontal: unknown
   readonly textAlignVertical: unknown
   readonly textAutoResize: unknown
@@ -58,6 +60,7 @@ export interface StyledText extends StyleAncestor {
 class Unreadable extends Error {}
 
 const TRANSFORM_EPSILON = 1e-6
+const SCALE_EPSILON = 1e-3
 const OPAQUE = 0.99
 const WIRE_COLOR = /^#[0-9A-F]{8}$/
 
@@ -100,6 +103,19 @@ export function isUpright(transform: unknown): boolean {
     return false
   }
   return Math.abs(b as number) <= TRANSFORM_EPSILON && Math.abs(c as number) <= TRANSFORM_EPSILON && (a as number) > 0 && (d as number) > 0
+}
+
+// How much larger the layer is drawn on the canvas than its own values say: text in an instance resized with the scale
+// tool (K) keeps the component's font size, line height and letter spacing, while the instance draws it scaled
+// (InstanceNode.scaleFactor). Measured as the canvas height of the (upright) layer over its own height, so it does not
+// depend on whether absoluteTransform carries that scale. 1 when it cannot be measured or is 1 within 0.1 %.
+export function canvasScale(node: Pick<StyledText, "absoluteBoundingBox" | "height">): number {
+  const bounds = node.absoluteBoundingBox
+  if (!isRecord(bounds) || typeof bounds.height !== "number" || typeof node.height !== "number" || !(node.height > 0)) {
+    return 1
+  }
+  const scale = bounds.height / node.height
+  return Number.isFinite(scale) && scale > 0 && Math.abs(scale - 1) > SCALE_EPSILON ? scale : 1
 }
 
 // Rule 8: #RRGGBBAA, each channel Math.round(c × 255) clamped to 0–255, uppercase. null for a channel that is not a
@@ -242,8 +258,8 @@ function firstRun(node: StyledText): { run: Fields; mixed: boolean } {
   return { run, mixed: false }
 }
 
-// §3.3 rules 2–9, in Figma units (boxesFor scales the lengths to image pixels). null when the style cannot be
-// described honestly or anything throws while it is read.
+// §3.3 rules 2–9, in canvas units: the layer's Figma values times canvasScale (boxesFor scales the lengths to image
+// pixels, like the box). null when the style cannot be described honestly or anything throws while it is read.
 export function captureTextStyle(node: StyledText, frameId: string): FigmaTextStyle | null {
   try {
     if (!isUpright(node.absoluteTransform)) {
@@ -257,13 +273,15 @@ export function captureTextStyle(node: StyledText, frameId: string): FigmaTextSt
     if (fontSize <= 0) {
       return null
     }
+    const scale = canvasScale(node)
+    const lineHeight = lineHeightOf(run.lineHeight, fontSize)
     return {
       font_family: styleName(run.fontName.family),
       font_style: styleName(run.fontName.style),
       font_weight: roundedOrNull(run.fontWeight, 1, TEXT_STYLE_MAX_WEIGHT),
-      font_size: fontSize,
-      line_height_px: lineHeightOf(run.lineHeight, fontSize),
-      letter_spacing_px: letterSpacingOf(run.letterSpacing, fontSize),
+      font_size: fontSize * scale,
+      line_height_px: lineHeight === null ? null : lineHeight * scale,
+      letter_spacing_px: letterSpacingOf(run.letterSpacing, fontSize) * scale,
       text_align_horizontal: enumOf(node.textAlignHorizontal, FIGMA_TEXT_ALIGN_HORIZONTALS),
       text_align_vertical: enumOf(node.textAlignVertical, FIGMA_TEXT_ALIGN_VERTICALS),
       text_case: enumOf(run.textCase, FIGMA_TEXT_CASES),
