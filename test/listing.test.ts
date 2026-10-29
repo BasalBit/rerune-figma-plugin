@@ -14,6 +14,7 @@ import pushScreen from "../src/ui/screens/push.tsx?raw"
 import previewScreen from "../src/ui/screens/preview.tsx?raw"
 import settingsScreen from "../src/ui/screens/settings.tsx?raw"
 import settingsState from "../src/ui/state/settings.ts?raw"
+import refreshState from "../src/ui/state/refresh-requests.ts?raw"
 
 // COMMUNITY_LISTING.md (spec §7.24, P3.6) is public copy: it must match the manifest and what the code does.
 
@@ -135,8 +136,14 @@ describe("COMMUNITY_LISTING.md", () => {
     expect(database).toContain("the positions of its linked layers")
     expect(database).toMatch(/For each uploaded screenshot: its frame and page \(IDs and names\)/)
     expect(database).toContain("SHA-256")
-    expect(storage).toContain("only the image file")
+    expect(storage).toContain("only image files")
     expect(storage).toContain("stored under the project and screenshot IDs")
+    // Update screenshots ignores the setting (refreshGate: the screenshot gate with pref true; prepare({ ignorePref })),
+    // so the setting's condition must not cover it.
+    expect(refreshState).toContain("screenshotGate({ ...input, pref: true })")
+    expect(refreshState).toContain("deps.uploader.prepare({ ignorePref: true })")
+    expect(storage).toContain("and, whatever that setting says, the image of each frame ReRune requested when the user chooses **Update screenshots**")
+    expect(storage).not.toMatch(/on \(the default\)[^;]*Update screenshots/)
     expect(storage).not.toMatch(/positions|names/)
     expect(section(listing, "## Before you submit")).toContain("production bunny.net Storage zone is in Germany with no replication regions")
   })

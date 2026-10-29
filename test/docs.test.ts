@@ -358,6 +358,13 @@ describe("TESTING.md", () => {
     expect(refreshState).toContain('" hidden in Figma, so "')
     expect(testing).toContain("1 requested frame is hidden in Figma, so its screenshot wasn't uploaded: {frame} ({page}).")
     expect(readme).toContain("and hidden ones (also in a hidden section")
+    // The counts the check expects ("Updated 1 layer", "1 layer changed in Figma or in both") need the Figma edit on one
+    // of the two layers whose key changed: on any other layer both keys are Changed in ReRune.
+    const check = testing.split("\n").find((line) => line.startsWith("- [ ] **Screenshot requests**")) ?? ""
+    expect(check).toContain("change the Figma text of one of those two layers without pushing (it is then changed in both places)")
+    expect(check).toContain('"Updated 1 layer from ReRune."')
+    expect(check).toContain('"1 layer changed in Figma or in both wasn\'t changed. Review it on Push."')
+    expect(readme).toContain("**Update screenshots** uploads those frames the same way, whatever the setting says.")
   })
 
   it("names the Dev Mode inspect controls, notes and codegen lines the plugin shows (P2.4, P2.5)", () => {

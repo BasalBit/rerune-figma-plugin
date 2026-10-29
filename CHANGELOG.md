@@ -9,12 +9,14 @@ Changes made after `0.1.0` go here.
 ### Added
 
 - **Screenshots after Update layers from ReRune:** updating layers from ReRune on Push now uploads screenshots of the frames whose layers changed (the instances of an updated main component included), with the same progress, **Stop** and results as after a push.
-- **Requested screenshots:** when people in ReRune ask for new screenshots of frames in the file (for example because the text in a screenshot is outdated), the plugin says "ReRune asks for new screenshots of N frames in this file." with who asked and which frames. **Update screenshots** reads those frames, brings in ReRune's changed texts for them (layers changed in Figma or in both, read-only keys and previews are left alone and reported), and uploads every requested frame that is still in the file, which clears the requests. **Not now** hides the notice until a new request arrives; requested frames that are gone get **Remove request**. Upload runs from Push read the requests again afterwards.
+- **Requested screenshots:** when people in ReRune ask for new screenshots of frames in the file (for example because the text in a screenshot is outdated), the plugin says "ReRune asks for new screenshots of N frames in this file." with who asked and which frames. **Update screenshots** reads those frames, brings in ReRune's changed texts for them (layers changed in Figma or in both, read-only keys and previews are left alone and reported), and uploads every requested frame that is still in the file and visible, which clears the requests. **Not now** hides the notice until a new request arrives; requested frames that are gone or hidden get **Remove request**. Upload runs from Push read the requests again afterwards.
 - **Layer text and style in screenshots:** with a ReRune server that supports it, each screenshot box also records the layer's text and its text style (font, size, line height, letter spacing, alignment, case, decoration, text and background colour, resizing, line limit), in image pixels. ReRune uses them to mark screenshots whose text no longer matches the key and to preview the current text in the dashboard. Rotated or mirrored text and styles the plugin cannot describe send no style; very long layers send no text. Older servers get the boxes as before.
 
 ### Changed
 
 - The setting "Upload screenshots on push" is now **Upload screenshots of changed frames**, because it covers updates from ReRune too. Its stored value is kept.
+- **Update layers from ReRune** leaves a layer alone when its text was changed in Figma after the review ("This layer changed in Figma meanwhile, so ReRune's text wasn't written."), instead of overwriting the edit.
+- Screenshots are no longer uploaded for a frame that is hidden in Figma (it would replace the frame's screenshot with one that shows no keys).
 
 ## [0.1.0] - not yet published
 
