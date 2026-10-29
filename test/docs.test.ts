@@ -297,7 +297,7 @@ describe("TESTING.md", () => {
   })
 
   it("checks signed out that the dashboard's GitHub links open the public repository", () => {
-    const step = section(testing, "## 9. Production acceptance").split("\n").find((line) => line.startsWith("- [ ] 1. ")) ?? ""
+    const step = section(testing, "## 9. Production acceptance").split("\n").find((line) => /^- \[[ x]\] 1\. /.test(line)) ?? ""
     expect(step).toContain("dashboard deployed after it")
     expect(step).toContain("Signed out, **View source on GitHub** on `https://rerune.io/figma` and **Source code on GitHub** on `https://rerune.io/docs/figma` open the repository, not a GitHub 404")
   })
