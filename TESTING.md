@@ -441,8 +441,8 @@ S14 checklist (columns (b) and (c) need a paid Figma plan; (a) can be checked on
 
 After the server and dashboard PRs are merged and deployed (server first, with `FIGMA_CONNECT_URL` and `DESIGN_STORAGE_*`; then the dashboard), and before the Community submission.
 
-- [ ] 1. Server deployed with `FIGMA_CONNECT_URL=https://rerune.io/figma/connect` and `DESIGN_STORAGE_*`; dashboard deployed after it. Signed out, **View source on GitHub** on `https://rerune.io/figma` and **Source code on GitHub** on `https://rerune.io/docs/figma` open the repository, not a GitHub 404 (the repository must stay public).
-- [ ] 2. The build you will publish: `npm run build:design-only` for the design-only release, or `npm run build` for the full release (only after §5.5, §5.6 and S14 passed on a paid Figma plan). Both call the API at `https://rerune.io/api`. Import it in Figma desktop (an unpublished build runs only there; browser Figma follows after approval, §10).
+- [x] 1. Server deployed with `FIGMA_CONNECT_URL=https://rerune.io/figma/connect` and `DESIGN_STORAGE_*`; dashboard deployed after it. Signed out, **View source on GitHub** on `https://rerune.io/figma` and **Source code on GitHub** on `https://rerune.io/docs/figma` open the repository, not a GitHub 404 (the repository must stay public).
+- [x] 2. The build you will publish: `npm run build:design-only` for the design-only release, or `npm run build` for the full release (only after §5.5, §5.6 and S14 passed on a paid Figma plan). Both call the API at `https://rerune.io/api`. Import it in Figma desktop (an unpublished build runs only there; browser Figma follows after approval, §10).
 - [ ] 3. Diagnostics → **Network check**: `"status": 200`, `"cors": "ok"` through nginx. Forced 429: run the command below and check that a `429` response carries `Retry-After` and `Access-Control-Expose-Headers: Retry-After`:
 
   ```bash
@@ -455,7 +455,11 @@ After the server and dashboard PRs are merged and deployed (server first, with `
 
 | Date | Step | Result | Notes |
 |---|---|---|---|
-| | | | |
+| 2026-10-29 | 1 | Pass | Server (`rerune-server` main `cb7ac27`) deployed first, then the dashboard (`rerune-dashboard` main `4ad0a84`). `GET https://rerune.io/api/figma/meta` reports `screenshots_enabled: true` and `screenshot_freshness: true`. Signed out, `/figma` and `/docs/figma` link `https://github.com/BasalBit/rerune-figma-plugin`, which answers 200. |
+| 2026-10-29 | 2 | Pass | Design-only build from `main` `492210d` (`npm run zip:design-only`, `check-build.mjs design-only` passed): `editorType ["figma"]`, no `capabilities`, API `https://rerune.io/api`, no localhost. Imported in Figma desktop on macOS. |
+| 2026-10-29 | 3 | Partly | Forced 429 with the command above: 60 × 200 and 10 × 429 with `retry-after: 60`; all 70 responses carry `access-control-allow-origin: *` and `access-control-expose-headers: Retry-After`. Through nginx the preflight answers 200 and a 3.5 MB body reaches the API (401). Still to do: Diagnostics → **Network check** in the plugin. |
+| 2026-10-29 | 4 | Partly | Sign-in against production on the same network works. Still to do: pairing from a phone on mobile data (typed code) and the "Figma plugin connected" email with **Review connected apps**. |
+| 2026-10-29 | 5 | Partly | **Link exact matches** and a push to a new production project work. Screenshot uploads first failed with `design_storage_failed`: Bunny answered 401 because the production Storage zone is named `rerune-desings` (not `rerune-designs`) and `DESIGN_STORAGE_ENDPOINT` contained a path. With `DESIGN_STORAGE_ZONE=rerune-desings` and `DESIGN_STORAGE_ENDPOINT=https://storage.bunnycdn.com` in the server's `.env`, uploads work. Found in this run and fixed in `085f85d`: a first push uploaded no screenshots of frames whose layers were only linked. Still to do: a language preview, the image in the dashboard's Design tab, a replacement and the deletion of the old object. |
 
 ---
 
