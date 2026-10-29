@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest"
 import { scannedNode } from "../../../test/fixtures"
 import { applyDecision, buildPushPlan, type PlanContext, type PlanCreate, type PlanDecision, type PushPlan } from "../../shared/push-plan"
 import pushSource from "./push.tsx?raw"
-import { CreateCard, NewTextHeader } from "./push"
+import { Note } from "../components/ui"
+import { CreateCard, NewTextHeader, resultSummary } from "./push"
 
 // The New text header's Select all on the Push tab: ticked, partly ticked or not, one decision for every new text, and
 // off, with every other choice in the plan, while Update layers from ReRune runs.
@@ -161,5 +162,42 @@ describe("Push: Select all new texts", () => {
     expect(decide).toContain("applyDecision(prepared.plan, decision, prepared.context)")
     expect(pushSource).toContain("{available !== null && overQuota(counts, available) && (")
     expect(pushSource).toContain("const counts = plan === null ? null : pushCounts(plan)")
+  })
+})
+
+// The results' summary after a push with a key edited in ReRune meanwhile: the note turns good with the postmark once the
+// last conflict is resolved, and the postmark's room is there from the start, so nothing moves when it stamps in.
+describe("Push results: the summary's postmark", () => {
+  const conflicts = [{ ref: "a" }, { ref: "b" }]
+  const failure = { ref: "f" }
+
+  it("keeps the postmark's room while conflicts are open, and stamps it in once none is left open", () => {
+    expect(resultSummary({ failures: [], conflicts: [] }, {})).toEqual({ tone: "good", postmark: true })
+    expect(resultSummary({ failures: [], conflicts }, {})).toEqual({ tone: "info", postmark: "room" })
+    // A choice still running (Overwrite, Take ReRune text) leaves its conflict open.
+    expect(resultSummary({ failures: [], conflicts }, { a: { done: true }, b: { done: false } })).toEqual({ tone: "info", postmark: "room" })
+    expect(resultSummary({ failures: [], conflicts }, { a: { done: true }, b: { done: true } })).toEqual({ tone: "good", postmark: true })
+  })
+
+  it("has no postmark and no room when something failed, since the run can't turn clean", () => {
+    expect(resultSummary({ failures: [failure], conflicts: [] }, {})).toEqual({ tone: "info", postmark: false })
+    expect(resultSummary({ failures: [failure], conflicts }, { a: { done: true }, b: { done: true } })).toEqual({ tone: "info", postmark: false })
+  })
+
+  it("is the same note box with the room, the postmark drawn only when the run is clean", () => {
+    const note = (postmark: boolean | "room") => render(h(Note, { tone: postmark === true ? "good" : "info", postmark, children: "Nothing was changed." }))
+    const box = (postmark: boolean | "room") => find(note(postmark), "div")[0].props.class
+    expect(box("room")).toBe("rr-note rr-tone--info rr-tinted rr-postmarked")
+    expect(box(true)).toBe("rr-note rr-tone--good rr-tinted rr-postmarked")
+    expect(box(false)).toBe("rr-note rr-tone--info rr-tinted")
+    expect(find(note("room"), "svg")).toHaveLength(0)
+    expect(find(note(false), "svg")).toHaveLength(0)
+    expect(find(note(true), "svg").filter((svg) => svg.props.class === "rr-postmark")).toHaveLength(1)
+  })
+
+  it("is what the results show", () => {
+    const results = pushSource.slice(pushSource.indexOf("function Results("), pushSource.indexOf("{linkSyncWarning(run.linkSync)"))
+    expect(results).toContain("const summary = resultSummary(run, props.resolved)")
+    expect(results).toContain("<Note tone={summary.tone} postmark={summary.postmark}>")
   })
 })

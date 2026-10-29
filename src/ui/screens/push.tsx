@@ -895,6 +895,18 @@ export function CreateCard(props: {
   )
 }
 
+// The results' summary note. Conflicts resolved since the push stay listed with their chip; only the open ones keep the
+// note informative. A clean run (nothing failed, no conflict left open) gets the postmark. While a run with no failures
+// has conflicts open, the postmark's room is kept, so resolving the last one stamps it in without moving the cards.
+export function resultSummary(
+  run: { failures: readonly unknown[]; conflicts: readonly { ref: string }[] },
+  resolved: Record<string, { done: boolean }>,
+): { tone: "good" | "info"; postmark: boolean | "room" } {
+  const open = run.conflicts.filter((conflict) => resolved[conflict.ref]?.done !== true)
+  if (run.failures.length > 0) return { tone: "info", postmark: false }
+  return open.length === 0 ? { tone: "good", postmark: true } : { tone: "info", postmark: "room" }
+}
+
 function Results(props: {
   run: PushRun
   props: PushScreenProps
@@ -913,13 +925,10 @@ function Results(props: {
     run.textsApplied > 0 ? plural(run.textsApplied, "layer updated from ReRune", "layers updated from ReRune") : null,
     run.unlinked > 0 ? plural(run.unlinked, "layer unlinked", "layers unlinked") : null,
   ].filter((part): part is string => part !== null)
-  // Conflicts resolved since the push stay listed with their chip; only the open ones keep the note informative.
-  const open = run.conflicts.filter((conflict) => props.resolved[conflict.ref]?.done !== true)
-  // A clean run (nothing failed, no conflict left open) gets the postmark.
-  const clean = run.failures.length === 0 && open.length === 0
+  const summary = resultSummary(run, props.resolved)
   return (
     <div style={styles.stack}>
-      <Note tone={clean ? "good" : "info"} postmark={clean}>
+      <Note tone={summary.tone} postmark={summary.postmark}>
         {done.length > 0 ? done.join(" · ") + "." : "Nothing was changed."} Drafts are never published from Figma.
       </Note>
       {linkSyncWarning(run.linkSync) !== null && <Note tone="warning">{linkSyncWarning(run.linkSync)}</Note>}

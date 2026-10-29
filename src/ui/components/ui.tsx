@@ -36,10 +36,13 @@ export function CheckInput(props: { checked: boolean; onChange(): void; label: s
 export { styles }
 
 // `icon`: a glyph before the text (the ReRune mark on ReRune's own requests). `postmark`: the postmark of a clean
-// result beside the text (its room is reserved, so nothing moves when it stamps in).
-export function Note(props: { tone?: Tone; children: ComponentChildren; actions?: ComponentChildren; icon?: ComponentChildren; postmark?: boolean }) {
+// result beside the text (its room is reserved, so nothing moves when it stamps in); "room" keeps that room empty on a
+// result that can still turn clean while it is shown (a push's conflicts left open), so the postmark later stamps in
+// without moving the note's text or what comes below it.
+export function Note(props: { tone?: Tone; children: ComponentChildren; actions?: ComponentChildren; icon?: ComponentChildren; postmark?: boolean | "room" }) {
+  const room = props.postmark === true || props.postmark === "room"
   return (
-    <div class={"rr-note " + toneClasses(props.tone ?? "info") + (props.postmark === true ? " rr-postmarked" : "")}>
+    <div class={"rr-note " + toneClasses(props.tone ?? "info") + (room ? " rr-postmarked" : "")}>
       {props.icon !== undefined && (
         <span class="rr-note__icon" aria-hidden="true">
           {props.icon}
