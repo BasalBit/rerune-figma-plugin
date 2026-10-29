@@ -1,6 +1,6 @@
 /*! Fonts bundled with ReRune for Figma (src/ui/assets/fonts, Latin subsets, WOFF2):
- *  Inter 4.001 (variable wght), the Latin subset of @fontsource-variable/inter 5.3.0, used under the CSS name
- *  "ReRune Inter".
+ *  Inter 4.001, the Latin subset of @fontsource-variable/inter 5.3.0, its weight axis cut to 400-700 for ReRune, used
+ *  under the CSS name "ReRune Inter".
  *    Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
  *  IBM Plex Mono Medium 2.005, IBM's own Latin1 subset (@ibm/plex-mono 2.5.0, IBMPlexMono-Medium-Latin1.woff2),
  *  unchanged, used under the CSS name "ReRune Mono".
@@ -98,7 +98,7 @@
  *  FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
  *  OTHER DEALINGS IN THE FONT SOFTWARE.
  */
-import interBytes from "../assets/fonts/inter-latin-wght.woff2"
+import interBytes from "../assets/fonts/inter-latin-400-700.woff2"
 import monoBytes from "../assets/fonts/IBMPlexMono-Medium-Latin1.woff2"
 import displayBytes from "../assets/fonts/rerune-display-800.woff2"
 
@@ -109,7 +109,7 @@ import displayBytes from "../assets/fonts/rerune-display-800.woff2"
 // node tests never load the binaries.
 
 export const BRAND_FONTS = [
-  { family: "ReRune Inter", bytes: interBytes, descriptors: { weight: "100 900", style: "normal", display: "block" } },
+  { family: "ReRune Inter", bytes: interBytes, descriptors: { weight: "400 700", style: "normal", display: "block" } },
   { family: "ReRune Mono", bytes: monoBytes, descriptors: { weight: "500", style: "normal", display: "block" } },
   { family: "ReRune Display", bytes: displayBytes, descriptors: { weight: "800", style: "normal", display: "block" } },
 ] as const

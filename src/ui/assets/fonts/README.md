@@ -7,7 +7,7 @@ the build keeps in `build/ui.js`.
 
 | File | CSS family | Source | Glyphs | Bytes | SHA-256 |
 |---|---|---|---|---|---|
-| `inter-latin-wght.woff2` | `ReRune Inter` (first in `--font-family`, before an installed `Inter`) | Inter 4.001, `@fontsource-variable/inter@5.3.0` `files/inter-latin-wght-normal.woff2`: fontsource's Latin subset, variable (wght 100–900), not changed further. © 2016 The Inter Project Authors, no Reserved Font Name | 518 | 48,256 | `3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62` |
+| `inter-latin-400-700.woff2` | `ReRune Inter` (first in `--font-family`, before an installed `Inter`) | Inter 4.001, `@fontsource-variable/inter@5.3.0` `files/inter-latin-wght-normal.woff2` (fontsource's Latin subset, wght 100–900, 48,256 bytes) with its weight axis cut to 400–700 (below): the UI uses 400, 500 and 600. © 2016 The Inter Project Authors, no Reserved Font Name | 518 | 36,100 | `a8eb43c1e5c9c0c91f69d7d1d43a0bdaa2811a16e6fed53818d5491489348006` |
 | `IBMPlexMono-Medium-Latin1.woff2` | `ReRune Mono` | IBM Plex Mono Medium 2.005, IBM's own Latin1 subset from the IBM Plex release (`@ibm/plex-mono@2.5.0` `fonts/split/woff2/IBMPlexMono-Medium-Latin1.woff2`), unchanged: an Original Version, so it keeps its name (IBM reserves the name "Plex" for modified versions). © 2017 IBM Corp. | 313 | 17,868 | `41201b658a328b9d00368215c2f1102770f80b15952ab82631e4006255e6365d` |
 | `rerune-display-800.woff2` | `ReRune Display` | Bricolage Grotesque 1.001, `@fontsource-variable/bricolage-grotesque@5.3.0` `files/bricolage-grotesque-latin-standard-normal.woff2`, instanced and subset (below). © 2022 The Bricolage Grotesque Project Authors, no Reserved Font Name | 107 | 11,476 | `073c14e9feca497c297bc7e2610e3d6271f9874bb729d070b326fb6d0788a520` |
 
@@ -20,6 +20,13 @@ fonttools varLib.instancer bricolage-grotesque-latin-standard-normal.woff2 wght=
 pyftsubset rerune-display.ttf --flavor=woff2 --name-IDs='*' --notdef-outline --layout-features='kern,liga,calt,ss01' \
   --unicodes="U+0020-007E,U+00A0,U+2013,U+2014,U+2018,U+2019,U+201C,U+201D,U+2026" \
   --output-file=rerune-display-800.woff2
+```
+
+`inter-latin-400-700.woff2` keeps every glyph and the variable weight axis, only narrower (12 KB less in `build/ui.js`
+after base64). Made with fontTools 4.60.1 and brotli 1.2.1:
+
+```sh
+fonttools varLib.instancer inter-latin-wght-normal.woff2 wght=400:700 -o inter-latin-400-700.woff2
 ```
 
 Inter and Plex Mono are Latin subsets. `--font-family` is `"ReRune Inter", Inter, Helvetica, sans-serif`
