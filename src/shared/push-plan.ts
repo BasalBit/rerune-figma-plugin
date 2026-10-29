@@ -35,7 +35,9 @@ export interface PlanConflict {
   keyId: string; keyName: string; nodeIds: string[]; figmaText: string; remoteText: string; maxLength: number | null
   decision: "skip" | "overwrite" | "take_rerune"
 }
-export interface PlanPull { keyId: string; keyName: string; nodeIds: string[]; remoteText: string }
+// `nodeIds` are the write targets (one inherited layer per main component, writeTargets); `groupNodeIds` every layer of
+// the pull, for the screenshots of the frames a pull changes (SF1).
+export interface PlanPull { keyId: string; keyName: string; nodeIds: string[]; groupNodeIds: string[]; remoteText: string }
 export interface PlanCopied { nodeId: string; keyId: string; keyName: string; decision: "keep" | "new_key" | null }
 export interface PlanMissing { keyId: string; keyName: string; nodeIds: string[]; text: string; decision: "skip" | "recreate" | "unlink" }
 
@@ -313,7 +315,13 @@ export function buildPushPlan(input: PushPlanInput): PushPlan {
   }
 
   for (const [keyId, group] of pullGroups) {
-    plan.pulls.push({ keyId, keyName: keyNameFor(keyId, group, input.remote), nodeIds: writeTargets(group), remoteText: input.remote.get(keyId)?.mainText ?? "" })
+    plan.pulls.push({
+      keyId,
+      keyName: keyNameFor(keyId, group, input.remote),
+      nodeIds: writeTargets(group),
+      groupNodeIds: ids(group),
+      remoteText: input.remote.get(keyId)?.mainText ?? "",
+    })
   }
 
   for (const [keyId, group] of missingGroups) {

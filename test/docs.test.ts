@@ -325,7 +325,7 @@ describe("TESTING.md", () => {
   })
 
   it("names the screenshot toggle, notes and results the plugin shows (P2.3)", () => {
-    for (const label of ["Upload screenshots on push", "Screenshots not uploaded", "Stop", "Uploading screenshots…"]) {
+    for (const label of ["Upload screenshots of changed frames", "Screenshots not uploaded", "Stop", "Uploading screenshots…"]) {
       expect([settingsScreen, pushScreen, screenshotState].join("\n")).toContain(label)
       expect(testing).toContain(label)
     }
@@ -336,7 +336,7 @@ describe("TESTING.md", () => {
     }
     const preview = screenshotState.match(/preview_active: "([^"]+)"/)
     expect(testing).toContain(preview?.[1] ?? "missing")
-    expect(readme).toContain("Upload screenshots on push")
+    expect(readme).toContain("Upload screenshots of changed frames")
   })
 
   it("names the Dev Mode inspect controls, notes and codegen lines the plugin shows (P2.4, P2.5)", () => {

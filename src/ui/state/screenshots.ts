@@ -19,8 +19,9 @@ import { RequestTimeoutError, type UiBus } from "../bus"
 import type { PixelSize } from "../image"
 import { BRANCH_MESSAGE } from "./file-link"
 
-// Screenshots on push (§7.16, §7.13 rule 11, D4, D17, D43): which frames to upload, whether uploads may run,
-// the export through main one frame at a time, and the sequential E19 upload queue.
+// Screenshots of changed frames (§7.16, §7.13 rule 11, D4, D17, D43; after a push, Overwrite, Take ReRune text and
+// Update layers from ReRune, SF1): which frames to upload, whether uploads may run, the export through main one frame
+// at a time, and the sequential E19 upload queue.
 
 export type FrameImage = Omit<MainToUiOf<"frame-image">, "type" | "requestId">
 export type FrameExportResult = { kind: "image"; image: FrameImage } | { kind: "skipped"; reason: FrameSkipReason }
@@ -113,7 +114,7 @@ export type ScreenshotBlock = "sandbox" | "server_disabled" | "pref_off" | "unav
 export interface ScreenshotGate { enabled: boolean; reason: ScreenshotBlock | null; fileKey: string | null }
 
 export interface ScreenshotGateInput {
-  pref: boolean                      // Settings → "Upload screenshots on push"
+  pref: boolean                      // Settings → "Upload screenshots of changed frames"
   availability: Availability
   settings: FileSettings | null
   rootName: string
@@ -147,7 +148,7 @@ export function screenshotGate(input: ScreenshotGateInput): ScreenshotGate {
   return { enabled: true, reason: null, fileKey: input.settings.fileKey }
 }
 
-export const SCREENSHOTS_ON_HINT = "Screenshots of the frames you push are uploaded to ReRune, so translators and developers see where each key is used."
+export const SCREENSHOTS_ON_HINT = "Screenshots of the frames you push or update from ReRune are uploaded to ReRune, so translators and developers see where each key is used."
 export const SERVER_DISABLED_HINT = "Screenshots aren't available on this ReRune server."
 export const NO_FILE_HINT = "Screenshots upload once this file's Figma link is saved."
 export const COPY_HINT = "Screenshots wait until you confirm this file under Figma file."
@@ -578,7 +579,7 @@ export function progressText(run: ScreenshotRun): string {
   return "Uploading screenshots… " + Math.min(run.done + 1, run.total) + " of " + run.total
 }
 
-// The Push screen's way in (§7.13 rule 11): `prepare` loads E1/E8 when needed and evaluates the gate with the
+// The Push screen's way in (§7.13 rule 11, SF1): `prepare` loads E1/E8 when needed and evaluates the gate with the
 // current settings, prefs and permissions; `upload` runs the queue for this project (with `freshness` from the
 // availability `prepare` returned).
 export interface ScreenshotUploader {

@@ -29,6 +29,7 @@ import {
   unlinkedGroupTexts,
   type PushInput,
 } from "./push"
+import { affectedFrames } from "./screenshots"
 import { fakeMain } from "./test-fakes"
 
 function remote(key: string, mainText: string, maxLength: number | null = null): RemoteWithMaxLength {
@@ -476,6 +477,40 @@ describe("after-push choices and pulls", () => {
     expect(main.writes[0]).toMatchObject({ type: "text-apply", items: [{ nodeId: "1:1", text: "New" }, { nodeId: "1:2", text: "New" }, { nodeId: "1:3", text: "Newer" }] })
     expect(main.writes[1]).toEqual({ type: "link-apply", requestId: expect.any(String), items: [{ nodeId: "1:1", keyId: keyId(1), keyName: "new_name", projectId: PROJECT_ID, src: src("New") }] })
     expect(outcome.errors.map((error) => error.code)).toEqual(["preview_active"])
+    expect(outcome.affectedNodeIds).toEqual(["1:1", "1:3"])
+  })
+
+  it("names the layers a pull changed, inherited instances and their local main included, for their screenshots (SF1)", async () => {
+    const key = { keyId: keyId(1), keyName: "checkout_title", syncedText: "Checkout" }
+    const nodes = [
+      linkedNode("I7:1;1:5", "Checkout", { ...key, nid: "1:5", state: "inherited" }, { frameId: "20:1", frameName: "Cart" }),
+      linkedNode("I8:1;1:5", "Checkout", { ...key, nid: "1:5", state: "inherited" }, { frameId: "30:1", frameName: "Done" }),
+      linkedNode("I9:1;1:7", "Checkout", { ...key, nid: "1:7", state: "inherited" }, { frameId: "40:1", frameName: "Library" }),
+      linkedNode("1:3", "Checkout", key),
+      linkedNode("1:4", "Total", { keyId: keyId(2), keyName: "checkout_total", syncedText: "Total" }),
+    ]
+    const remoteMap = new Map([[keyId(1), remote("checkout_title", "Checkout!")], [keyId(2), remote("checkout_total", "Sum")]])
+    const ready = await preparePush({ keysByName: byName({}, []) }, input(nodes, { remote: remoteMap }))
+    expect(ready.plan.pulls.map((pull) => pull.nodeIds)).toEqual([["I7:1;1:5", "I9:1;1:7", "1:3"], ["1:4"]])
+    expect(ready.plan.pulls[0].groupNodeIds).toEqual(["I7:1;1:5", "I8:1;1:5", "I9:1;1:7", "1:3"])
+
+    const main = fakeMain()
+    const all = await executePulls({ api: { push: vi.fn() }, bus: main.bus }, ready.plan, ready.context)
+    expect(all.affectedNodeIds).toEqual(["I7:1;1:5", "1:5", "I8:1;1:5", "I9:1;1:7", "1:7", "1:3", "1:4"])
+
+    // The library main (1:7) refuses the write: its instance is left out, a warning still counts as written.
+    const failing = fakeMain(() => [
+      { nodeId: "I9:1;1:7", code: "remote_component", message: "Update this text in the library file." },
+      { nodeId: "1:4", code: "mixed_styles_flattened", message: "Some text styles couldn't be kept." },
+    ])
+    const partial = await executePulls({ api: { push: vi.fn() }, bus: failing.bus }, ready.plan, ready.context)
+    expect(partial.affectedNodeIds).toEqual(["I7:1;1:5", "1:5", "I8:1;1:5", "1:3", "1:4"])
+    // The main component nodes were not scanned: they have no frame, so only the scanned layers' frames get screenshots.
+    expect(affectedFrames(partial.affectedNodeIds, ready.context.nodes)).toEqual([
+      { frameId: "20:1", frameName: "Cart" },
+      { frameId: "30:1", frameName: "Done" },
+      { frameId: "10:1", frameName: "Checkout" },
+    ])
   })
 
   it("pulls nothing while a layer in scope previews", async () => {
@@ -493,7 +528,7 @@ describe("after-push choices and pulls", () => {
     expect(ready.plan.blockedByPreview).toEqual(["I7:1;1:5"])
     expect(canPull(ready.plan)).toBe(false)
     const main = fakeMain()
-    expect(await executePulls({ api: { push: vi.fn() }, bus: main.bus }, ready.plan, ready.context)).toEqual({ done: 0, errors: [] })
+    expect(await executePulls({ api: { push: vi.fn() }, bus: main.bus }, ready.plan, ready.context)).toEqual({ done: 0, errors: [], affectedNodeIds: [] })
     expect(main.writes).toEqual([])
   })
 

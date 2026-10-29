@@ -112,10 +112,10 @@ describe("COMMUNITY_LISTING.md", () => {
     // The design-only build has no Dev Mode and keeps no codegen cache (MainContext.devMode).
     expect(answers).toContain("in the full build only, a cache of key names")
     expect(answers).toContain("the design-only build keeps no such cache")
-    // "Upload screenshots on push" is on by default in the plugin's preferences.
+    // "Upload screenshots of changed frames" is on by default in the plugin's preferences.
     expect(settingsState).toMatch(/uploadScreenshotsOnPush: true,/)
-    expect(settingsScreen).toContain("Upload screenshots on push")
-    expect(answers).toContain('"Upload screenshots on push" on (the default)')
+    expect(settingsScreen).toContain("Upload screenshots of changed frames")
+    expect(answers).toContain('"Upload screenshots of changed frames" on (the default)')
     expect(answers).toContain("Sandbox accounts never upload images.")
     // The server keeps a keyed hash and the last four characters (app_tokens.token_hint, shown under Connected apps).
     expect(answers).toContain("HMAC-SHA256 hash of it and its last four characters")

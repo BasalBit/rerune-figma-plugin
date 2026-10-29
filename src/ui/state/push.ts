@@ -520,17 +520,25 @@ export interface TakeReRuneRun {
 // their frames. A layer whose write failed, or whose main component's write failed, changed nothing and is left out.
 export async function executeTakeReRune(deps: PushDeps, conflict: PushFollowUp["conflicts"][number], context: Pick<PlanContext, "nodes">): Promise<TakeReRuneRun> {
   const written = await textApply(deps, takeReRuneItems(conflict, context.nodes))
+  const affectedNodeIds = writtenLayers(conflict.nodeIds, written.errors, context.nodes)
+  return { errors: written.errors, linkSync: await syncPushedLinks(deps, affectedNodeIds), affectedNodeIds }
+}
+
+// The layers of a text-apply (all of them, not only the write targets) that now show the new text: those whose
+// write group (the main component node for an inherited layer, the layer itself otherwise) had no write error,
+// warnings aside, plus the local main component nodes written for inherited ones. Layers not scanned are left out.
+function writtenLayers(nodeIds: readonly string[], errors: readonly NodeError[], nodes: Map<string, ScannedNode>): string[] {
   const writeGroup = (node: ScannedNode) => (node.linkState === "inherited" && node.link !== null ? node.link.nid : node.nodeId)
   const failed = new Set<string>()
-  for (const error of written.errors) {
+  for (const error of errors) {
     if (!isWarning(error)) {
-      const node = context.nodes.get(error.nodeId)
+      const node = nodes.get(error.nodeId)
       failed.add(node === undefined ? error.nodeId : writeGroup(node))
     }
   }
   const affected = new Set<string>()
-  for (const nodeId of conflict.nodeIds) {
-    const node = context.nodes.get(nodeId)
+  for (const nodeId of nodeIds) {
+    const node = nodes.get(nodeId)
     if (node === undefined || failed.has(writeGroup(node))) {
       continue
     }
@@ -540,8 +548,7 @@ export async function executeTakeReRune(deps: PushDeps, conflict: PushFollowUp["
       affected.add(node.link.nid)
     }
   }
-  const affectedNodeIds = [...affected]
-  return { errors: written.errors, linkSync: await syncPushedLinks(deps, affectedNodeIds), affectedNodeIds }
+  return [...affected]
 }
 
 // Pulls wait for previews to be reset, like the push (§7.13 rules 1 and 5, §7.14 pull): a layer that previews
@@ -550,13 +557,21 @@ export function canPull(plan: PushPlan): boolean {
   return plan.pulls.length > 0 && canPush(plan)
 }
 
+export interface PullRun extends BatchOutcome {
+  // Layers that now show ReRune's text (and the local main component nodes written for inherited ones), for the
+  // screenshots of their frames (SF1).
+  affectedNodeIds: string[]
+}
+
 // "Update layers from ReRune" (§7.13 rule 5): text-apply, then refresh the cached key name where it changed
-// (text-apply keeps `k`). Layers whose write failed keep their link untouched.
-export async function executePulls(deps: PushDeps, plan: PushPlan, context: PlanContext): Promise<BatchOutcome> {
+// (text-apply keeps `k`). Layers whose write failed keep their link untouched. The caller uploads the screenshots of
+// `affectedNodeIds` (SF1).
+export async function executePulls(deps: PushDeps, plan: PushPlan, context: PlanContext): Promise<PullRun> {
   if (!canPull(plan)) {
-    return { done: 0, errors: [] }
+    return { done: 0, errors: [], affectedNodeIds: [] }
   }
   const written = await textApply(deps, planPullApplies(plan))
+  const affectedNodeIds = writtenLayers(plan.pulls.flatMap((pull) => pull.groupNodeIds), written.errors, context.nodes)
   const failed = new Set(written.errors.filter((error) => !isWarning(error)).map((error) => error.nodeId))
   const refresh: LinkApplyItem[] = []
   for (const pull of plan.pulls) {
@@ -571,5 +586,5 @@ export async function executePulls(deps: PushDeps, plan: PushPlan, context: Plan
     const refreshed = await linkApply(deps, refresh)
     written.errors.push(...refreshed.errors)
   }
-  return written
+  return { ...written, affectedNodeIds }
 }

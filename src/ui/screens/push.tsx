@@ -11,7 +11,7 @@ import type { UiBus } from "../bus"
 import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
 import { linkSyncWarning, type LinkSyncResult } from "../state/link-sync"
-import { groupErrors, type BatchOutcome } from "../state/ops"
+import { groupErrors } from "../state/ops"
 import {
   canPull,
   canSubmit,
@@ -27,6 +27,7 @@ import {
   resolveConflictInRun,
   withCheckedNames,
   type PreparedPush,
+  type PullRun,
   type PushRun,
 } from "../state/push"
 import {
@@ -44,8 +45,9 @@ import type { Prefs } from "../state/settings"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // Push (§7.13): the diff with decisions, max_length warnings, the quota line, Push, and the results with the
-// follow-up choices (conflicts, duplicate names, quota). After a push, screenshots of the changed frames are
-// uploaded when that is on and allowed (§7.13 rule 11, §7.16); the push stays locked until they are done or stopped.
+// follow-up choices (conflicts, duplicate names, quota). After a push (and after Update layers from ReRune, SF1),
+// screenshots of the changed frames are uploaded when that is on and allowed (§7.13 rule 11, §7.16); the push or
+// pull stays locked until they are done or stopped.
 
 export interface PushScreenProps {
   notices: ComponentChildren               // the workspace notices, shown first in the scroll area (ScreenBody)
@@ -88,7 +90,7 @@ export function PushScreen(props: PushScreenProps) {
   const [phase, setPhase] = useState<Phase>("preparing")
   const [prepared, setPrepared] = useState<PreparedPush | null>(null)
   const [run, setRun] = useState<PushRun | null>(null)
-  const [pulled, setPulled] = useState<BatchOutcome | null>(null)
+  const [pulled, setPulled] = useState<PullRun | null>(null)
   const [pulling, setPulling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resolved, setResolved] = useState<Record<string, ConflictChoice | "done">>({})
@@ -241,17 +243,25 @@ export function PushScreen(props: PushScreenProps) {
     return { api: props.api, bus: props.bus, fileKey: props.fileKey, syncLinks: props.syncLinks }
   }
 
+  // Update layers from ReRune changes the layers, so their frames get screenshots as after a push (SF1); the
+  // screenshot status shows under the pull's result.
   async function pull() {
     if (prepared === null) return
     await exclusive(async () => {
       setPulling(true)
       setError(null)
+      setShots(null)
+      let done: PullRun | null = null
       try {
-        setPulled(await executePulls({ api: props.api, bus: props.bus }, prepared.plan, prepared.context))
+        done = await executePulls({ api: props.api, bus: props.bus }, prepared.plan, prepared.context)
+        setPulled(done)
       } catch (caught) {
         setError(userMessage(caught))
       }
       setPulling(false)
+      if (done !== null) {
+        await uploadScreenshots(affectedFrames(done.affectedNodeIds, prepared.context.nodes))
+      }
     })
   }
 
@@ -523,9 +533,10 @@ export function PushScreen(props: PushScreenProps) {
                   {!canPull(plan) && " Reset previews first."}
                 </Note>
                 {pulled !== null && (
-                  <div style={{ marginTop: "6px" }}>
+                  <div style={{ ...styles.tightStack, marginTop: "6px" }}>
                     <Note tone="good">Updated {plural(pulled.done, "layer", "layers")} from ReRune.</Note>
                     <ErrorGroups groups={groupErrors(pulled.errors)} onSelect={props.onSelect} />
+                    {shots !== null && <ScreenshotStatus state={shots} stopping={stopping} onStop={stopScreenshots} onSelect={props.onSelect} />}
                   </div>
                 )}
               </div>
@@ -548,7 +559,7 @@ export function PushScreen(props: PushScreenProps) {
   )
 }
 
-// Screenshot upload after a push: progress with Stop, then the summary and the frames that weren't uploaded.
+// Screenshot upload after a push or pull: progress with Stop, then the summary and the frames that weren't uploaded.
 function ScreenshotStatus(props: { state: ShotsState; stopping: boolean; onStop(): void; onSelect(nodeIds: string[]): void }) {
   const { state } = props
   if (state.kind === "unavailable") {

@@ -291,8 +291,8 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     }
   }, [auth, project?.id])
 
-  // Screenshots on push (§7.13 rule 11, §7.16): the gate is evaluated when a push ends, with the settings, prefs
-  // and permissions of that moment.
+  // Screenshots of changed frames (§7.13 rule 11, §7.16, SF1): the gate is evaluated when a push or pull ends, with
+  // the settings, prefs and permissions of that moment.
   const screenshotUploader = useMemo<ScreenshotUploader>(
     () => ({
       async prepare() {

@@ -6,6 +6,15 @@ All notable changes to the ReRune Figma plugin are recorded here. The format fol
 
 Changes made after `0.1.0` go here.
 
+### Added
+
+- **Screenshots after Update layers from ReRune:** updating layers from ReRune on Push now uploads screenshots of the frames whose layers changed (the instances of an updated main component included), with the same progress, **Stop** and results as after a push.
+- **Layer text and style in screenshots:** with a ReRune server that supports it, each screenshot box also records the layer's text and its text style (font, size, line height, letter spacing, alignment, case, decoration, text and background colour, resizing, line limit), in image pixels. ReRune uses them to mark screenshots whose text no longer matches the key and to preview the current text in the dashboard. Rotated or mirrored text and styles the plugin cannot describe send no style; very long layers send no text. Older servers get the boxes as before.
+
+### Changed
+
+- The setting "Upload screenshots on push" is now **Upload screenshots of changed frames**, because it covers updates from ReRune too. Its stored value is kept.
+
 ## [0.1.0] - not yet published
 
 The first release of ReRune for Figma. It brings together the three development phases: the MVP (2026-10-27), context and handoff (2026-10-28), and QA and launch preparation (2026-10-28). It is not in Figma Community yet. When it is published, this heading gets the publish date.

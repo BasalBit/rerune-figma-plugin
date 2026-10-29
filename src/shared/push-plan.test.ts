@@ -278,7 +278,7 @@ describe("rule 4: conflicts", () => {
 describe("rule 5: pulls", () => {
   it("collects changed_in_rerune layers outside the push request", () => {
     const { plan } = setup([linked("1:1", "Pay now", K1, "Pay now")], { remote: [[K1, remoteState("k", "Pay securely")]] })
-    expect(plan.pulls).toEqual([{ keyId: K1, keyName: "k", nodeIds: ["1:1"], remoteText: "Pay securely" }])
+    expect(plan.pulls).toEqual([{ keyId: K1, keyName: "k", nodeIds: ["1:1"], groupNodeIds: ["1:1"], remoteText: "Pay securely" }])
     expect(planToRequests(plan)).toEqual([])
     expect(planPullApplies(plan)).toEqual([{ nodeId: "1:1", text: "Pay securely", src: src("Pay securely") }])
   })
@@ -292,6 +292,7 @@ describe("rule 5: pulls", () => {
     ]
     const { plan } = setup(nodes, { remote: [[K1, remoteState("k", "Pay securely")]] })
     expect(plan.pulls[0].nodeIds).toEqual(["I1:1;5:67", "8:1"])
+    expect(plan.pulls[0].groupNodeIds).toEqual(["I1:1;5:67", "I1:2;5:67", "I1:3;8:1", "8:1"])
   })
 })
 
