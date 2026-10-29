@@ -1,5 +1,5 @@
 import type { FigmaScreenshot } from "../../shared/api-types"
-import { REFRESH_REQUESTS_MAX, REFRESH_REQUESTS_PAGE_SIZE } from "../../shared/constants"
+import { REFRESH_REQUESTS_MAX } from "../../shared/constants"
 import type { NodeError } from "../../shared/messages"
 import { buildPushPlan } from "../../shared/push-plan"
 import { computeSyncState } from "../../shared/sync-state"
@@ -12,6 +12,7 @@ import { executePulls, pullChanges } from "./push"
 import { linkedKeyIds, loadRemoteStates } from "./remote"
 import {
   emptyScreenshotRun,
+  listFileScreenshots,
   progressText,
   screenshotFreshness,
   screenshotGate,
@@ -77,22 +78,12 @@ export function refreshGate(input: Omit<ScreenshotGateInput, "pref">): RefreshGa
 // screenshots with a request are kept.
 export async function loadRefreshRequests(api: Pick<FigmaApi, "screenshots">, projectId: string, fileKey: string): Promise<RefreshRequest[]> {
   const requests: RefreshRequest[] = []
-  let cursor: string | null = null
-  let listed = 0
-  do {
-    const page = await api.screenshots(projectId, { file_key: fileKey, refresh_requested: true, cursor, limit: REFRESH_REQUESTS_PAGE_SIZE })
-    for (const screenshot of Array.isArray(page.screenshots) ? page.screenshots : []) {
-      if (listed >= REFRESH_REQUESTS_MAX) {
-        break
-      }
-      listed++
-      const request = screenshot.file_key === fileKey ? refreshRequestOf(screenshot) : null
-      if (request !== null) {
-        requests.push(request)
-      }
+  await listFileScreenshots(api, projectId, fileKey, { refreshRequested: true, max: REFRESH_REQUESTS_MAX }, (screenshot) => {
+    const request = screenshot.file_key === fileKey ? refreshRequestOf(screenshot) : null
+    if (request !== null) {
+      requests.push(request)
     }
-    cursor = page.has_more === true && typeof page.next_cursor === "string" && page.next_cursor !== "" ? page.next_cursor : null
-  } while (cursor !== null && listed < REFRESH_REQUESTS_MAX)
+  })
   return requests
 }
 

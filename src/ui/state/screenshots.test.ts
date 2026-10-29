@@ -355,11 +355,12 @@ describe("requestFrameImage (screenshots-export, one frame per request)", () => 
 })
 
 describe("uploadErrorAction (§7.16, §7.20, Appendix B.1)", () => {
-  it("waits Retry-After (at most 60 s) on 429, twice, then stops", () => {
+  it("waits Retry-After (at most 60 s) on 429, up to five times in a row, then stops", () => {
     expect(uploadErrorAction(new ApiError(429, null, "slow down", 30), 0)).toEqual({ kind: "retry", waitMs: 30000 })
     expect(uploadErrorAction(new ApiError(429, null, "slow down", 600), 1)).toEqual({ kind: "retry", waitMs: 60000 })
     expect(uploadErrorAction(new ApiError(429, null, "slow down"), 0)).toEqual({ kind: "retry", waitMs: 5000 })
-    expect(uploadErrorAction(new ApiError(429, null, "slow down", 30), 2)).toEqual({ kind: "stop", stop: "rate_limited", message: RATE_LIMIT_MESSAGE })
+    expect(uploadErrorAction(new ApiError(429, null, "slow down", 30), 4)).toEqual({ kind: "retry", waitMs: 30000 })
+    expect(uploadErrorAction(new ApiError(429, null, "slow down", 30), 5)).toEqual({ kind: "stop", stop: "rate_limited", message: RATE_LIMIT_MESSAGE })
   })
 
   it("stops on 503, on a 403 without a reason and on 401", () => {
@@ -373,12 +374,14 @@ describe("uploadErrorAction (§7.16, §7.20, Appendix B.1)", () => {
     expect(uploadErrorAction(new ApiError(401, "plugin_token_invalid", "x"), 0)).toEqual({ kind: "stop", stop: "signed_out", message: null })
   })
 
-  it("fails only the frame otherwise, with the Appendix B.1 text", () => {
-    expect(uploadErrorAction(new ApiError(403, "screenshot_limit_reached", "x"), 0)).toEqual({ kind: "frame", message: REASON_MESSAGES.screenshot_limit_reached })
-    expect(uploadErrorAction(new ApiError(502, "design_storage_failed", "x"), 0)).toEqual({ kind: "frame", message: "Screenshot upload failed. It will be retried on the next push." })
-    expect(uploadErrorAction(new ApiError(400, "invalid_image", "x"), 0)).toEqual({ kind: "frame", message: "This frame image couldn't be uploaded." })
-    expect(uploadErrorAction(new ApiError(0, "network", "x"), 0)).toEqual({ kind: "frame", message: "Can't reach ReRune. Check your connection." })
-    expect(uploadErrorAction(new Error("odd"), 0)).toEqual({ kind: "frame", message: "odd" })
+  it("fails only the frame otherwise, with the Appendix B.1 text; for good when ReRune refused the image or the limit is reached", () => {
+    expect(uploadErrorAction(new ApiError(403, "screenshot_limit_reached", "x"), 0)).toEqual({ kind: "frame", message: REASON_MESSAGES.screenshot_limit_reached, lasting: true })
+    expect(uploadErrorAction(new ApiError(502, "design_storage_failed", "x"), 0)).toEqual({ kind: "frame", message: "Screenshot upload failed. It will be retried on the next push.", lasting: false })
+    expect(uploadErrorAction(new ApiError(400, "invalid_image", "x"), 0)).toEqual({ kind: "frame", message: "This frame image couldn't be uploaded.", lasting: true })
+    expect(uploadErrorAction(new ApiError(413, null, "Request body too large"), 0)).toMatchObject({ kind: "frame", lasting: true })
+    expect(uploadErrorAction(new ApiError(400, null, "invalid meta"), 0)).toMatchObject({ kind: "frame", lasting: false })
+    expect(uploadErrorAction(new ApiError(0, "network", "x"), 0)).toEqual({ kind: "frame", message: "Can't reach ReRune. Check your connection.", lasting: false })
+    expect(uploadErrorAction(new Error("odd"), 0)).toEqual({ kind: "frame", message: "odd", lasting: false })
   })
 })
 
@@ -426,7 +429,7 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
     const progress: number[] = []
     const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: false, onProgress: (state) => progress.push(state.done) })
     expect(fake.log).toEqual(["export 10:1", "export 11:1", "upload 10:1", "export 12:1", "upload 11:1", "upload 12:1"])
-    expect(run).toEqual({ ...emptyScreenshotRun(3), done: 3, uploaded: 3 })
+    expect(run).toEqual({ ...emptyScreenshotRun(3), done: 3, uploaded: 3, uploadedFrameIds: ["10:1", "11:1", "12:1"] })
     expect(progress).toEqual([0, 1, 2, 3, 3])
     expect(fake.uploads[0]).toEqual({
       image: IMAGE.bytes,
@@ -513,15 +516,63 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
     expect(run.stopped).toBeNull()
     expect(run.done).toBe(6)
     expect(run.uploaded).toBe(0)
+    // `lasting`: trying again won't help (a push leaves such frames out for the rest of the session).
     expect(run.problems).toEqual([
       { frameId: "10:1", frameName: "Checkout", message: SKIP_MESSAGES.preview_active },
-      { frameId: "11:1", frameName: "Cart", message: TOO_LARGE_MESSAGE },
+      { frameId: "11:1", frameName: "Cart", message: TOO_LARGE_MESSAGE, lasting: true },
       { frameId: "12:1", frameName: "Done", message: "Screenshot upload failed. It will be retried on the next push." },
-      { frameId: "13:1", frameName: "Paid", message: "This project reached its screenshot limit. Contact support." },
-      { frameId: "14:1", frameName: "Huge", message: "This frame image couldn't be uploaded." },
+      { frameId: "13:1", frameName: "Paid", message: "This project reached its screenshot limit. Contact support.", lasting: true },
+      { frameId: "14:1", frameName: "Huge", message: "This frame image couldn't be uploaded.", lasting: true },
       { frameId: "15:1", frameName: "Broken", message: SKIP_MESSAGES.export_failed },
     ])
     expect(fake.deps.upload).toHaveBeenCalledTimes(2)
+  })
+
+  it("marks the export skips that trying again won't fix as lasting", async () => {
+    const reasons = ["no_bounds", "too_large", "not_found", "preview_active", "hidden", "export_failed"] as const
+    const fake = deps({ exportFrame: vi.fn(async (frameId: string): Promise<FrameExportResult> => ({ kind: "skipped", reason: reasons[Number(frameId.split(":")[0]) - 10] })) })
+    const frames = reasons.map((reason, i): ScreenshotFrame => ({ frameId: 10 + i + ":1", frameName: reason }))
+    const run = await uploadScreenshots(fake.deps, frames, { fileKey: FILE_KEY, freshness: false })
+    expect(run.problems.map((problem) => [problem.frameName, problem.lasting === true])).toEqual([
+      ["no_bounds", true],
+      ["too_large", true],
+      ["not_found", true],
+      ["preview_active", false],
+      ["hidden", false],
+      ["export_failed", false],
+    ])
+  })
+
+  it("after the project's screenshot limit, leaves out the rest of the frames without a screenshot and goes on with the others", async () => {
+    let limit = false
+    const fake = deps({
+      upload: vi.fn(async (upload: ScreenshotUpload) => {
+        fake.log.push("upload " + upload.meta.frame_id)
+        // 11:1 would add a screenshot past the limit; 12:1 replaces one, which adds none.
+        if (upload.meta.frame_id === "11:1") {
+          limit = true
+        }
+        if (limit && upload.meta.frame_id !== "12:1") {
+          throw new ApiError(403, "screenshot_limit_reached", "This project reached its screenshot limit")
+        }
+        return uploaded()
+      }),
+    })
+    const frames = [...FRAMES, { frameId: "13:1", frameName: "Paid" }, { frameId: "14:1", frameName: "Receipt" }]
+    const run = await uploadScreenshots(fake.deps, frames, { fileKey: FILE_KEY, freshness: false, newFrameIds: new Set(["11:1", "13:1", "14:1"]) })
+    expect(run).toMatchObject({ done: 5, uploaded: 2, uploadedFrameIds: ["10:1", "12:1"], stopped: null })
+    expect(run.problems).toEqual([
+      { frameId: "11:1", frameName: "Cart", message: REASON_MESSAGES.screenshot_limit_reached, lasting: true },
+      { frameId: "13:1", frameName: "Paid", message: REASON_MESSAGES.screenshot_limit_reached, lasting: true },
+      { frameId: "14:1", frameName: "Receipt", message: REASON_MESSAGES.screenshot_limit_reached, lasting: true },
+    ])
+    // 13:1 and 14:1 were neither exported nor sent.
+    expect(fake.log).toEqual(["export 10:1", "export 11:1", "upload 10:1", "export 12:1", "upload 11:1", "upload 12:1"])
+    // Without newFrameIds (a pull, Overwrite), every frame is still tried.
+    limit = false
+    const every = await uploadScreenshots(deps({ upload: fake.deps.upload }).deps, frames, { fileKey: FILE_KEY, freshness: false })
+    expect(every.problems).toHaveLength(3)
+    expect(fake.deps.upload).toHaveBeenCalledTimes(3 + 5)
   })
 
   it("honours 429 Retry-After and tries the frame again", async () => {
@@ -541,12 +592,53 @@ describe("uploadScreenshots (the upload queue, §7.16)", () => {
     expect(run).toMatchObject({ uploaded: 2, problems: [], stopped: null })
   })
 
-  it("stops after repeated 429s and counts what was left", async () => {
+  it("stops after five 429s in a row on one frame and counts what was left", async () => {
     const fake = deps({ upload: vi.fn(async () => Promise.reject(new ApiError(429, null, "slow down", 60))) })
     const run = await uploadScreenshots(fake.deps, FRAMES, { fileKey: FILE_KEY, freshness: false })
-    expect(fake.deps.upload).toHaveBeenCalledTimes(3)
-    expect(slept(fake.deps)).toBe(120000)
-    expect(run).toMatchObject({ stopped: "rate_limited", stopMessage: RATE_LIMIT_MESSAGE, notUploaded: 3, done: 0 })
+    expect(fake.deps.upload).toHaveBeenCalledTimes(6)
+    expect(slept(fake.deps)).toBe(300000)
+    expect(run).toMatchObject({ stopped: "rate_limited", stopMessage: RATE_LIMIT_MESSAGE, notUploaded: 3, done: 0, uploadedFrameIds: [], waiting: false })
+  })
+
+  it("goes on past ReRune's upload limit (60 a minute per user) on a large first upload: it waits on 429, then sends the same frame", async () => {
+    // The server's limiter: a fixed window from its first request, 60 requests in it, then 429 with Retry-After: 60 until
+    // more than a minute has passed. Each upload takes 0.5 s; the clock moves with the uploads and the waits.
+    let now = 0
+    let windowStart = -Infinity
+    let count = 0
+    const sent: string[] = []
+    const progress: { done: number; waiting: boolean }[] = []
+    const fake = deps({
+      upload: vi.fn(async (upload: ScreenshotUpload) => {
+        now += 500
+        if (now - windowStart > 60000) {
+          windowStart = now
+          count = 0
+        }
+        if (count >= 60) {
+          throw new ApiError(429, null, "Too many requests. Please try again later.", 60)
+        }
+        count++
+        sent.push(upload.meta.frame_id)
+        return uploaded()
+      }),
+      sleep: vi.fn(async (ms: number) => {
+        now += ms
+      }),
+    })
+    const frames = Array.from({ length: 80 }, (_, i): ScreenshotFrame => ({ frameId: "20:" + i, frameName: "Screen " + i }))
+    const run = await uploadScreenshots(fake.deps, frames, { fileKey: FILE_KEY, freshness: false, onProgress: (state) => progress.push({ done: state.done, waiting: state.waiting }) })
+    expect(run).toMatchObject({ total: 80, done: 80, uploaded: 80, problems: [], stopped: null, notUploaded: 0, waiting: false })
+    // Each frame once, in order: the frame that met the limit went again after the wait.
+    expect(sent).toEqual(frames.map((frame) => frame.frameId))
+    expect(run.uploadedFrameIds).toEqual(frames.map((frame) => frame.frameId))
+    expect(fake.deps.upload).toHaveBeenCalledTimes(81)
+    expect(slept(fake.deps)).toBe(60000)
+    // The progress says why it waits on frame 61, then goes on.
+    const waits = progress.filter((entry) => entry.waiting)
+    expect(waits).toEqual([{ done: 60, waiting: true }])
+    expect(progressText({ ...emptyScreenshotRun(80), done: 60, waiting: true })).toBe("Uploading screenshots… 61 of 80. Waiting for ReRune's upload limit, then going on…")
+    expect(progressText({ ...emptyScreenshotRun(80), done: 11 })).toBe("Uploading screenshots… 12 of 80")
   })
 
   it("ends a 429 wait when the designer presses Stop, without sending the frame again", async () => {

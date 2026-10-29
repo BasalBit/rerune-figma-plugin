@@ -4,8 +4,9 @@
 // copy a frame while another task previews it. The task holding the lock keeps the tabs and Change project put; a
 // task that cannot take it does not start. "refresh" is Update screenshots (screenshot freshness): it starts from the
 // notices of any tab, so the tabs whose own actions do not take the lock (Layers, Push) wait for it explicitly.
+// "upload" is Upload screenshots on Push (frames with linked keys but no screenshot yet).
 
-export type WorkTask = "push" | "preview" | "pseudo" | "report" | "copies" | "refresh"
+export type WorkTask = "push" | "upload" | "preview" | "pseudo" | "report" | "copies" | "refresh"
 
 export interface WorkLock {
   // Takes the lock for this task; false (and nothing changes) while any task holds it.
@@ -41,6 +42,7 @@ export function createWorkLock(onChange: (holder: WorkTask | null) => void = () 
 // The title of a tab the lock keeps closed: what the user waits for.
 const WAIT_TEXTS: Record<WorkTask, string> = {
   push: "Wait for the push to finish",
+  upload: "Wait for the screenshots to be uploaded",
   preview: "Wait for the preview to be applied",
   pseudo: "Wait for pseudo-localization to finish",
   report: "Wait for the overflow report to finish",

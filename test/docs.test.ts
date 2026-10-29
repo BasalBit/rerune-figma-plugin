@@ -35,6 +35,8 @@ import testing from "../TESTING.md?raw"
 import listing from "../COMMUNITY_LISTING.md?raw"
 import pushState from "../src/ui/state/push.ts?raw"
 import projectWatchState from "../src/ui/state/project-watch.ts?raw"
+import changelog from "../CHANGELOG.md?raw"
+import missingState from "../src/ui/state/missing-screenshots.ts?raw"
 import { snippetLines } from "../src/codegen/snippets"
 
 // README and TESTING.md must match what the build and the plugin actually do (P1.5: "present and accurate").
@@ -334,7 +336,7 @@ describe("TESTING.md", () => {
   })
 
   it("names the screenshot toggle, notes and results the plugin shows (P2.3)", () => {
-    for (const label of ["Upload screenshots of changed frames", "Screenshots not uploaded", "Stop", "Uploading screenshots…"]) {
+    for (const label of ["Upload frame screenshots", "Screenshots not uploaded", "Stop", "Uploading screenshots…"]) {
       expect([settingsScreen, pushScreen, screenshotState, screenshotStatus].join("\n")).toContain(label)
       expect(testing).toContain(label)
     }
@@ -345,7 +347,39 @@ describe("TESTING.md", () => {
     }
     const preview = screenshotState.match(/preview_active: "([^"]+)"/)
     expect(testing).toContain(preview?.[1] ?? "missing")
-    expect(readme).toContain("Upload screenshots of changed frames")
+    expect(readme).toContain("Upload frame screenshots")
+  })
+
+  it("names the note, action and progress for frames with linked keys but no screenshot yet, as the plugin shows them", () => {
+    const constant = (source: string, name: string) => source.match(new RegExp("export const " + name + ' = "([^"]+)"'))?.[1] ?? "missing " + name
+    const wait = constant(screenshotState, "RATE_LIMIT_WAIT_TEXT")
+    // missingLine's parts (its exact output is checked in missing-screenshots.test.ts).
+    for (const part of ['"frame with linked keys has", "frames with linked keys have"', '" no screenshot in ReRune yet."', '" Push uploads it too."', '" Push uploads them too."']) {
+      expect(missingState).toContain(part)
+    }
+    const check = testing.split("\n").find((line) => line.startsWith("- [ ] **First push on a new project uploads screenshots of linked frames:**")) ?? ""
+    expect(testing.indexOf(check)).toBeGreaterThan(testing.indexOf("### 5.3 Screenshots"))
+    expect(testing.indexOf(check)).toBeLessThan(testing.indexOf("### 5.4 Dashboard"))
+    const lines = [
+      "3 frames with linked keys have no screenshot in ReRune yet.",
+      "1 frame with linked keys has no screenshot in ReRune yet.",
+      "1 frame with linked keys has no screenshot in ReRune yet. Push uploads it too.",
+      wait,
+      "Uploading screenshots… 1 of 3",
+      "Upload screenshots**",
+      "**Stop**",
+    ]
+    for (const line of lines) {
+      expect(check, line).toContain(line)
+    }
+    expect(pushScreen).toContain("Upload screenshots\n")
+    expect(constant(missingState, "NONE_MISSING")).toBe("Every frame with linked keys here has a screenshot in ReRune now.")
+    for (const doc of [readme, changelog]) {
+      expect(doc).toContain("3 frames with linked keys have no screenshot in ReRune yet.")
+      expect(doc).toContain("**Upload screenshots**")
+      expect(doc).toContain(wait)
+    }
+    expect(readme).toContain("`GET …/screenshots?file_key=…`")
   })
 
   it("names the screenshot requests' notice, actions and results (screenshot freshness)", () => {

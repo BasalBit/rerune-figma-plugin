@@ -22,7 +22,7 @@ import { LinkDialog } from "./screens/link-dialog"
 import { PairingScreen } from "./screens/pairing"
 import { ProjectScreen } from "./screens/project-picker"
 import { PreviewScreen } from "./screens/preview"
-import { PushScreen } from "./screens/push"
+import { PushScreen, type PushTask } from "./screens/push"
 import { NEW_QA_SESSION, QaScreen, type QaSession } from "./screens/qa"
 import { SettingsOfferNote, SettingsScreen } from "./screens/settings"
 import { SignInScreen } from "./screens/sign-in"
@@ -40,6 +40,7 @@ import {
 } from "./state/navigation"
 import { fileLinkNotice, registerFile, saveAndRegisterFile, type FileLinkAction } from "./state/file-link"
 import { AUTO_SYNC_RUNNING, autoPageSyncNote, createLinkSyncer, createPageSync, linkSyncWarning } from "./state/link-sync"
+import { createFailedFrames } from "./state/missing-screenshots"
 import { createScanRunner, groupErrors, layerCount, LONG_OP_IDLE_MS, runOp, singleFlight, type ErrorGroup } from "./state/ops"
 import { createPairingFlow, type PairingFlow, type PairingState } from "./state/pairing"
 import { leftoverPreviewNotice, previewStatus, resetOutcome } from "./state/preview"
@@ -151,12 +152,12 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
     setView((current) => navigate(current, event, contextRef.current))
   }
 
-  // The Push screen reports its runs as busy / not busy.
-  function pushBusy(busy: boolean) {
+  // The Push screen reports its runs as busy / not busy: a push or pull, or Upload screenshots.
+  function pushBusy(busy: boolean, task: PushTask) {
     if (busy) {
-      workLock.acquire("push")
+      workLock.acquire(task)
     } else {
-      workLock.release("push")
+      workLock.release(task)
     }
   }
 
@@ -377,6 +378,9 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
   const refreshState = useStore(refreshRequests.store)
   // Push, pull, Overwrite and Take ReRune text: their uploads clear requests, so the requests are read again after each.
   const pushUploader = useMemo(() => refetchAfterUpload(screenshotUploader, () => refreshRequests.fetch()), [])
+  // Frames whose upload failed for a lasting reason (too large, the project's screenshot limit, …): pushes leave them
+  // out for the rest of the session, so they aren't exported and sent again for the same answer (missing-screenshots.ts).
+  const failedShots = useMemo(() => createFailedFrames(), [])
   useEffect(() => {
     if (auth !== null && project !== null) {
       void refreshRequests.fetch()
@@ -985,10 +989,11 @@ function DesignApp(props: { bus: UiBus; init: Init }) {
               if (current !== null) setActiveProject({ ...current, available_keys: availableKeys })
             }}
             onBusy={pushBusy}
-            locked={workTask !== null && workTask !== "push"}
+            locked={workTask !== null && workTask !== "push" && workTask !== "upload"}
             fileKey={pushFileKey(usable, rootName)}
             syncLinks={(nodeIds) => linkSyncer.syncNodes(nodeIds, knownNodes())}
             screenshots={pushUploader}
+            failedShots={failedShots}
           />
         )}
         {screen === "preview" && (

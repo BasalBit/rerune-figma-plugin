@@ -1,18 +1,19 @@
 import { h } from "preact"
-import { groupProblems, progressText, screenshotSummary, type ScreenshotRun } from "../state/screenshots"
+import { CHECKING_SHOTS_TEXT, groupProblems, progressText, screenshotSummary, type ScreenshotRun, type ShotsState } from "../state/screenshots"
 import { Note, plural, SectionTitle, Small, styles, TextButton } from "./ui"
 
-// A screenshot upload run (§7.16): progress with Stop, then the summary and the frames that weren't uploaded. Shown
-// after a push or pull (Push) and after Update screenshots (the notices).
+// A screenshot upload run (§7.16): the check of which frames have a screenshot and the progress, each with Stop, then
+// the summary and the frames that weren't uploaded. Shown after a push or pull and with Upload screenshots (Push), and
+// after Update screenshots (the notices).
 
-export type ShotsState = { kind: "running"; run: ScreenshotRun } | { kind: "done"; run: ScreenshotRun } | { kind: "unavailable"; message: string }
+export type { ShotsState }
 
 export function ScreenshotStatus(props: { state: ShotsState; stopping: boolean; onStop(): void; onSelect(nodeIds: string[]): void }) {
   const { state } = props
   if (state.kind === "unavailable") {
     return <Note tone="warning">Screenshots weren't uploaded: {state.message}</Note>
   }
-  if (state.kind === "running") {
+  if (state.kind === "running" || state.kind === "checking") {
     return (
       <Note
         tone="rerune"
@@ -22,7 +23,7 @@ export function ScreenshotStatus(props: { state: ShotsState; stopping: boolean; 
           </TextButton>
         }
       >
-        {progressText(state.run)}
+        {state.kind === "checking" ? CHECKING_SHOTS_TEXT : progressText(state.run)}
       </Note>
     )
   }

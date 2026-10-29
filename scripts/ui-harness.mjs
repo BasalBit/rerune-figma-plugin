@@ -160,7 +160,15 @@ window.addEventListener("message", (event) => {
       reply({ type: "overflow-result", requestId: message.requestId, items })
       break
     }
-    case "screenshots-export": reply({ type: "frame-images-done", requestId: message.requestId, exported: 0, skipped: [] }); break
+    case "screenshots-export": {
+      // SC.exportFrames: each frame exports as a tiny PNG (its decoded size is used); otherwise nothing is exported.
+      const png = SC.exportFrames ? Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0)) : null
+      for (const frameId of png ? message.frameIds : []) {
+        reply({ type: "frame-image", requestId: message.requestId, frameId, frameName: "Frame " + frameId, pageId: "0:1", pageName: "Mobile", format: "PNG", bytes: png, width: 1, height: 1, boxes: [] })
+      }
+      reply({ type: "frame-images-done", requestId: message.requestId, exported: png ? message.frameIds.length : 0, skipped: [] })
+      break
+    }
     default: break
   }
 })
@@ -184,6 +192,12 @@ const LAYERS = [
 const REMOTE_MAIN = { [K(1)]: "Pay now", [K(2)]: "Total due", [K(3)]: "Checkout", [K(4)]: "Nothing in your cart yet", [K(5)]: "Have a promo code?", [K(6)]: "Arrives in 2–3 days" }
 
 const CLEAN_LAYERS = LAYERS.filter((layer) => ["1:1", "1:3", "1:5"].includes(layer.id))
+// A new project: every layer linked to a key with the same text (Link exact matches), in two frames, none with a
+// screenshot in ReRune yet.
+const LINKED_LAYERS = [
+  ...LAYERS.filter((layer) => ["1:1", "1:4"].includes(layer.id)),
+  { id: "2:2", text: "Have a promo code?", linked: true, keyId: K(5), keyName: "cart_promo_label", linkedText: "Have a promo code?", extra: { frameId: "20:1", frameName: "Cart", name: "Promo" } },
+]
 // The project after German was removed in ReRune (Austrian German no longer inherits from it).
 const WITHOUT_DE = { ...project, languages: languages.filter((language) => language.code !== "de").map((language) => ({ ...language, inherits_from: [] })) }
 // The background reads keep 15 s between rounds when the window gets focus (REQUEST_ATTENTION_MIN_MS, request-watch.ts).
@@ -214,6 +228,24 @@ export const SCENARIOS = {
       await h.scanPage(); await h.tab("Push"); await h.text("Changed in both", 8000); await h.checkFirst("Include in push")
       await h.later(); await h.text("ReRune has new changes.", 8000); await h.wait(300)
     },
+  },
+  // Frames with linked keys but no screenshot in ReRune yet: nothing to push, so Upload screenshots (a), which uploads
+  // them (b); with a change to push, the push uploads them too (c).
+  "06d-push-missing-screenshots": {
+    ...base,
+    nodes: LINKED_LAYERS,
+    meta: { screenshots_enabled: true, screenshot_freshness: true },
+    exportFrames: true,
+    steps: async (h) => {
+      await h.scanPage(); await h.tab("Push"); await h.text("have no screenshot in ReRune yet", 8000); await h.wait(300); await h.shot()
+      await h.button("Upload screenshots"); await h.text("screenshots uploaded", 8000); await h.wait(300); await h.shot("uploaded")
+    },
+  },
+  "06e-push-missing-with-push": {
+    ...base,
+    nodes: [...LINKED_LAYERS, LAYERS.find((layer) => layer.id === "1:3")],
+    meta: { screenshots_enabled: true, screenshot_freshness: true },
+    steps: async (h) => { await h.scanPage(); await h.tab("Push"); await h.text("Push uploads them too.", 8000); await h.wait(300) },
   },
   "07-push-results": {
     ...base,
@@ -364,7 +396,11 @@ async function mockApi(page, scenario, errors, live) {
     if (path.endsWith("/files")) return json(200, { files: [] })
     if (path.endsWith("/links") && request.method() === "PUT") return json(200, { upserted: body?.upserts?.length ?? 0, removed: 0, rejected: [] })
     if (path.endsWith("/links")) return json(200, { links: [], next_cursor: null, has_more: false })
+    if (path.endsWith("/screenshots") && request.method() === "POST") {
+      return json(200, { screenshot: { id: "6a5" + "f".repeat(21), outdated_box_count: 0, refresh_requested_at: null }, unchanged_image: false, dropped_boxes: [] })
+    }
     if (path.endsWith("/screenshots") && request.method() === "GET") {
+      // A requested frame has a screenshot: the list without the filter (Push) has them too.
       const screenshots = scenario.requests.map((r, index) => ({ id: "6a5" + String(index).padStart(21, "0"), file_key: settings.fileKey, frame_id: r.frame, frame_name: r.name, page_id: "0:1", page_name: "Mobile", content_type: "image/png", width: 375, height: 812, size_bytes: 1000, boxes: [], image_url: null, image_url_expires_at: null, figma_url: null, created_at: "2026-10-20T09:00:00Z", updated_at: "2026-10-20T09:00:00Z", outdated_box_count: 2, refresh_requested_at: "2026-10-29T08:12:00Z", refresh_requested_by: { id: "u2", name: "Lena Schmidt" } }))
       return json(200, { screenshots, next_cursor: null, has_more: false })
     }

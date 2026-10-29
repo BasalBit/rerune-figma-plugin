@@ -5,14 +5,15 @@ import { scannedNode } from "../../../test/fixtures"
 import { applyDecision, buildPushPlan, type PlanContext, type PlanCreate, type PlanDecision, type PushPlan } from "../../shared/push-plan"
 import pushSource from "./push.tsx?raw"
 import { Note } from "../components/ui"
-import { CreateCard, NewTextHeader, resultSummary } from "./push"
+import { CreateCard, MissingNote, NewTextHeader, resultSummary } from "./push"
 
 // The New text header's Select all on the Push tab: ticked, partly ticked or not, one decision for every new text, and
 // off, with every other choice in the plan, while Update layers from ReRune runs.
 
 // The Create Figma Plugin components bring their CSS, which the node environment cannot load.
 vi.mock("@create-figma-plugin/ui", () => ({
-  Button: (props: { children: ComponentChildren }) => h("button", null, props.children),
+  Button: (props: { children: ComponentChildren; disabled?: boolean; loading?: boolean; onClick?: () => void }) =>
+    h("button", { disabled: props.disabled, "data-loading": props.loading, onClick: props.onClick }, props.children),
   LoadingIndicator: () => null,
   SegmentedControl: () => null,
   Text: (props: { children: ComponentChildren }) => h("span", null, props.children),
@@ -199,5 +200,46 @@ describe("Push results: the summary's postmark", () => {
     const results = pushSource.slice(pushSource.indexOf("function Results("), pushSource.indexOf("{linkSyncWarning(run.linkSync)"))
     expect(results).toContain("const summary = resultSummary(run, props.resolved)")
     expect(results).toContain("<Note tone={summary.tone} postmark={summary.postmark}>")
+  })
+})
+
+describe("Push: frames with linked keys but no screenshot in ReRune yet", () => {
+  function note(props: { count: number; pushable: boolean; disabled?: boolean; loading?: boolean }) {
+    const onUpload = vi.fn()
+    const tree = render(h(MissingNote, { disabled: false, loading: false, ...props, onUpload }))
+    return { tree, onUpload, buttons: find(tree, "button") }
+  }
+
+  it("counts them before anything starts, with Upload screenshots when there is nothing else to push", () => {
+    const shown = note({ count: 3, pushable: false })
+    expect(text(shown.tree)).toBe("3 frames with linked keys have no screenshot in ReRune yet.Upload screenshots")
+    expect(shown.buttons).toHaveLength(1)
+    expect(shown.buttons[0].props).toMatchObject({ disabled: false, "data-loading": false })
+    ;(shown.buttons[0].props.onClick as () => void)()
+    expect(shown.onUpload).toHaveBeenCalledTimes(1)
+    expect(text(note({ count: 1, pushable: false }).tree)).toBe("1 frame with linked keys has no screenshot in ReRune yet.Upload screenshots")
+  })
+
+  it("says the push uploads them when there is something to push, without a button of its own", () => {
+    const shown = note({ count: 2, pushable: true })
+    expect(text(shown.tree)).toBe("2 frames with linked keys have no screenshot in ReRune yet. Push uploads them too.")
+    expect(shown.buttons).toHaveLength(0)
+  })
+
+  it("waits while a task runs or a layer shows a preview, and shows the run starting", () => {
+    expect(note({ count: 2, pushable: false, disabled: true }).buttons[0].props.disabled).toBe(true)
+    expect(note({ count: 2, pushable: false, loading: true }).buttons[0].props["data-loading"]).toBe(true)
+    const screen = screenSource()
+    expect(screen).toContain("{missing.length > 0 && (")
+    expect(screen).toContain("disabled={busy || plan.blockedByPreview.length > 0}")
+    expect(screen).toContain("loading={sending}")
+    expect(screen).toContain("onUpload={() => void uploadMissing()}")
+    // The note sits under the plan's summary ("Everything in scope matches ReRune. Nothing to push.") and hides while an
+    // upload runs (noteFrames, tested in missing-screenshots.test.ts); the run's check, progress with Stop, and its
+    // result show under it, and why Upload screenshots uploaded nothing.
+    expect(screen.indexOf("<Summary plan={plan} />")).toBeLessThan(screen.indexOf("<MissingNote"))
+    expect(screen).toContain("const missing = useMemo(() => (prepared === null ? [] : shotsCtl.noteFrames(prepared, submittable)), [prepared, stored, shots, submittable])")
+    expect(screen).toContain("{pulled === null && shots !== null && <ScreenshotStatus state={shots} stopping={stopping} onStop={stopScreenshots} onSelect={props.onSelect} />}")
+    expect(screen).toContain("{uploadNote !== null && <Note tone={uploadNote.tone}>{uploadNote.text}</Note>}")
   })
 })

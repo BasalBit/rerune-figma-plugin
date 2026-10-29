@@ -1,4 +1,13 @@
-import type { FigmaMetaResponse, FigmaScreenshotBox, FigmaScreenshotContentType, FigmaScreenshotMeta, FigmaScreenshotUploadResponse, FigmaUser } from "../../shared/api-types"
+import type {
+  FigmaMetaResponse,
+  FigmaScreenshot,
+  FigmaScreenshotBox,
+  FigmaScreenshotContentType,
+  FigmaScreenshotMeta,
+  FigmaScreenshotsQuery,
+  FigmaScreenshotUploadResponse,
+  FigmaUser,
+} from "../../shared/api-types"
 import {
   MAX_IMAGE_SIDE,
   MAX_IMAGE_UPLOAD_BYTES,
@@ -8,6 +17,7 @@ import {
   SCREENSHOT_NAME_MAX_RUNES,
   SCREENSHOT_RATE_LIMIT_RETRIES,
   SCREENSHOT_SIZE_TOLERANCE_PX,
+  SCREENSHOTS_PAGE_SIZE,
 } from "../../shared/constants"
 import { EDIT_KEYS_PERMISSION, syncPauseOf, type SyncPauseReason } from "../../shared/file-link"
 import type { Box, FileSettings, FrameSkipReason, MainToUiOf, ScannedNode } from "../../shared/messages"
@@ -20,8 +30,9 @@ import type { PixelSize } from "../image"
 import { BRANCH_MESSAGE } from "./file-link"
 
 // Screenshots of changed frames (§7.16, §7.13 rule 11, D4, D17, D43; after a push, Overwrite, Take ReRune text and
-// Update layers from ReRune, SF1): which frames to upload, whether uploads may run, the export through main one frame
-// at a time, and the sequential E19 upload queue.
+// Update layers from ReRune, SF1; frames with linked keys but no screenshot yet: missing-screenshots.ts): which frames
+// to upload, whether uploads may run, the export through main one frame at a time, the sequential E19 upload queue and
+// the E20 list of a file's screenshots.
 
 export type FrameImage = Omit<MainToUiOf<"frame-image">, "type" | "requestId">
 export type FrameExportResult = { kind: "image"; image: FrameImage } | { kind: "skipped"; reason: FrameSkipReason }
@@ -114,7 +125,7 @@ export type ScreenshotBlock = "sandbox" | "server_disabled" | "pref_off" | "unav
 export interface ScreenshotGate { enabled: boolean; reason: ScreenshotBlock | null; fileKey: string | null }
 
 export interface ScreenshotGateInput {
-  pref: boolean                      // Settings → "Upload screenshots of changed frames"
+  pref: boolean                      // Settings → "Upload frame screenshots"
   availability: Availability
   settings: FileSettings | null
   rootName: string
@@ -148,7 +159,7 @@ export function screenshotGate(input: ScreenshotGateInput): ScreenshotGate {
   return { enabled: true, reason: null, fileKey: input.settings.fileKey }
 }
 
-export const SCREENSHOTS_ON_HINT = "Screenshots of the frames you push or update from ReRune are uploaded to ReRune, so translators and developers see where each key is used."
+export const SCREENSHOTS_ON_HINT = "Screenshots of the frames you push or update from ReRune, and of frames with linked keys that have none in ReRune yet, are uploaded to ReRune, so translators and developers see where each key is used."
 export const SERVER_DISABLED_HINT = "Screenshots aren't available on this ReRune server."
 export const NO_FILE_HINT = "Screenshots upload once this file's Figma link is saved."
 export const COPY_HINT = "Screenshots wait until you confirm this file under Figma file."
@@ -188,6 +199,21 @@ export function screenshotSetting(gate: ScreenshotGate, availability: Availabili
 
 function unavailableHint(error: string): string {
   return "ReRune couldn't be asked about screenshots: " + error
+}
+
+export const SCREENSHOTS_OFF_TEXT = "Screenshots are off. Switch on \"Upload frame screenshots\" in Settings to upload them."
+export const SANDBOX_SHOTS_TEXT = "Sandbox accounts don't upload screenshots."
+
+// Why Upload screenshots uploaded nothing when the gate closed after the note showed (the setting was switched off,
+// the file was renamed into a suspected copy, …). Not for "unavailable": that run reports ReRune's error.
+export function closedGateText(gate: ScreenshotGate, availability: Availability): string {
+  if (gate.reason === "pref_off") {
+    return SCREENSHOTS_OFF_TEXT
+  }
+  if (gate.reason === "sandbox") {
+    return SANDBOX_SHOTS_TEXT
+  }
+  return screenshotSetting(gate, availability).hint ?? SERVER_DISABLED_HINT
 }
 
 export interface ScreenshotFrame { frameId: string; frameName: string }
@@ -302,6 +328,9 @@ export async function requestFrameImage(bus: Pick<UiBus, "request">, frameId: st
   return { kind: "skipped", reason: done.skipped.find((entry) => entry.frameId === frameId)?.reason ?? "export_failed" }
 }
 
+// Export skips that trying again won't fix: the frame is gone, has no size, or stays too large (see ScreenshotProblem).
+const LASTING_SKIPS: ReadonlySet<FrameSkipReason> = new Set(["not_found", "no_bounds", "too_large"])
+
 export const SKIP_MESSAGES: Record<FrameSkipReason, string> = {
   not_found: "The frame isn't in this file anymore.",
   no_bounds: "The frame has no size, so there is nothing to show.",
@@ -316,7 +345,10 @@ export const INVALID_IMAGE_MESSAGE = REASON_MESSAGES.invalid_image
 
 export type ScreenshotStop = "disabled" | "unavailable" | "forbidden" | "signed_out" | "rate_limited" | "unresponsive" | "cancelled"
 
-export interface ScreenshotProblem { frameId: string; frameName: string; message: string }
+// `lasting`: trying again won't upload the frame (it is too large or has no size, ReRune refused the image, or the
+// project reached its screenshot limit), so a push leaves the frame out of its automatic uploads for the rest of the
+// session (missing-screenshots.ts). Absent for problems a later try can fix (a preview, a network error).
+export interface ScreenshotProblem { frameId: string; frameName: string; message: string; lasting?: true }
 
 export interface ScreenshotRun {
   total: number
@@ -325,6 +357,8 @@ export interface ScreenshotRun {
   unchanged: number            // same bytes as the stored image: the server kept it and updated names and boxes
   droppedBoxes: number         // boxes E19 left out (key deleted, out of the image)
   outdated: number             // uploaded screenshots that still show text other than ReRune's (outdated_box_count > 0)
+  uploadedFrameIds: string[]   // the frames E19 answered 200 for, in upload order
+  waiting: boolean             // a 429's Retry-After wait is going on (ReRune's upload limit); the same frame goes next
   problems: ScreenshotProblem[]
   stopped: ScreenshotStop | null
   stopMessage: string | null   // null for a silent stop (screenshots switched off, signed out)
@@ -332,20 +366,35 @@ export interface ScreenshotRun {
 }
 
 export function emptyScreenshotRun(total: number): ScreenshotRun {
-  return { total, done: 0, uploaded: 0, unchanged: 0, droppedBoxes: 0, outdated: 0, problems: [], stopped: null, stopMessage: null, notUploaded: 0 }
+  return {
+    total,
+    done: 0,
+    uploaded: 0,
+    unchanged: 0,
+    droppedBoxes: 0,
+    outdated: 0,
+    uploadedFrameIds: [],
+    waiting: false,
+    problems: [],
+    stopped: null,
+    stopMessage: null,
+    notUploaded: 0,
+  }
 }
 
 export type UploadErrorAction =
   | { kind: "retry"; waitMs: number }
   | { kind: "stop"; stop: ScreenshotStop; message: string | null }
-  | { kind: "frame"; message: string }
+  | { kind: "frame"; message: string; lasting: boolean }
 
-// §7.16 / §7.20: 429 → wait Retry-After (≤ 60 s) and try the frame again (twice, then stop); 503 → stop (a
+// §7.16 / §7.20: 429 → wait Retry-After (≤ 60 s) and try the frame again (up to five times in a row, then stop), so a
+// large first upload goes on past ReRune's upload limit (60 a minute per user); 503 → stop (a
 // design_storage_disabled 503 switches screenshots off for the session, silently, Appendix B.1); 403 without a
-// reason (sandbox, or no edit_keys) → stop; 401 → stop (the client signs out); anything else fails this frame only.
+// reason (sandbox, or no edit_keys) → stop; 401 → stop (the client signs out); anything else fails this frame only,
+// for good (`lasting`) when ReRune refused the image (400 invalid_image, 413) or the project's screenshot limit is reached.
 export function uploadErrorAction(error: unknown, attempt: number): UploadErrorAction {
   if (!(error instanceof ApiError)) {
-    return { kind: "frame", message: userMessage(error) }
+    return { kind: "frame", message: userMessage(error), lasting: false }
   }
   if (error.status === 429) {
     if (attempt < SCREENSHOT_RATE_LIMIT_RETRIES) {
@@ -362,8 +411,12 @@ export function uploadErrorAction(error: unknown, attempt: number): UploadErrorA
   if (error.status === 401) {
     return { kind: "stop", stop: "signed_out", message: null }
   }
-  return { kind: "frame", message: userMessage(error) }
+  const lasting = error.status === 413 || error.reason === "invalid_image" || error.reason === SCREENSHOT_LIMIT_REASON
+  return { kind: "frame", message: userMessage(error), lasting }
 }
+
+// E19's 403 when the project or its billing account has as many screenshots (or bytes) as ReRune keeps (§5.4.6).
+export const SCREENSHOT_LIMIT_REASON = "screenshot_limit_reached"
 
 export interface ScreenshotDeps {
   exportFrame(frameId: string): Promise<FrameExportResult>
@@ -378,30 +431,40 @@ export interface ScreenshotRunOptions {
   freshness: boolean                          // E1 screenshot_freshness: send each box's text
   stopped?(): boolean                         // "Stop": checked before each upload and during a 429 wait
   onProgress?(run: ScreenshotRun): void
+  // Frames that have no screenshot in ReRune yet, each of which would add one: once E19 says the project reached its
+  // screenshot limit, the rest of them are left out (not exported or sent), with the same problem, while the other
+  // frames go on (replacing a screenshot adds none).
+  newFrameIds?: ReadonlySet<string>
 }
 
-// A 429 wait (up to 60 s, twice per frame) is slept in steps, so Stop ends the queue within a step.
+// A 429 wait (up to 60 s, up to five times in a row on one frame) is slept in steps, so Stop ends the queue within a step.
 export const STOP_POLL_MS = 250
 
 type Settled = { ok: true; result: FrameExportResult } | { ok: false; error: unknown }
 
-type FrameOutcome = { kind: "next" } | { kind: "stop"; stop: ScreenshotStop; message: string | null }
+// `limit`: E19's message when this frame met the project's screenshot limit.
+type FrameOutcome = { kind: "next"; limit?: string } | { kind: "stop"; stop: ScreenshotStop; message: string | null }
 
 // The upload queue (§7.16): frames in order, one export ahead of the upload (main exports the next frame while
 // this one uploads), one E19 request at a time. Uploads are never retried except after a 429.
 export async function uploadScreenshots(deps: ScreenshotDeps, frames: readonly ScreenshotFrame[], options: ScreenshotRunOptions): Promise<ScreenshotRun> {
   const run = emptyScreenshotRun(frames.length)
-  const progress = () => options.onProgress?.({ ...run, problems: run.problems.slice() })
+  const progress = () => options.onProgress?.({ ...run, uploadedFrameIds: run.uploadedFrameIds.slice(), problems: run.problems.slice() })
   const stopRun = (index: number, stop: ScreenshotStop, message: string | null) => {
     run.stopped = stop
     run.stopMessage = message
     run.notUploaded = frames.length - index
   }
+  // The project's screenshot limit was reached (E19's message): frames that would add a screenshot are left out.
+  let limit: string | null = null
+  const leftOut = (frame: ScreenshotFrame) => limit !== null && options.newFrameIds?.has(frame.frameId) === true
   const start = (frame: ScreenshotFrame): Promise<Settled> =>
-    deps.exportFrame(frame.frameId).then(
-      (result): Settled => ({ ok: true, result }),
-      (error: unknown): Settled => ({ ok: false, error }),
-    )
+    leftOut(frame)
+      ? Promise.resolve<Settled>({ ok: false, error: null })
+      : deps.exportFrame(frame.frameId).then(
+          (result): Settled => ({ ok: true, result }),
+          (error: unknown): Settled => ({ ok: false, error }),
+        )
 
   progress()
   let next: Promise<Settled> | null = frames.length > 0 ? start(frames[0]) : null
@@ -412,7 +475,16 @@ export async function uploadScreenshots(deps: ScreenshotDeps, frames: readonly S
       break
     }
     next = index + 1 < frames.length ? start(frames[index + 1]) : null
-    const outcome = await handleFrame(deps, frames[index], settled, run, options)
+    const frame = frames[index]
+    let outcome: FrameOutcome = { kind: "next" }
+    if (limit !== null && leftOut(frame)) {
+      run.problems.push({ frameId: frame.frameId, frameName: frame.frameName, message: limit, lasting: true })
+    } else {
+      outcome = await handleFrame(deps, frame, settled, run, options, progress)
+    }
+    if (outcome.kind === "next" && outcome.limit !== undefined) {
+      limit = outcome.limit
+    }
     if (outcome.kind === "stop") {
       if (outcome.stop === "disabled") {
         deps.onDisabled?.()
@@ -427,31 +499,42 @@ export async function uploadScreenshots(deps: ScreenshotDeps, frames: readonly S
   return run
 }
 
-async function handleFrame(deps: ScreenshotDeps, frame: ScreenshotFrame, settled: Settled, run: ScreenshotRun, options: ScreenshotRunOptions): Promise<FrameOutcome> {
-  const problem = (message: string, frameName = frame.frameName): FrameOutcome => {
-    run.problems.push({ frameId: frame.frameId, frameName, message })
+async function handleFrame(
+  deps: ScreenshotDeps,
+  frame: ScreenshotFrame,
+  settled: Settled,
+  run: ScreenshotRun,
+  options: ScreenshotRunOptions,
+  progress: () => void,
+): Promise<FrameOutcome> {
+  const problem = (message: string, frameName: string, lasting: boolean): FrameOutcome => {
+    const entry: ScreenshotProblem = { frameId: frame.frameId, frameName, message }
+    if (lasting) {
+      entry.lasting = true
+    }
+    run.problems.push(entry)
     return { kind: "next" }
   }
   if (!settled.ok) {
     if (settled.error instanceof RequestTimeoutError) {
       return { kind: "stop", stop: "unresponsive", message: settled.error.message }
     }
-    return problem(SKIP_MESSAGES.export_failed)
+    return problem(SKIP_MESSAGES.export_failed, frame.frameName, false)
   }
   if (settled.result.kind === "skipped") {
-    return problem(SKIP_MESSAGES[settled.result.reason])
+    return problem(SKIP_MESSAGES[settled.result.reason], frame.frameName, LASTING_SKIPS.has(settled.result.reason))
   }
   const image = settled.result.image
   const name = image.frameName === "" ? frame.frameName : image.frameName
   // Checked here as well: a body above the server's limit fails before CORS and would read as a network error.
   if (image.bytes.length > MAX_IMAGE_UPLOAD_BYTES) {
-    return problem(TOO_LARGE_MESSAGE, name)
+    return problem(TOO_LARGE_MESSAGE, name, true)
   }
   const contentType = contentTypeOf(image.format)
   const expected = { width: image.width, height: image.height }
   const size = (await deps.measure(image.bytes, contentType).catch(() => null)) ?? expected
   if (size.width < 1 || size.height < 1 || Math.max(size.width, size.height) > MAX_IMAGE_SIDE) {
-    return problem(INVALID_IMAGE_MESSAGE, name)
+    return problem(INVALID_IMAGE_MESSAGE, name, true)
   }
   const upload: ScreenshotUpload = {
     image: image.bytes,
@@ -463,6 +546,7 @@ async function handleFrame(deps: ScreenshotDeps, frame: ScreenshotFrame, settled
     try {
       const response = await deps.upload(upload)
       run.uploaded++
+      run.uploadedFrameIds.push(frame.frameId)
       if (response.unchanged_image === true) {
         run.unchanged++
       }
@@ -475,15 +559,22 @@ async function handleFrame(deps: ScreenshotDeps, frame: ScreenshotFrame, settled
     } catch (error) {
       const action = uploadErrorAction(error, attempt)
       if (action.kind === "retry") {
-        if (!(await waitUnlessStopped(deps, action.waitMs, options.stopped))) {
+        // The progress says why the queue waits; Stop ends the wait.
+        run.waiting = true
+        progress()
+        const waited = await waitUnlessStopped(deps, action.waitMs, options.stopped)
+        run.waiting = false
+        if (!waited) {
           return { kind: "stop", stop: "cancelled", message: null }
         }
+        progress()
         continue
       }
       if (action.kind === "stop") {
         return action
       }
-      return problem(action.message, name)
+      problem(action.message, name, action.lasting)
+      return error instanceof ApiError && error.reason === SCREENSHOT_LIMIT_REASON ? { kind: "next", limit: action.message } : { kind: "next" }
     }
   }
 }
@@ -514,6 +605,39 @@ export function screenshotDeps(input: {
     sleep: input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
     onDisabled: input.onDisabled,
   }
+}
+
+// E20 for one file, 100 a page, following next_cursor until the end or `max` listed screenshots; `visit` sees each one
+// in order. `refreshRequested` filters the list (absent: every screenshot of the file); `stopped` (Stop) is checked
+// before each page. true when the list was read to its end. Throws on errors.
+export async function listFileScreenshots(
+  api: Pick<FigmaApi, "screenshots">,
+  projectId: string,
+  fileKey: string,
+  options: { refreshRequested?: boolean; max: number; stopped?: () => boolean },
+  visit: (screenshot: FigmaScreenshot) => void,
+): Promise<boolean> {
+  let cursor: string | null = null
+  let listed = 0
+  do {
+    if (options.stopped?.() === true) {
+      return false
+    }
+    const query: FigmaScreenshotsQuery = { file_key: fileKey, cursor, limit: SCREENSHOTS_PAGE_SIZE }
+    if (options.refreshRequested !== undefined) {
+      query.refresh_requested = options.refreshRequested
+    }
+    const page = await api.screenshots(projectId, query)
+    for (const screenshot of Array.isArray(page.screenshots) ? page.screenshots : []) {
+      if (listed >= options.max) {
+        return false
+      }
+      listed++
+      visit(screenshot)
+    }
+    cursor = page.has_more === true && typeof page.next_cursor === "string" && page.next_cursor !== "" ? page.next_cursor : null
+  } while (cursor !== null && listed < options.max)
+  return cursor === null
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -571,8 +695,22 @@ export function groupProblems(problems: readonly ScreenshotProblem[]): ProblemGr
   return [...groups.values()]
 }
 
+// The Push screen's screenshots (and those of a pull, Overwrite, Take ReRune text): ReRune is asked which frames have
+// a screenshot (`checking`, before an upload of frames without one), the run with its progress, then its result.
+export type ShotsState =
+  | { kind: "checking" }
+  | { kind: "running"; run: ScreenshotRun }
+  | { kind: "done"; run: ScreenshotRun }
+  | { kind: "unavailable"; message: string }
+
+export const CHECKING_SHOTS_TEXT = "Checking which frames have a screenshot in ReRune…"
+
+export const RATE_LIMIT_WAIT_TEXT = "Waiting for ReRune's upload limit, then going on…"
+
+// "Uploading screenshots… 12 of 80", and why it waits while a 429's Retry-After runs.
 export function progressText(run: ScreenshotRun): string {
-  return "Uploading screenshots… " + Math.min(run.done + 1, run.total) + " of " + run.total
+  const count = "Uploading screenshots… " + Math.min(run.done + 1, run.total) + " of " + run.total
+  return run.waiting ? count + ". " + RATE_LIMIT_WAIT_TEXT : count
 }
 
 // The Push screen's way in (§7.13 rule 11, SF1): `prepare` loads E1/E8 when needed and evaluates the gate with the

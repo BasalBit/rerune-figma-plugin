@@ -16,7 +16,7 @@ import type { ScreenshotSetting } from "../state/screenshots"
 import { applyEdit, CASE_STYLE_LABELS, editOf, sameEdit, settingsOffer, type Prefs, type SettingsEdit, type SettingsOffer, type SettingsStatus } from "../state/settings"
 
 // Settings (§7.8): the Figma file link (Phase 2), key template, case style, ignore _ layers, include locked,
-// upload screenshots of changed frames (Phase 2; hidden for sandbox users), Advanced → Diagnostics, version, Sign out. File
+// upload frame screenshots (Phase 2; hidden for sandbox users), Advanced → Diagnostics, version, Sign out. File
 // settings are written to the file (root + page mirror, §7.7); prefs stay on this machine.
 
 export interface SettingsScreenProps {
@@ -38,7 +38,7 @@ export interface SettingsScreenProps {
   linkGate: LinkSyncGate
   onSaveFileLink(link: ParsedFigmaUrl): Promise<string | null>
   onConfirmSameFile(): Promise<string | null>
-  // "Upload screenshots of changed frames" (§7.16, SF1b): whether the toggle shows and what it says.
+  // "Upload frame screenshots" (§7.16, SF1b): whether the toggle shows and what it says.
   screenshots: ScreenshotSetting
   // A canvas task holds the work lock (Update screenshots starts from the notices on this tab too): saving the file's
   // settings or link, confirming the file and signing out wait for it, since the task reads them while it runs.
@@ -172,7 +172,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
         </Toggle>
         {props.screenshots.visible && props.screenshots.toggle && (
           <Toggle value={props.prefs.uploadScreenshotsOnPush} onValueChange={(value) => props.onPrefs({ uploadScreenshotsOnPush: value })}>
-            <Small>Upload screenshots of changed frames</Small>
+            <Small>Upload frame screenshots</Small>
           </Toggle>
         )}
         {props.screenshots.visible && props.screenshots.hint !== null && <Small muted>{props.screenshots.hint}</Small>}

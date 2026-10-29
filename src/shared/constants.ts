@@ -66,12 +66,14 @@ export const MAX_IMAGE_SIDE = 4096
 export const SCREENSHOT_MAX_BOXES = 500              // E19 accepts at most 500 boxes per image
 export const SCREENSHOT_SIZE_TOLERANCE_PX = 2        // §7.16: rescale boxes when the decoded image differs by more
 export const SCREENSHOT_NAME_MAX_RUNES = 200         // frame and page names are cut to 200 runes on the server (§4.0)
-export const SCREENSHOT_RATE_LIMIT_RETRIES = 2       // 429 waits per frame before the upload queue stops
+export const SCREENSHOT_RATE_LIMIT_RETRIES = 5       // 429 waits in a row on one frame before the upload queue stops
 export const SCREENSHOT_EXPORT_IDLE_MS = 120000      // one frame export (with re-exports) per request
 export const SCREENSHOT_TEXT_MAX_UTF16 = 5000        // a box's captured text; longer layers send none (server: ≤ 5,000 runes)
 export const SCREENSHOT_META_MAX_BYTES = 900000      // the E19 meta part with captured texts, as UTF-8 JSON
-export const REFRESH_REQUESTS_PAGE_SIZE = 100        // E20 page size for the frames ReRune asks new screenshots of
+export const SCREENSHOTS_PAGE_SIZE = 100             // E20 page size (the server's maximum)
 export const REFRESH_REQUESTS_MAX = 1000             // requested frames the plugin reads per file
+export const STORED_SCREENSHOTS_MAX = 10000          // screenshots of a file read to find frames without one (the server's ceiling per project)
+export const SCREENSHOT_FRAME_CHECKS_MAX = 10        // frames asked about one by one (E20 frame_id); for more, the file's whole list is read
 
 export const REQUEST_TIMEOUT_MS = 30000
 export const UPLOAD_TIMEOUT_MS = 60000

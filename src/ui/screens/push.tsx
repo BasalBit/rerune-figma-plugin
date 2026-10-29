@@ -1,6 +1,6 @@
 import { Button, SegmentedControl, Textbox } from "@create-figma-plugin/ui"
 import { h, type ComponentChildren } from "preact"
-import { useEffect, useRef, useState } from "preact/hooks"
+import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 import type { FigmaKeyRef, FigmaProjectDetail } from "../../shared/api-types"
 import { keyNameWarnings } from "../../shared/key-names"
 import type { FileSettings, ScannedNode, Scope } from "../../shared/messages"
@@ -11,7 +11,7 @@ import type { UiBus } from "../bus"
 import { KeyTag, KeyTags } from "../brand/key-tag"
 import { CheckInput, Chip, Choice, ErrorGroups, ErrorNote, Loading, Note, plural, preview, SectionTitle, Small, styles, TextButton } from "../components/ui"
 import { ScreenBody } from "../components/screen-body"
-import { ScreenshotStatus, type ShotsState } from "../components/screenshot-status"
+import { ScreenshotStatus } from "../components/screenshot-status"
 import { STATE_LABELS, STATE_TONES } from "../state/layers"
 import { linkSyncWarning, SCAN_UNFINISHED, type LinkSyncResult } from "../state/link-sync"
 import { groupErrors } from "../state/ops"
@@ -56,14 +56,19 @@ import {
   type PushInput,
   type PushRun,
 } from "../state/push"
-import { affectedFrames, emptyScreenshotRun, screenshotFreshness, type ScreenshotFrame, type ScreenshotUploader } from "../state/screenshots"
+import { createPushShots, missingLine, type FailedFrames } from "../state/missing-screenshots"
+import { affectedFrames, type ScreenshotUploader } from "../state/screenshots"
 import type { Prefs } from "../state/settings"
+import { useStore } from "../state/use-store"
 import type { Workspace, WorkspaceState } from "../state/workspace"
 
 // Push (§7.13): the diff with decisions, max_length warnings, the quota line, Push, and the results with the
 // follow-up choices (conflicts, duplicate names, quota). After a push (and after Update layers from ReRune, SF1),
 // screenshots of the changed frames are uploaded when that is on and allowed (§7.13 rule 11, §7.16); the push or
-// pull stays locked until they are done or stopped. The plan follows the workspace while it shows the plan's layers:
+// pull stays locked until they are done or stopped. Frames of the review with linked keys but no screenshot in ReRune yet
+// (a first push on a new project, missing-screenshots.ts, which holds the screen's screenshot state) are counted with
+// each review and uploaded with the push, or with Upload screenshots when there is nothing else to push. The plan
+// follows the workspace while it shows the plan's layers:
 // when ReRune's values change (the background read, without a scan) it is built again from the same scan, keeping the
 // designer's choices, or, once they made one, says "ReRune has new changes" with Refresh. Push and Update layers from
 // ReRune scan the plan's layers again by id (wherever the selection is now) and compare first, and stop with the new
@@ -78,7 +83,7 @@ export interface PushScreenProps {
   settings: FileSettings | null
   prefs: Prefs
   readOnly: boolean
-  api: Pick<FigmaApi, "keysByName" | "push">
+  api: Pick<FigmaApi, "keysByName" | "push" | "screenshots">
   bus: UiBus
   dashboardBase: string
   onOpenLink(nodes: ScannedNode[], key: FigmaKeyRef | null): void
@@ -87,8 +92,9 @@ export interface PushScreenProps {
   resetting: boolean
   onResetPreviews(scope: Scope, nodeIds: string[]): Promise<void>
   onAvailableKeys(availableKeys: number): void
-  // A push or pull starts (true) or ends (false); the app keeps the Push tab open meanwhile.
-  onBusy(busy: boolean): void
+  // A push or pull ("push"), or Upload screenshots ("upload"), starts (true) or ends (false); the app holds the work lock
+  // for it and keeps the Push tab open meanwhile.
+  onBusy(busy: boolean, task: PushTask): void
   // Another canvas task holds the work lock (Update screenshots, started from the notices): review, push, pull and
   // the follow-up choices wait for it.
   locked: boolean
@@ -97,7 +103,11 @@ export interface PushScreenProps {
   syncLinks(nodeIds: readonly string[]): Promise<LinkSyncResult | null>
   // Phase 2 screenshots on push; null leaves them out.
   screenshots: ScreenshotUploader | null
+  // Frames whose upload failed for a lasting reason in this plugin session: pushes leave them out.
+  failedShots: FailedFrames
 }
+
+export type PushTask = "push" | "upload"
 
 type Phase = "preparing" | "plan" | "pushing" | "results"
 type ConflictChoice = "skip" | "overwrite" | "take_rerune"
@@ -122,8 +132,8 @@ export function PushScreen(props: PushScreenProps) {
   const [pulling, setPulling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resolved, setResolved] = useState<Record<string, { choice: ConflictChoice; done: boolean }>>({})
-  const [shots, setShots] = useState<ShotsState | null>(null)
-  const [stopping, setStopping] = useState(false)
+  // Upload screenshots runs (its button shows it loading).
+  const [sending, setSending] = useState(false)
   const [running, setRunning] = useState(false)
   // The designer made a choice in the plan: ReRune's changes wait for Refresh (`stale`) instead of moving the rows.
   const [touched, setTouched] = useState(false)
@@ -132,7 +142,18 @@ export function PushScreen(props: PushScreenProps) {
   // build the plan again. A note, not an error: its choices stay, and Review again is the user's call.
   const [planNote, setPlanNote] = useState<string | null>(null)
   const busyRef = useRef(false)
-  const stopShots = useRef(false)
+  const propsRef = useRef(props)
+  propsRef.current = props
+  // The screen's screenshots: which frames of the review have one, the upload runs with their check, progress and Stop.
+  const shotsCtl = useMemo(
+    () =>
+      createPushShots(() => {
+        const current = propsRef.current
+        return { api: current.api, projectId: current.project.id, uploader: current.screenshots, failed: current.failedShots }
+      }),
+    [],
+  )
+  const { stored, shots, stopping, note: uploadNote } = useStore(shotsCtl.store)
   const nameTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const baseRef = useRef<PlanBase>({ scanId: -1, result: null, remote: new Map() })
   const staleRef = useRef<PlanBase | null>(null)
@@ -148,17 +169,17 @@ export function PushScreen(props: PushScreenProps) {
   // One push, pull or conflict resolution at a time, from its first request until its screenshots are uploaded or
   // stopped: review, push and the follow-up choices wait meanwhile, and the app's lock (onBusy) is released by the
   // run that took it.
-  async function exclusive(work: () => Promise<void>): Promise<void> {
+  async function exclusive(work: () => Promise<void>, task: PushTask = "push"): Promise<void> {
     if (busyRef.current || props.locked) return
     busyRef.current = true
     setRunning(true)
-    props.onBusy(true)
+    props.onBusy(true, task)
     try {
       await work()
     } finally {
       busyRef.current = false
       setRunning(false)
-      props.onBusy(false)
+      props.onBusy(false, task)
     }
   }
 
@@ -189,6 +210,7 @@ export function PushScreen(props: PushScreenProps) {
     setError(null)
     setRun(null)
     setPulled(null)
+    shotsCtl.reset()
     setResolved({})
     setTouched(false)
     setStale(false)
@@ -208,7 +230,10 @@ export function PushScreen(props: PushScreenProps) {
       return
     }
     try {
-      adopt(await preparePush(props.api, inputOf(state)), planBase(state))
+      const next = await preparePush(props.api, inputOf(state))
+      adopt(next, planBase(state))
+      // The note's list, read without holding up the plan (silent on errors).
+      shotsCtl.read(next)
     } catch (caught) {
       setError(userMessage(caught))
       setPrepared(null)
@@ -296,7 +321,7 @@ export function PushScreen(props: PushScreenProps) {
     await exclusive(async () => {
       setPhase("preparing")
       setError(null)
-      setShots(null)
+      shotsCtl.clear()
       setPlanNote(null)
       // A push never acts on an old scan: the plan's layers and ReRune are read again, and a plan that changed is shown
       // instead (or why it could not be checked).
@@ -333,43 +358,47 @@ export function PushScreen(props: PushScreenProps) {
         setError(userMessage(caught))
       }
       setPhase("results")
+      // §7.13 rule 11: the frames the push changed, and the frames of the checked plan with linked keys but no
+      // screenshot in ReRune yet (§7.16, when the gate allows).
       if (pushed !== null) {
-        await uploadScreenshots(affectedFrames(pushed.affectedNodeIds, fresh.context.nodes))
+        await shotsCtl.afterPush(fresh, pushed)
       }
     })
   }
 
-  // §7.13 rule 11: screenshots of the frames the push changed, when the gate allows (§7.16). A gate that is off
-  // stays silent (the Settings screen and the file banner explain why), except when ReRune could not be asked.
-  async function uploadScreenshots(frames: ScreenshotFrame[]) {
-    const uploader = props.screenshots
-    if (uploader === null || frames.length === 0) return
-    try {
-      const { gate, availability } = await uploader.prepare()
-      if (!gate.enabled || gate.fileKey === null) {
-        if (gate.reason === "unavailable" && availability.error !== null) {
-          setShots({ kind: "unavailable", message: availability.error })
+  // Upload screenshots, when there is nothing else to push: the frames of the review with linked keys and no screenshot
+  // in ReRune. Like a push it holds the work lock (as "upload"), reads the plan's layers again by id first (the plan
+  // follows, with the choices kept) and asks ReRune again just before the upload.
+  async function uploadMissing() {
+    if (prepared === null) return
+    await exclusive(async () => {
+      setError(null)
+      shotsCtl.clear()
+      setPulled(null)
+      setPlanNote(null)
+      setSending(true)
+      try {
+        let checked: PushCheck
+        try {
+          checked = await checkPlan(checkDeps(), prepared, planSignature)
+        } catch (caught) {
+          checked = { kind: "error", message: userMessage(caught) }
         }
-        return
+        if (checked.kind === "error") {
+          setPlanNote(checked.message)
+          return
+        }
+        adopt(checked.prepared, checked.base)
+        if (checked.kind === "changed") setPlanNote(OTHER_ROWS_CHANGED)
+        await shotsCtl.uploadMissing(checked.prepared)
+      } finally {
+        setSending(false)
       }
-      stopShots.current = false
-      setStopping(false)
-      setShots({ kind: "running", run: emptyScreenshotRun(frames.length) })
-      const result = await uploader.upload(frames, {
-        fileKey: gate.fileKey,
-        freshness: screenshotFreshness(availability),
-        stopped: () => stopShots.current,
-        onProgress: (next) => setShots({ kind: "running", run: next }),
-      })
-      setShots({ kind: "done", run: result })
-    } catch (caught) {
-      setShots({ kind: "unavailable", message: userMessage(caught) })
-    }
+    }, "upload")
   }
 
   function stopScreenshots() {
-    stopShots.current = true
-    setStopping(true)
+    shotsCtl.stop()
   }
 
   function pushDeps() {
@@ -386,7 +415,7 @@ export function PushScreen(props: PushScreenProps) {
     await exclusive(async () => {
       setPulling(true)
       setError(null)
-      setShots(null)
+      shotsCtl.clear()
       setPlanNote(null)
       let done: PullRun | null = null
       let fresh: PreparedPush | null = null
@@ -413,7 +442,7 @@ export function PushScreen(props: PushScreenProps) {
       }
       setPulling(false)
       if (done !== null && fresh !== null) {
-        await uploadScreenshots(affectedFrames(done.affectedNodeIds, fresh.context.nodes))
+        await shotsCtl.upload(affectedFrames(done.affectedNodeIds, fresh.context.nodes))
       }
     })
   }
@@ -459,7 +488,7 @@ export function PushScreen(props: PushScreenProps) {
           else finish()
           // The card's chip and the Layers tab show the result at once.
           await showWritten(overwriteChanges(conflict, next))
-          await uploadScreenshots(affectedFrames(next.affectedNodeIds, prepared.context.nodes))
+          await shotsCtl.upload(affectedFrames(next.affectedNodeIds, prepared.context.nodes))
           return
         }
         // Take ReRune text changes the layers as it does in the plan: link sync and screenshots (§7.13 rule 11). A layer
@@ -469,7 +498,7 @@ export function PushScreen(props: PushScreenProps) {
         if (taken.affectedNodeIds.length === 0) reopen()
         else finish()
         await showWritten(takeReRuneChanges(conflict, taken))
-        await uploadScreenshots(affectedFrames(taken.affectedNodeIds, prepared.context.nodes))
+        await shotsCtl.upload(affectedFrames(taken.affectedNodeIds, prepared.context.nodes))
       } catch (caught) {
         setError(userMessage(caught))
         reopen()
@@ -480,6 +509,13 @@ export function PushScreen(props: PushScreenProps) {
   function nodesOf(nodeIds: readonly string[]): ScannedNode[] {
     return nodeIds.map((nodeId) => prepared?.context.nodes.get(nodeId)).filter((node): node is ScannedNode => node !== undefined)
   }
+
+  const plan = prepared?.plan ?? null
+  const counts = plan === null ? null : pushCounts(plan)
+  const submittable = plan !== null && canSubmit(plan, editKeys) && !props.readOnly
+  // Frames of the plan with linked keys and no screenshot in ReRune: the push uploads them, or Upload screenshots when
+  // there is nothing to push. None while an upload runs (its progress shows instead).
+  const missing = useMemo(() => (prepared === null ? [] : shotsCtl.noteFrames(prepared, submittable)), [prepared, stored, shots, submittable])
 
   if (phase === "preparing") {
     return (
@@ -518,9 +554,6 @@ export function PushScreen(props: PushScreenProps) {
     )
   }
 
-  const plan = prepared?.plan ?? null
-  const counts = plan === null ? null : pushCounts(plan)
-  const submittable = plan !== null && canSubmit(plan, editKeys) && !props.readOnly
   // Update layers from ReRune shows the plan its check built from the choices made before it started, so the plan's
   // choices wait until it has written the layers. Its screenshots and another task's lock don't replace the plan.
   const choicesDisabled = pulling
@@ -578,6 +611,18 @@ export function PushScreen(props: PushScreenProps) {
               </Note>
             )}
             <Summary plan={plan} />
+            {/* Like Push, Upload screenshots waits for previews to be reset: a frame that shows one would upload preview text. */}
+            {missing.length > 0 && (
+              <MissingNote
+                count={missing.length}
+                pushable={submittable}
+                disabled={busy || plan.blockedByPreview.length > 0}
+                loading={sending}
+                onUpload={() => void uploadMissing()}
+              />
+            )}
+            {uploadNote !== null && <Note tone={uploadNote.tone}>{uploadNote.text}</Note>}
+            {pulled === null && shots !== null && <ScreenshotStatus state={shots} stopping={stopping} onStop={stopScreenshots} onSelect={props.onSelect} />}
             {counts.blockedUpdates > 0 && (
               <Note tone="warning" actions={<TextButton onClick={() => props.onSelect(blockedUpdateNodeIds(plan))}>Select on canvas</TextButton>}>
                 {plural(counts.blockedUpdates, "change is", "changes are")} longer than the key's max length and won't be pushed. Shorten the text in Figma, or
@@ -757,6 +802,25 @@ export function PushScreen(props: PushScreenProps) {
         </Button>
       </div>
     </div>
+  )
+}
+
+// Frames of the review with linked keys but no screenshot in ReRune yet (a first push on a new project): the push uploads
+// them, so the note says so; when there is nothing to push, Upload screenshots uploads them on their own.
+export function MissingNote(props: { count: number; pushable: boolean; disabled: boolean; loading: boolean; onUpload(): void }) {
+  return (
+    <Note
+      tone="rerune"
+      actions={
+        props.pushable ? undefined : (
+          <Button secondary disabled={props.disabled} loading={props.loading} onClick={props.onUpload}>
+            Upload screenshots
+          </Button>
+        )
+      }
+    >
+      {missingLine(props.count, props.pushable)}
+    </Note>
   )
 }
 
