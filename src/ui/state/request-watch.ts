@@ -48,8 +48,8 @@ export interface WatchWindow {
 }
 
 interface Listenable<T extends string> {
-  addEventListener(type: T, listener: () => void, capture?: boolean): void
-  removeEventListener(type: T, listener: () => void, capture?: boolean): void
+  addEventListener(type: T, listener: () => void, options?: { capture: boolean }): void
+  removeEventListener(type: T, listener: () => void, options?: { capture: boolean }): void
 }
 
 const ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel"] as const
@@ -63,6 +63,10 @@ export interface WatchDocument extends Listenable<"visibilitychange" | (typeof A
 // the window's focus (a click in the plugin, or Figma brought back while the plugin had focus), the pointer entering
 // the plugin, clicks, keys and scrolling in it (capture phase, so no component can hide them) and the browser coming
 // back online.
+// Capture is passed as an options object: Node 24's EventTarget (the test runner's) does not match a boolean `true` on
+// removal, so the listeners would stay. Browsers accept both forms.
+const CAPTURE = { capture: true } as const
+
 export function browserWindow(doc: WatchDocument, win: Listenable<"focus" | "online">): WatchWindow {
   const visible = () => doc.visibilityState !== "hidden"
   return {
@@ -77,7 +81,7 @@ export function browserWindow(doc: WatchDocument, win: Listenable<"focus" | "onl
       win.addEventListener("online", onOnline)
       doc.documentElement.addEventListener("pointerenter", onAttention)
       for (const type of ACTIVITY_EVENTS) {
-        doc.addEventListener(type, onActivity, true)
+        doc.addEventListener(type, onActivity, CAPTURE)
       }
       return () => {
         doc.removeEventListener("visibilitychange", onVisibility)
@@ -85,7 +89,7 @@ export function browserWindow(doc: WatchDocument, win: Listenable<"focus" | "onl
         win.removeEventListener("online", onOnline)
         doc.documentElement.removeEventListener("pointerenter", onAttention)
         for (const type of ACTIVITY_EVENTS) {
-          doc.removeEventListener(type, onActivity, true)
+          doc.removeEventListener(type, onActivity, CAPTURE)
         }
       }
     },
