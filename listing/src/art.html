@@ -169,29 +169,29 @@ const canvas = ({ left, top }) => `<div class="canvas" style="left:${left}px;top
     <p class="note">Lieferung in 2–3 Tagen, versandkostenfrei</p>
   </div>`
 
-const FREE = "Free for designers on every ReRune plan. Nothing is published from Figma."
+const FREE = "Free for designers on every ReRune plan. Nothing is published from your designs."
 
-// Each image's key tag is the key of its own headline: the dashboard's /figma keys where the headline is the
-// dashboard's, figmaListing_* for headlines only the listing has.
+// Each image's key tag is the key of its own headline, a listing-only pluginListing_* key. No image shows the word
+// "Figma" (Figma's branding guidelines for Community listings; the 2026-11-26 review asked for it on the cover).
 const ART = {
   "icon-128.png": (paths) => `<div class="icon">${mark(paths.small, 99)}</div>`,
   "cover-1920x1080.png": (paths) =>
-    card("cover", { keyTag: "figmaLanding_title", heading: "Link Figma text to real keys.", kicker: "ReRune for Figma", support: FREE },
+    card("cover", { keyTag: "pluginListing_title", heading: "Link design text to real keys.", kicker: "ReRune for design files", support: FREE },
       stamp(paths, { left: 124, top: 345, rotate: 4, scale: 1.3 }), paths),
   "carousel-1-link.png": (paths) =>
-    card("slide", { keyTag: "figmaLanding_stepLink_title", heading: "Link layers to keys", kicker: "Layers", support: "Scan a page, then link text layers to existing keys, by search or exact text, or name new keys after your project's pattern." },
+    card("slide", { keyTag: "pluginListing_link_title", heading: "Link layers to keys", kicker: "Layers", support: "Scan a page, then link text layers to existing keys, by search or exact text, or name new keys after your project's pattern." },
       print("layers-light"), paths),
   "carousel-2-push.png": (paths) =>
-    card("slide", { keyTag: "figmaLanding_stepPush_title", heading: "Push copy as drafts", kicker: "Push", support: "Review every change before it leaves Figma. Texts changed in both places wait for your decision; publishing stays in ReRune." },
+    card("slide", { keyTag: "pluginListing_push_title", heading: "Push copy as drafts", kicker: "Push", support: "Review every change before it leaves your file. Texts changed in both places wait for your decision; publishing stays in ReRune." },
       print("push-light"), paths),
   "carousel-3-preview.png": (paths) =>
-    card("slide", { keyTag: "figmaLanding_stepPreview_title", heading: "Preview every language", kicker: "Preview", support: "Show any project language on the canvas, draft or published, with regional fallbacks. Reset restores the original text." },
+    card("slide", { keyTag: "pluginListing_preview_title", heading: "Preview every language", kicker: "Preview", support: "Show any project language on the canvas, draft or published, with regional fallbacks. Reset restores the original text." },
       print("preview-light", { scale: 1.6, left: 266 }) + canvas({ left: 26, top: 600 }), paths),
   "carousel-4-qa.png": (paths) =>
-    card("slide", { keyTag: "figmaListing_qa_title", heading: "Catch overflow before it ships", kicker: "QA", support: "An overflow report per language finds clipped, truncated and overflowing text, and values longer than their key allows." },
+    card("slide", { keyTag: "pluginListing_qa_title", heading: "Catch overflow before it ships", kicker: "QA", support: "An overflow report per language finds clipped, truncated and overflowing text, and values longer than their key allows." },
       print("qa-dark"), paths),
   "carousel-5-dev-mode.png": (paths) =>
-    card("slide", { keyTag: "figmaListing_devMode_title", heading: "Keys and snippets in Dev Mode", kicker: "Dev Mode", support: "Developers see the linked keys of a selection with their values in every language, and a snippet for their platform." },
+    card("slide", { keyTag: "pluginListing_devMode_title", heading: "Keys and snippets in Dev Mode", kicker: "Dev Mode", support: "Developers see the linked keys of a selection with their values in every language, and a snippet for their platform." },
       print("inspect-light", { scale: 1.9, width: 300, height: 480 }), paths),
 }
 
