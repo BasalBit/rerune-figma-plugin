@@ -6,6 +6,7 @@ import { decodeRgb, encodeRgbPng, LISTING_COMMENT, LISTING_IMAGES, readListingFi
 import { CODEGEN_PLATFORMS } from "../src/codegen/snippets"
 import { CODEGEN_SOURCE_TEXT_MAX_CHARS } from "../src/shared/constants"
 import listing from "../COMMUNITY_LISTING.md?raw"
+import art from "../listing/src/art.html?raw"
 import signIn from "../src/ui/screens/sign-in.tsx?raw"
 import signedIn from "../src/ui/screens/signed-in.tsx?raw"
 import layersScreen from "../src/ui/screens/layers.tsx?raw"
@@ -35,7 +36,7 @@ describe("COMMUNITY_LISTING.md", () => {
     expect(listing).toContain("| Tagline | Link Figma text to ReRune translation keys, push copy as drafts and preview every language. |")
     expect(listing).toMatch(/^\| Category \| .+ \|$/m)
     expect(listing).toContain("| Support contact | info@basalbit.com |")
-    expect(listing).toContain("| Privacy policy | https://rerune.io/privacy |")
+    expect(listing).toContain("| Privacy policy | https://rerune.io/privacy#figma-plugin |")
     expect(listing).toContain("| Source code | https://github.com/BasalBit/rerune-figma-plugin |")
   })
 
@@ -196,6 +197,14 @@ describe("listing images", () => {
     expect(assets()).toContain("`node scripts/listing-art.mjs`")
     expect(assets()).toContain("`listing/src/`")
     expect(section(listing, "## Before you submit")).toContain("- [x] Icon and cover replaced")
+  })
+
+  it("puts the word Figma in no headline, key tag or caption (Figma's branding guidelines, review of 2026-11-26)", () => {
+    const texts = art.split("\n").filter((line) => line.includes('card("') || line.startsWith("const FREE"))
+    expect(texts.length).toBe(7)
+    for (const line of texts) {
+      expect(line, line).not.toMatch(/figma/i)
+    }
   })
 
   it("reads back what it writes, and rejects a damaged PNG", () => {
